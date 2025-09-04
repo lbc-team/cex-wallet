@@ -297,14 +297,55 @@ db.run('INSERT INTO wallets (address, private_key) VALUES (?, ?)',
    - 检查 `wallet.db` 文件权限
    - 确保SQLite3正确安装
 
-## 贡献指南
+## 测试
 
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 推送到分支
-5. 创建 Pull Request
+### 运行测试
 
-## 许可证
+项目包含完整的API测试套件，用于验证钱包系统的各项功能。
 
-ISC License
+#### 启动服务器
+
+在运行测试之前，需要先启动服务器：
+
+```bash
+# 开发模式启动服务器
+npm run dev
+
+# 或者生产模式启动
+npm run build
+npm start
+```
+
+#### 运行测试套件
+
+```bash
+# 运行所有测试
+npm test
+
+# 运行钱包API测试
+npm run test:wallet
+
+# 运行特定测试文件
+npx ts-node tests/wallet.test.ts
+```
+
+### 手动测试
+
+除了自动化测试，你也可以使用curl进行手动测试：
+
+```bash
+# 健康检查
+curl http://localhost:3000/health
+
+# 创建钱包
+curl -X POST http://localhost:3000/api/wallets \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0x1234567890abcdef","device":"test-device","path":"m/44/60/0/0/0","chain_type":"ethereum"}'
+
+# 获取钱包列表
+curl http://localhost:3000/api/wallets
+
+# 获取特定钱包
+curl http://localhost:3000/api/wallets/1
+```
+

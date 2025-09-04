@@ -92,6 +92,16 @@ export class BalanceModel {
     );
   }
 
+  // 获取钱包地址的余额总和
+  async getTotalBalanceByAddress(address: string): Promise<number> {
+    const result = await this.db.query<{ total_balance: number }>(
+      'SELECT SUM(CAST(balance AS REAL)) as total_balance FROM balances WHERE address = ?',
+      [address]
+    );
+    
+    return result[0]?.total_balance || 0;
+  }
+
   // 获取用户所有余额
   async findByUserId(user_id: number, options?: BalanceQueryOptions): Promise<Balance[]> {
     let sql = 'SELECT * FROM balances WHERE user_id = ?';
@@ -211,6 +221,30 @@ export class BalanceModel {
     }
 
     return updatedBalance;
+  }
+
+  // 更新钱包余额（根据地址和代币符号）
+  async updateWalletBalance(address: string, token_symbol: string, balance: number, user_id: number = 1): Promise<void> {
+    // 检查是否已有该地址的余额记录
+    const existingBalances = await this.db.query(
+      'SELECT * FROM balances WHERE address = ? AND token_symbol = ? LIMIT 1',
+      [address, token_symbol]
+    );
+    const existingBalance = existingBalances[0];
+
+    if (existingBalance) {
+      // 更新现有余额记录
+      await this.db.run(
+        'UPDATE balances SET balance = ?, timestamp = ? WHERE id = ?',
+        [balance.toString(), Date.now(), existingBalance.id]
+      );
+    } else {
+      // 创建新的余额记录
+      await this.db.run(
+        'INSERT INTO balances (user_id, address, token_symbol, address_type, balance, lock_balance, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [user_id, address, token_symbol, 0, balance.toString(), '0', Date.now()]
+      );
+    }
   }
 
   // 删除余额记录

@@ -9,7 +9,8 @@
     "dev:watch": "nodemon --exec ts-node src/index.ts",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "ts-node tests/run-tests.ts",
+    "test:wallet": "ts-node tests/wallet.test.ts"
   },
   "keywords": [],
   "author": "",
