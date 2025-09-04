@@ -1,23 +1,29 @@
 {
-  "name": "wallet",
+  "name": "signer",
   "version": "1.0.0",
   "main": "dist/index.js",
+  "description": "CEX钱包系统 - 签名器模块，负责真实的钱包创建和管理",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "dev:watch": "nodemon --exec ts-node src/index.ts",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "test": "ts-node tests/run-tests.ts",
-    "test:wallet": "ts-node tests/wallet.test.ts"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "wallet",
+    "crypto",
+    "ethereum",
+    "viem",
+    "signer"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "express": "^5.1.0",
-    "sqlite3": "^5.1.7"
+    "viem": "^2.37.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

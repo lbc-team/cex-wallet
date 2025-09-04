@@ -1,0 +1,46 @@
+// 钱包类型定义
+export interface Wallet {
+  id?: number;
+  address: string;
+  privateKey: string;
+  device: string;
+  path: string;
+  chainType: 'evm' | 'btc' | 'solana';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// 创建钱包请求
+export interface CreateWalletRequest {
+  device: string;
+  path?: string;
+  chainType: 'evm' | 'btc' | 'solana';
+  mnemonic?: string; // 可选的助记词，如果不提供则生成新的
+}
+
+// 钱包创建响应
+export interface CreateWalletResponse {
+  success: boolean;
+  data?: Wallet;
+  error?: string;
+}
+
+// 助记词生成选项
+export interface MnemonicOptions {
+  strength?: 128 | 160 | 192 | 224 | 256; // 助记词强度
+  language?: 'english' | 'chinese_simplified' | 'chinese_traditional' | 'japanese' | 'korean' | 'french' | 'italian' | 'spanish';
+}
+
+// 密钥派生路径
+export interface DerivationPath {
+  evm: string;    // 以太坊路径
+  btc: string;    // 比特币路径
+  solana: string; // Solana路径
+}
+
+// 钱包服务配置
+export interface WalletServiceConfig {
+  defaultDerivationPaths: DerivationPath;
+  supportedChains: string[];
+  encryptionKey?: string; // 用于加密私钥的密钥
+}
