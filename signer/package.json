@@ -10,7 +10,8 @@
     "dev:watch": "nodemon --exec ts-node src/index.ts",
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "ts-node tests/run-tests.ts",
+    "test:signer": "ts-node tests/signer.test.ts"
   },
   "keywords": [
     "wallet",
@@ -23,11 +24,14 @@
   "license": "ISC",
   "dependencies": {
     "express": "^5.1.0",
-    "viem": "^2.37.3"
+    "viem": "^2.37.3",
+    "sqlite3": "^5.1.7",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
+    "@types/sqlite3": "^3.1.11",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"

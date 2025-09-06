@@ -55,12 +55,14 @@ export class DatabaseConnection {
         // 创建钱包表
         this.db!.run(`CREATE TABLE IF NOT EXISTS wallets (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER UNIQUE NOT NULL,
           address TEXT UNIQUE NOT NULL,
           device TEXT,
           path TEXT,
           chain_type TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users (id)
         )`, (err) => {
           if (err) {
             reject(err);

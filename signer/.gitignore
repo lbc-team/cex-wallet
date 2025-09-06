@@ -25,6 +25,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+signer-config.db
 
 # Logs
 logs/

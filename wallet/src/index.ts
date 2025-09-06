@@ -1,6 +1,7 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import { initDatabaseService, getDatabaseService } from './db';
-import { createWalletRoutes } from './routes/wallet';
+import { walletRoutes } from './routes/wallet';
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -15,6 +16,7 @@ const PORT: number = parseInt(process.env.PORT || '3000', 10);
 // 中间件
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 
 // 数据库服务实例
 let dbService: ReturnType<typeof getDatabaseService>;
@@ -55,13 +57,14 @@ app.get('/health', (req: Request, res: Response) => {
       memory: process.memoryUsage()
     }
   };
+  
   res.json(response);
 });
 
 // 设置路由
 function setupRoutes() {
   // 钱包路由
-  app.use('/api/wallets', createWalletRoutes(dbService));
+  app.use('/api', walletRoutes(dbService));
   
   // 404处理 - 必须在所有路由之后
   app.use((req: Request, res: Response) => {

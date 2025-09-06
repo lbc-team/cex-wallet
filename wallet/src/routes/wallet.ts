@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { DatabaseService } from '../db';
-import { CreateWalletRequest } from '../db';
+import { WalletBusinessService } from '../services/walletBusinessService';
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -9,165 +9,81 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
-export function createWalletRoutes(dbService: DatabaseService): Router {
+export function walletRoutes(dbService: DatabaseService): Router {
   const router = Router();
+  const walletBusinessService = new WalletBusinessService(dbService);
 
-  // 获取所有钱包
-  router.get('/', async (req: Request, res: Response) => {
-    try {
-      const wallets = await dbService.wallets.findAllSafe();
-      const response: ApiResponse<typeof wallets> = { data: wallets };
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '获取钱包列表失败' 
-      };
-      res.status(500).json(errorResponse);
+  // 获取用户的钱包地址
+  router.get('/user/:id/address', async (req: Request<{ id: string }, ApiResponse>, res: Response) => {
+    const userId = parseInt(req.params.id, 10);
+    const chain_type = req.query.chain_type as 'evm' | 'btc' | 'solana';
+    
+    // 参数验证
+    if (isNaN(userId)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
+      res.status(400).json(errorResponse);
+      return;
     }
-  });
 
-  // 创建新钱包
-  router.post('/', async (req: Request<{}, ApiResponse, CreateWalletRequest>, res: Response) => {
-    try {
-      const { address, device, path, chain_type } = req.body;
-      
-      if (!address || !chain_type) {
-        const errorResponse: ApiResponse = { error: '地址和链类型是必需的' };
-        res.status(400).json(errorResponse);
-        return;
-      }
+    if (!chain_type) {
+      const errorResponse: ApiResponse = { error: '链类型是必需的' };
+      res.status(400).json(errorResponse);
+      return;
+    }
 
-      // 检查地址是否已存在
-      const existingWallet = await dbService.wallets.findByAddress(address);
-      if (existingWallet) {
-        const errorResponse: ApiResponse = { error: '钱包地址已存在' };
-        res.status(409).json(errorResponse);
-        return;
-      }
+    if (!['evm', 'btc', 'solana'].includes(chain_type)) {
+      const errorResponse: ApiResponse = { error: '不支持的链类型，支持的类型: evm, btc, solana' };
+      res.status(400).json(errorResponse);
+      return;
+    }
 
-      const walletData: CreateWalletRequest = { address, chain_type };
-      if (device) walletData.device = device;
-      if (path) walletData.path = path;
-      
-      const wallet = await dbService.wallets.create(walletData);
-      
+    // 调用业务逻辑服务
+    const result = await walletBusinessService.getUserWallet(userId, chain_type);
+    
+    if (result.success) {
       const successResponse: ApiResponse = { 
-        message: '钱包创建成功',
-        data: wallet
+        message: '获取用户钱包成功',
+        data: result.data
       };
       res.json(successResponse);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '创建钱包失败' 
-      };
-      res.status(500).json(errorResponse);
-    }
-  });
-
-  // 获取钱包详情
-  router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
-    try {
-      const walletId = parseInt(req.params.id, 10);
+    } else {
+      const errorResponse: ApiResponse = { error: result.error || '未知错误' };
       
-      if (isNaN(walletId)) {
-        const errorResponse: ApiResponse = { error: '无效的钱包ID' };
-        res.status(400).json(errorResponse);
-        return;
+      // 根据错误类型设置不同的状态码
+      if (result.error?.includes('Signer 模块不可用')) {
+        res.status(503).json(errorResponse);
+      } else if (result.error?.includes('生成的钱包地址已被使用')) {
+        res.status(409).json(errorResponse);
+      } else {
+        res.status(500).json(errorResponse);
       }
-
-      const wallet = await dbService.wallets.findById(walletId);
-      if (!wallet) {
-        const errorResponse: ApiResponse = { error: '钱包不存在' };
-        res.status(404).json(errorResponse);
-        return;
-      }
-
-      const response: ApiResponse<typeof wallet> = { data: wallet };
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '获取钱包详情失败' 
-      };
-      res.status(500).json(errorResponse);
     }
   });
+
 
   // 获取钱包余额
-  router.get('/:id/balance', async (req: Request<{ id: string }>, res: Response) => {
-    try {
-      const walletId = parseInt(req.params.id, 10);
-      
-      if (isNaN(walletId)) {
-        const errorResponse: ApiResponse = { error: '无效的钱包ID' };
-        res.status(400).json(errorResponse);
-        return;
-      }
+  router.get('/wallet/:id/balance', async (req: Request<{ id: string }>, res: Response) => {
+    const walletId = parseInt(req.params.id, 10);
+    
+    if (isNaN(walletId)) {
+      const errorResponse: ApiResponse = { error: '无效的钱包ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
 
-      const balance = await dbService.wallets.getBalance(walletId);
-      const response: ApiResponse<{ balance: number }> = { data: { balance } };
+    const result = await walletBusinessService.getWalletBalance(walletId);
+    
+    if (result.success) {
+      const response: ApiResponse = { data: result.data };
       res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '获取钱包余额失败' 
-      };
+    } else {
+      const errorResponse: ApiResponse = { error: result.error || '未知错误' };
       res.status(500).json(errorResponse);
     }
   });
 
-  // 更新钱包余额
-  router.put('/:id/balance', async (req: Request<{ id: string }, ApiResponse, { balance: number }>, res: Response) => {
-    try {
-      const walletId = parseInt(req.params.id, 10);
-      const { balance } = req.body;
-      
-      if (isNaN(walletId)) {
-        const errorResponse: ApiResponse = { error: '无效的钱包ID' };
-        res.status(400).json(errorResponse);
-        return;
-      }
 
-      if (typeof balance !== 'number' || balance < 0) {
-        const errorResponse: ApiResponse = { error: '无效的余额值' };
-        res.status(400).json(errorResponse);
-        return;
-      }
 
-      await dbService.wallets.updateBalance(walletId, balance);
-      const response: ApiResponse = { message: '余额更新成功' };
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '更新钱包余额失败' 
-      };
-      res.status(500).json(errorResponse);
-    }
-  });
-
-  // 获取钱包统计信息
-  router.get('/:id/stats', async (req: Request<{ id: string }>, res: Response) => {
-    try {
-      const walletId = parseInt(req.params.id, 10);
-      
-      if (isNaN(walletId)) {
-        const errorResponse: ApiResponse = { error: '无效的钱包ID' };
-        res.status(400).json(errorResponse);
-        return;
-      }
-
-      const walletStats = await dbService.wallets.getStats();
-      const response: ApiResponse = { 
-        data: {
-          wallet: walletStats
-        }
-      };
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '获取统计信息失败' 
-      };
-      res.status(500).json(errorResponse);
-    }
-  });
 
   return router;
 }

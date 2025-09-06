@@ -25,11 +25,6 @@ export interface CreateWalletResponse {
   error?: string;
 }
 
-// 助记词生成选项
-export interface MnemonicOptions {
-  strength?: 128 | 160 | 192 | 224 | 256; // 助记词强度
-  language?: 'english' | 'chinese_simplified' | 'chinese_traditional' | 'japanese' | 'korean' | 'french' | 'italian' | 'spanish';
-}
 
 // 密钥派生路径
 export interface DerivationPath {
@@ -38,9 +33,3 @@ export interface DerivationPath {
   solana: string; // Solana路径
 }
 
-// 钱包服务配置
-export interface WalletServiceConfig {
-  defaultDerivationPaths: DerivationPath;
-  supportedChains: string[];
-  encryptionKey?: string; // 用于加密私钥的密钥
-}

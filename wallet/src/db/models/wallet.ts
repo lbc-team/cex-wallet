@@ -4,6 +4,7 @@ import { BalanceModel } from './balance';
 // 钱包接口定义
 export interface Wallet {
   id?: number;
+  user_id: number;
   address: string;
   device?: string;
   path?: string;
@@ -14,6 +15,7 @@ export interface Wallet {
 
 // 创建钱包请求接口
 export interface CreateWalletRequest {
+  user_id: number;
   address: string;
   device?: string;
   path?: string;
@@ -37,11 +39,11 @@ export class WalletModel {
 
   // 创建新钱包
   async create(walletData: CreateWalletRequest): Promise<Wallet> {
-    const { address, device, path, chain_type } = walletData;
+    const { user_id, address, device, path, chain_type } = walletData;
     
     const result = await this.db.run(
-      'INSERT INTO wallets (address, device, path, chain_type) VALUES (?, ?, ?, ?)',
-      [address, device, path, chain_type]
+      'INSERT INTO wallets (user_id, address, device, path, chain_type) VALUES (?, ?, ?, ?, ?)',
+      [user_id, address, device, path, chain_type]
     );
 
     const newWallet = await this.findById(result.lastID);
@@ -66,6 +68,15 @@ export class WalletModel {
     const wallet = await this.db.queryOne<Wallet>(
       'SELECT * FROM wallets WHERE address = ?',
       [address]
+    );
+    return wallet || null;
+  }
+
+  // 根据用户ID查找钱包
+  async findByUserId(userId: number): Promise<Wallet | null> {
+    const wallet = await this.db.queryOne<Wallet>(
+      'SELECT * FROM wallets WHERE user_id = ?',
+      [userId]
     );
     return wallet || null;
   }

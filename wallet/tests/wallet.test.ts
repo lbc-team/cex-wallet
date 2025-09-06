@@ -1,10 +1,10 @@
 import { 
   HttpClient, 
   TestResult, 
-  generateTestWallet, 
+  generateCreateWalletRequest, 
   colorLog, 
   delay,
-  TestWallet 
+  CreateWalletRequest 
 } from './test-utils';
 
 // 钱包测试类
@@ -23,14 +23,15 @@ export class WalletTest {
     
     try {
       await this.testServerHealth();
-      await this.testCreateWallet();
+      await this.testGetUserWallet();
       await this.testGetWallets();
       await this.testGetWalletById();
       await this.testGetWalletBalance();
       await this.testUpdateWalletBalance();
       await this.testGetWalletStats();
-      await this.testCreateDuplicateWallet();
-      await this.testInvalidWalletData();
+      await this.testGetSameUserWallet();
+      await this.testInvalidQueryParams();
+      await this.testGetSignerAddresses();
       
       this.result.printSummary();
     } catch (error) {
@@ -68,38 +69,39 @@ export class WalletTest {
     }
   }
 
-  // 测试创建钱包
-  private async testCreateWallet(): Promise<void> {
+  // 测试获取用户钱包（通过 signer 模块）
+  private async testGetUserWallet(): Promise<void> {
     const startTime = Date.now();
     try {
-      const testWallet = generateTestWallet('evm');
-      const response = await this.client.post('/api/wallets', testWallet);
+      const userId = 123; // 测试用户ID
+      const response = await this.client.get(`/api/user/${userId}/address?chain_type=evm`);
       const duration = Date.now() - startTime;
       
-      if (response.message === '钱包创建成功' && response.data) {
+      if (response.message === '获取用户钱包成功' && response.data) {
         this.result.addResult(
-          '创建钱包',
+          '获取用户钱包',
           'PASS',
-          `钱包创建成功 - ID: ${response.data.id}`,
+          `获取用户钱包成功 - ID: ${response.data.id}`,
           duration
         );
-        colorLog(`✅ 钱包创建成功 - 地址: ${testWallet.address}`, 'green');
+        colorLog(`✅ 获取用户钱包成功 - 地址: ${response.data.address}`, 'green');
         
         // 保存钱包ID供后续测试使用
         (this as any).createdWalletId = response.data.id;
-        (this as any).createdWallet = testWallet;
+        (this as any).createdWallet = response.data;
+        (this as any).testUserId = userId;
       } else {
-        throw new Error('钱包创建失败');
+        throw new Error('获取用户钱包失败');
       }
     } catch (error) {
       const duration = Date.now() - startTime;
       this.result.addResult(
-        '创建钱包',
+        '获取用户钱包',
         'FAIL',
-        `钱包创建失败: ${error}`,
+        `获取用户钱包失败: ${error}`,
         duration
       );
-      colorLog('❌ 钱包创建失败', 'red');
+      colorLog('❌ 获取用户钱包失败', 'red');
     }
   }
 
@@ -276,73 +278,96 @@ export class WalletTest {
     }
   }
 
-  // 测试创建重复钱包
-  private async testCreateDuplicateWallet(): Promise<void> {
+  // 测试获取同一用户的钱包（应该返回现有钱包）
+  private async testGetSameUserWallet(): Promise<void> {
     const startTime = Date.now();
     try {
-      const testWallet = (this as any).createdWallet;
-      if (!testWallet) {
-        throw new Error('没有可用的测试钱包数据');
-      }
-
-      const response = await this.client.post('/api/wallets', testWallet);
+      const userId = (this as any).testUserId || 123;
+      const response = await this.client.get(`/api/user/${userId}/address?chain_type=evm`);
       const duration = Date.now() - startTime;
       
-      if (response.error && response.error.includes('已存在')) {
+      if (response.message === '获取用户钱包成功' && response.data) {
         this.result.addResult(
-          '创建重复钱包',
+          '获取同一用户钱包',
           'PASS',
-          `正确拒绝重复钱包创建`,
+          `成功获取同一用户钱包 - 返回现有钱包`,
           duration
         );
-        colorLog('✅ 重复钱包创建被正确拒绝', 'green');
+        colorLog(`✅ 获取同一用户钱包成功 - 地址: ${response.data.address}`, 'green');
       } else {
-        throw new Error('应该拒绝重复钱包创建');
+        throw new Error('获取同一用户钱包失败');
       }
     } catch (error) {
       const duration = Date.now() - startTime;
       this.result.addResult(
-        '创建重复钱包',
+        '获取同一用户钱包',
         'FAIL',
-        `重复钱包测试失败: ${error}`,
+        `获取同一用户钱包失败: ${error}`,
         duration
       );
-      colorLog('❌ 重复钱包测试失败', 'red');
+      colorLog('❌ 获取同一用户钱包失败', 'red');
     }
   }
 
-  // 测试无效钱包数据
-  private async testInvalidWalletData(): Promise<void> {
+  // 测试无效查询参数
+  private async testInvalidQueryParams(): Promise<void> {
     const startTime = Date.now();
     try {
-      const invalidWallet = {
-        address: '', // 空地址
-        chain_type: 'evm'
-      };
-
-      const response = await this.client.post('/api/wallets', invalidWallet);
+      const userId = 123;
+      // 缺少必需的 chain_type 查询参数
+      const response = await this.client.get(`/api/user/${userId}/address`);
       const duration = Date.now() - startTime;
       
       if (response.error && response.error.includes('必需的')) {
         this.result.addResult(
-          '无效钱包数据验证',
+          '无效查询参数验证',
           'PASS',
-          `正确拒绝无效钱包数据`,
+          `正确拒绝无效查询参数`,
           duration
         );
-        colorLog('✅ 无效钱包数据被正确拒绝', 'green');
+        colorLog('✅ 无效查询参数被正确拒绝', 'green');
       } else {
-        throw new Error('应该拒绝无效钱包数据');
+        throw new Error('应该拒绝无效查询参数');
       }
     } catch (error) {
       const duration = Date.now() - startTime;
       this.result.addResult(
-        '无效钱包数据验证',
+        '无效查询参数验证',
         'FAIL',
-        `无效数据验证失败: ${error}`,
+        `无效参数验证失败: ${error}`,
         duration
       );
-      colorLog('❌ 无效数据验证失败', 'red');
+      colorLog('❌ 无效参数验证失败', 'red');
+    }
+  }
+
+  // 测试获取 signer 模块的地址信息
+  private async testGetSignerAddresses(): Promise<void> {
+    const startTime = Date.now();
+    try {
+      const response = await this.client.get('/api/wallets/signer/addresses');
+      const duration = Date.now() - startTime;
+      
+      if (response.data && response.data.addresses && Array.isArray(response.data.addresses)) {
+        this.result.addResult(
+          '获取 Signer 地址信息',
+          'PASS',
+          `获取到 ${response.data.addresses.length} 个地址`,
+          duration
+        );
+        colorLog(`✅ 获取 Signer 地址信息成功 - 共 ${response.data.addresses.length} 个地址`, 'green');
+      } else {
+        throw new Error('Signer 地址信息格式不正确');
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.result.addResult(
+        '获取 Signer 地址信息',
+        'FAIL',
+        `获取 Signer 地址信息失败: ${error}`,
+        duration
+      );
+      colorLog('❌ 获取 Signer 地址信息失败', 'red');
     }
   }
 }
@@ -353,7 +378,5 @@ export async function runWalletTests(): Promise<void> {
   await test.runAllTests();
 }
 
-// 如果直接运行此文件
-if (require.main === module) {
-  runWalletTests().catch(console.error);
-}
+// 导出测试运行函数供外部调用
+export { runWalletTests };

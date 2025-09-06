@@ -9,15 +9,18 @@
     "clean": "rm -rf dist",
     "prebuild": "npm run clean",
     "test": "ts-node tests/run-tests.ts",
-    "test:wallet": "ts-node tests/wallet.test.ts"
+    "test:wallet": "ts-node tests/wallet.test.ts",
+    "test:integration": "ts-node tests/test-integration.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.11.0",
     "express": "^5.1.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

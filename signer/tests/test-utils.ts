@@ -1,35 +1,17 @@
-// 测试工具函数
-
-export interface TestWallet {
-  address: string;
-  device?: string;
-  path?: string;
-  chain_type: 'evm' | 'btc' | 'solana';
-}
+// Signer 模块测试工具函数
 
 export interface ApiResponse<T = any> {
+  success: boolean;
   message?: string;
-  error?: string;
   data?: T;
-}
-
-// 创建钱包请求数据（通过 signer 模块）
-export interface CreateWalletRequest {
-  chain_type: 'evm' | 'btc' | 'solana';
-}
-
-// 生成创建钱包请求数据
-export function generateCreateWalletRequest(chainType: 'evm' | 'btc' | 'solana' = 'evm'): CreateWalletRequest {
-  return {
-    chain_type: chainType
-  };
+  error?: string;
 }
 
 // HTTP请求工具
 export class HttpClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'http://localhost:3000') {
+  constructor(baseUrl: string = 'http://localhost:3001') {
     this.baseUrl = baseUrl;
   }
 
