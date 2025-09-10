@@ -1,4 +1,6 @@
-import { mnemonicToAccount } from 'viem/accounts';
+import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
+import { mnemonicToSeedSync } from '@scure/bip39';
+import { HDKey } from '@scure/bip32';
 import { Wallet, CreateWalletRequest, CreateWalletResponse, DerivationPath } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
 
@@ -10,17 +12,37 @@ export class AddressService {
   };
 
   private currentIndex: number = 0;
+  private password: string; // 从命令行传入的密码（必需）
   
   // 数据库连接
   private db: DatabaseConnection;
 
-  constructor() {
+  constructor(password: string) {
+    if (!password) {
+      throw new Error('密码是必需的参数');
+    }
+    this.password = password;
+    this.currentIndex = 0; // 初始化默认值
     // 初始化数据库连接
     this.db = new DatabaseConnection();
-    // 延迟加载配置，确保数据库表已创建
-    setTimeout(() => {
-      this.loadConfig();
-    }, 100);
+  }
+
+  /**
+   * 初始化服务（等待数据库初始化并加载配置）
+   */
+  async initialize(): Promise<void> {
+    try {
+      // 等待数据库初始化完成
+      await this.db.waitForInitialization();
+      
+      // 加载配置（包括 currentIndex）
+      await this.loadConfig();
+      
+      console.log('AddressService 初始化完成');
+    } catch (error) {
+      console.error('AddressService 初始化失败:', error);
+      throw error;
+    }
   }
 
   /**
@@ -34,6 +56,114 @@ export class AddressService {
       console.log(`配置加载完成 - 当前索引: ${this.currentIndex}`);
     } catch (error) {
       console.warn('加载配置失败，使用默认配置:', error);
+    }
+  }
+
+  /**
+   * 使用密码创建账户（支持 BIP39 passphrase）
+   */
+  private createAccountWithPassword(mnemonic: string, index: string): any {
+    const fullPath = `m/44'/60'/0'/0/${index}`;
+    
+    // 使用密码生成种子
+    const seed = mnemonicToSeedSync(mnemonic, this.password);
+    
+    // 从种子创建 HD 密钥
+    const hdKey = HDKey.fromMasterSeed(seed);
+    
+    // 派生到指定路径
+    const derivedKey = hdKey.derive(fullPath);
+    
+    if (!derivedKey.privateKey) {
+      throw new Error('无法派生私钥');
+    }
+    
+    // 从私钥创建账户（转换为十六进制字符串）
+    const privateKeyHex = `0x${Buffer.from(derivedKey.privateKey).toString('hex')}`;
+    const account = privateKeyToAccount(privateKeyHex as `0x${string}`);
+    
+    // 返回账户信息
+    return {
+      address: account.address,
+      privateKey: derivedKey.privateKey,
+      path: fullPath
+    };
+  }
+
+  /**
+   * 等待数据库初始化完成
+   */
+  private async waitForDatabaseInitialization(): Promise<void> {
+    console.log('等待数据库初始化...');
+    await this.db.waitForInitialization();
+    console.log('数据库初始化完成');
+  }
+
+  /**
+   * 验证密码正确性
+   */
+  async validatePassword(): Promise<boolean> {
+    try {
+      // 等待数据库初始化完成
+      await this.waitForDatabaseInitialization();
+      // 获取第一个生成的地址（用于密码验证）
+      const firstAddressData = await this.db.getFirstGeneratedAddress();
+      console.log('获取第一个生成的地址完成:', firstAddressData);
+      
+      if (!firstAddressData) {
+        // 第一次启动，创建第一个地址作为验证基准
+        console.log('首次启动，正在创建验证地址...');
+        await this.createValidationAddress();
+        return true;
+      }
+
+      // 使用当前密码和相同的路径生成地址
+      const mnemonic = this.getMnemonicFromEnv();
+      const validationPath = firstAddressData.path; // 使用相同的路径
+      
+      // 从路径中提取索引（最后一部分）
+      const pathParts = validationPath.split('/');
+      const index = pathParts[pathParts.length - 1];
+      
+      const validationAccount = this.createAccountWithPassword(mnemonic, index);
+      
+      // 比较生成的地址与存储的地址
+      if (validationAccount.address === firstAddressData.address) {
+        console.log('密码验证成功');
+        return true;
+      } else {
+        console.error('密码验证失败');
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('密码验证过程中发生错误:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 创建验证地址
+   */
+  private async createValidationAddress(): Promise<void> {
+    try {
+      const mnemonic = this.getMnemonicFromEnv();
+      const validationIndex = "0"; // 验证地址使用索引 0
+      
+      const validationAccount = this.createAccountWithPassword(mnemonic, validationIndex);
+      
+      // 构建完整路径用于存储
+      const validationPath = `m/44'/60'/0'/0/${validationIndex}`;
+      
+      // 保存验证地址到数据库，使用 currentIndex = 0
+      await this.db.addGeneratedAddress(validationAccount.address, validationPath, 0);
+      
+      console.log(`验证地址已创建: ${validationAccount.address}`);
+      console.log('注意: 请妥善保管您的密码');
+      
+    } catch (error) {
+      console.error('创建验证地址失败:', error);
+      throw error;
     }
   }
 
@@ -88,12 +218,22 @@ export class AddressService {
 
       // 根据链类型创建账户
       let account;
-      let privateKey: string;
+      // let privateKey: string;
 
       switch (chainType) {
         case 'evm':
-          account = mnemonicToAccount(mnemonic, { path: derivationPath as `m/44'/60'/${string}` });
-          privateKey = account.source;
+          // 使用密码进行助记词派生
+          // 从路径中提取索引（最后一部分）
+          const pathParts = derivationPath.split('/');
+          const index = pathParts[pathParts.length - 1];
+          
+          const accountData = this.createAccountWithPassword(mnemonic, index);
+          account = {
+            address: accountData.address,
+            source: accountData.privateKey
+          };
+          console.log('accountData', { address: accountData.address, path: accountData.path });
+          // privateKey = account.source;
           break;
         case 'btc':
           // 比特币钱包创建（这里简化处理，实际项目中需要专门的比特币库：bitcoinjs-lib bip39 tiny-secp256k1）
@@ -116,7 +256,7 @@ export class AddressService {
 
       const wallet: Wallet = {
         address: account.address,
-        privateKey: privateKey,
+        // privateKey: privateKey,
         device: device,
         path: derivationPath,
         chainType: chainType,
@@ -124,8 +264,12 @@ export class AddressService {
         updatedAt: new Date().toISOString()
       };
 
-      // 保存生成的地址到数据库
-      await this.saveGeneratedAddress(account.address, derivationPath, this.currentIndex - 1);
+      // 从路径中提取索引
+      const pathParts = derivationPath.split('/');
+      const index = parseInt(pathParts[pathParts.length - 1]);
+      
+      // 保存地址并更新索引
+      await this.saveAddressAndUpdateIndex(account.address, derivationPath, index);
 
       return {
         success: true,
@@ -179,17 +323,37 @@ export class AddressService {
     // 对于 EVM，修改路径的最后一位
     if (chainType === 'evm') {
       const pathParts = basePath.split('/');
-      pathParts[pathParts.length - 1] = this.currentIndex.toString();
-      this.currentIndex++;
       
-      // 保存当前索引到数据库
-      await this.saveCurrentIndex();
+      // 使用当前的 currentIndex 作为下一个索引
+      const nextIndex = this.currentIndex;
+      pathParts[pathParts.length - 1] = nextIndex.toString();
       
       return pathParts.join('/');
     }
     
     // 对于其他链类型，暂时返回基础路径
     return basePath;
+  }
+
+  /**
+   * 保存地址并更新索引
+   */
+  private async saveAddressAndUpdateIndex(address: string, path: string, index: number): Promise<void> {
+    try {
+      // 保存地址到数据库
+      await this.db.addGeneratedAddress(address, path, index);
+      
+      // 更新 currentIndex 为下一个值
+      this.currentIndex = index + 1;
+      
+      // 保存更新后的索引到数据库
+      await this.saveCurrentIndex();
+      
+      console.log(`地址已保存: ${address}, 索引: ${index}, 下一个索引: ${this.currentIndex}`);
+    } catch (error) {
+      console.error('保存地址和更新索引失败:', error);
+      throw error;
+    }
   }
 
 

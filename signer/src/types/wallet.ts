@@ -2,7 +2,7 @@
 export interface Wallet {
   id?: number;
   address: string;
-  privateKey: string;
+  // privateKey: string;  不存储私钥
   device: string;
   path: string;
   chainType: 'evm' | 'btc' | 'solana';

@@ -24,7 +24,6 @@ export class WalletBusinessService {
       // 首先检查用户是否已有钱包
       const existingWallet = await this.dbService.wallets.findByUserId(userId);
       if (existingWallet) {
-        // 返回给前端的数据，移除 device 字段
         const responseData = {
           id: existingWallet.id,
           user_id: existingWallet.user_id,
@@ -139,25 +138,4 @@ export class WalletBusinessService {
     }
   }
 
-  /**
-   * 获取 Signer 模块的地址信息
-   */
-  async getSignerAddresses(): Promise<{
-    success: boolean;
-    data?: any;
-    error?: string;
-  }> {
-    try {
-      const addressInfo = await this.signerService.getGeneratedAddresses();
-      return {
-        success: true,
-        data: addressInfo
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '获取地址信息失败'
-      };
-    }
-  }
 }

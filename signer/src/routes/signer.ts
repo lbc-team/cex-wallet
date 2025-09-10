@@ -14,6 +14,7 @@ export function createSignerRoutes(addressService: AddressService): Router {
 
   // 创建新钱包
   router.post('/create', async (req: Request, res: Response) => {
+    console.log('收到创建钱包请求:', req.body);
     try {
       const { chainType } = req.body;
 
@@ -61,6 +62,7 @@ export function createSignerRoutes(addressService: AddressService): Router {
       return res.status(500).json(response);
     }
   });
+
 
   return router;
 }

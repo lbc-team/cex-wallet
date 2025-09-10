@@ -86,38 +86,6 @@ export class SignerService {
     }
   }
 
-  /**
-   * 获取 signer 模块已生成的地址列表
-   */
-  async getGeneratedAddresses(): Promise<AddressListResponse> {
-    try {
-      const response: AxiosResponse<SignerApiResponse<AddressListResponse>> = await axios.get(
-        `${this.signerBaseUrl}/api/signer/addresses`,
-        {
-          timeout: 5000 // 5秒超时
-        }
-      );
-
-      if (!response.data.success) {
-        throw new Error(response.data.error || '获取地址列表失败');
-      }
-
-      if (!response.data.data) {
-        throw new Error('Signer 模块返回的数据为空');
-      }
-
-      return response.data.data;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          throw new Error(`Signer 模块错误: ${error.response.data?.error || error.message}`);
-        } else if (error.request) {
-          throw new Error('无法连接到 Signer 模块');
-        }
-      }
-      throw new Error(`获取地址列表失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    }
-  }
 
   /**
    * 检查 signer 模块是否可用
