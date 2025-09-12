@@ -8,7 +8,7 @@ export class DatabaseConnection {
 
   constructor() {
     // 数据库文件路径
-    this.dbPath = path.join(process.cwd(), 'signer-config.db');
+    this.dbPath = path.join(process.cwd(), 'signer.db');
     this.db = new sqlite3.Database(this.dbPath);
     // 立即开始初始化表并保存Promise
     this.initializationPromise = this.initializeTables();
@@ -22,24 +22,6 @@ export class DatabaseConnection {
     
     // 串行执行数据库操作，确保顺序
     try {
-      // 创建 currentIndex 表
-      await new Promise<void>((resolve, reject) => {
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS currentIndex (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            value INTEGER NOT NULL DEFAULT 0,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-          )
-        `, (err) => {
-          if (err) {
-            console.error('创建 currentIndex 表失败:', err);
-            reject(err);
-          } else {
-            console.log('创建 currentIndex 表成功');
-            resolve();
-          }
-        });
-      });
 
       // 创建 generatedAddresses 表
       await new Promise<void>((resolve, reject) => {
@@ -63,20 +45,6 @@ export class DatabaseConnection {
         });
       });
 
-      // 确保 currentIndex 表有一条记录
-      await new Promise<void>((resolve, reject) => {
-        this.db.run(`
-          INSERT OR IGNORE INTO currentIndex (id, value) VALUES (1, 0)
-        `, (err) => {
-          if (err) {
-            console.error('插入初始数据失败:', err);
-            reject(err);
-          } else {
-            console.log('插入初始数据成功');
-            resolve();
-          }
-        });
-      });
       
       console.log('数据库表初始化完成');
     } catch (error) {
@@ -96,36 +64,19 @@ export class DatabaseConnection {
   }
 
   /**
-   * 获取当前索引
+   * 获取指定链类型的最大索引值
    */
-  getCurrentIndex(): Promise<number> {
+  getMaxIndexForChain(chainType: string): Promise<number> {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT value FROM currentIndex WHERE id = 1',
+        'SELECT MAX(index_value) as maxIndex FROM generatedAddresses WHERE chain_type = ?',
+        [chainType],
         (err, row: any) => {
           if (err) {
             reject(err);
           } else {
-            resolve(row ? row.value : 0);
-          }
-        }
-      );
-    });
-  }
-
-  /**
-   * 更新当前索引
-   */
-  updateCurrentIndex(index: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'UPDATE currentIndex SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
-        [index],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
+            // 如果没有记录，返回 -1，这样 +1 就是 0
+            resolve(row?.maxIndex ?? -1);
           }
         }
       );

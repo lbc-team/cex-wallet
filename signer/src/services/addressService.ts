@@ -11,7 +11,6 @@ export class AddressService {
     solana: "m/44'/501'/0'/0'"
   };
 
-  private currentIndex: number = 0;
   private password: string; // 从命令行传入的密码（必需）
   
   // 数据库连接
@@ -22,40 +21,22 @@ export class AddressService {
       throw new Error('密码是必需的参数');
     }
     this.password = password;
-    this.currentIndex = 0; // 初始化默认值
     // 初始化数据库连接
     this.db = new DatabaseConnection();
   }
 
   /**
-   * 初始化服务（等待数据库初始化并加载配置）
+   * 初始化服务（等待数据库初始化）
    */
   async initialize(): Promise<void> {
     try {
       // 等待数据库初始化完成
       await this.db.waitForInitialization();
       
-      // 加载配置（包括 currentIndex）
-      await this.loadConfig();
-      
       console.log('AddressService 初始化完成');
     } catch (error) {
       console.error('AddressService 初始化失败:', error);
       throw error;
-    }
-  }
-
-  /**
-   * 加载配置
-   */
-  private async loadConfig(): Promise<void> {
-    try {
-      // 从数据库加载当前索引
-      this.currentIndex = await this.db.getCurrentIndex();
-      
-      console.log(`配置加载完成 - 当前索引: ${this.currentIndex}`);
-    } catch (error) {
-      console.warn('加载配置失败，使用默认配置:', error);
     }
   }
 
@@ -106,34 +87,43 @@ export class AddressService {
     try {
       // 等待数据库初始化完成
       await this.waitForDatabaseInitialization();
-      // 获取第一个生成的地址（用于密码验证）
-      const firstAddressData = await this.db.getFirstGeneratedAddress();
-      console.log('获取第一个生成的地址完成:', firstAddressData);
       
-      if (!firstAddressData) {
-        // 第一次启动，创建第一个地址作为验证基准
+      // 获取 EVM 链的最大索引
+      const maxIndex = await this.db.getMaxIndexForChain('evm');
+      
+      if (maxIndex === -1) {
+        // 没有记录，创建验证地址
         console.log('首次启动，正在创建验证地址...');
         await this.createValidationAddress();
         return true;
-      }
-
-      // 使用当前密码和相同的路径生成地址
-      const mnemonic = this.getMnemonicFromEnv();
-      const validationPath = firstAddressData.path; // 使用相同的路径
-      
-      // 从路径中提取索引（最后一部分）
-      const pathParts = validationPath.split('/');
-      const index = pathParts[pathParts.length - 1];
-      
-      const validationAccount = this.createAccountWithPassword(mnemonic, index);
-      
-      // 比较生成的地址与存储的地址
-      if (validationAccount.address === firstAddressData.address) {
-        console.log('密码验证成功');
-        return true;
       } else {
-        console.error('密码验证失败');
-        return false;
+        // 有记录，验证第一个地址
+        const firstAddressData = await this.db.getFirstGeneratedAddress();
+        console.log('获取第一个生成的地址完成:', firstAddressData);
+        
+        if (!firstAddressData) {
+          console.error('数据库中有记录但无法获取第一个地址');
+          return false;
+        }
+
+        // 使用当前密码和相同的路径生成地址
+        const mnemonic = this.getMnemonicFromEnv();
+        const validationPath = firstAddressData.path;
+        
+        // 从路径中提取索引（最后一部分）
+        const pathParts = validationPath.split('/');
+        const index = pathParts[pathParts.length - 1];
+        
+        const validationAccount = this.createAccountWithPassword(mnemonic, index);
+        
+        // 比较生成的地址与存储的地址
+        if (validationAccount.address === firstAddressData.address) {
+          console.log('密码验证成功');
+          return true;
+        } else {
+          console.error('密码验证失败');
+          return false;
+        }
       }
       
     } catch (error) {
@@ -167,27 +157,6 @@ export class AddressService {
     }
   }
 
-  /**
-   * 保存当前索引到数据库
-   */
-  private async saveCurrentIndex(): Promise<void> {
-    try {
-      await this.db.updateCurrentIndex(this.currentIndex);
-    } catch (error) {
-      console.error('保存当前索引失败:', error);
-    }
-  }
-
-  /**
-   * 保存生成的地址到数据库
-   */
-  private async saveGeneratedAddress(address: string, path: string, index: number, chainType: string): Promise<void> {
-    try {
-      await this.db.addGeneratedAddress(address, path, index, chainType);
-    } catch (error) {
-      console.error('保存生成地址失败:', error);
-    }
-  }
 
   // 从环境变量获取助记词
   private getMnemonicFromEnv(): string {
@@ -268,8 +237,8 @@ export class AddressService {
       const pathParts = derivationPath.split('/');
       const index = parseInt(pathParts[pathParts.length - 1]);
       
-      // 保存地址并更新索引
-      await this.saveAddressAndUpdateIndex(account.address, derivationPath, index, chainType);
+      // 保存地址
+      await this.saveAddress(account.address, derivationPath, index, chainType);
 
       return {
         success: true,
@@ -324,10 +293,11 @@ export class AddressService {
     if (chainType === 'evm') {
       const pathParts = basePath.split('/');
       
-      // 使用当前的 currentIndex 作为下一个索引
-      const nextIndex = this.currentIndex;
-      pathParts[pathParts.length - 1] = nextIndex.toString();
+      // 获取当前链类型的最大索引
+      const maxIndex = await this.db.getMaxIndexForChain(chainType);
+      const nextIndex = maxIndex + 1;
       
+      pathParts[pathParts.length - 1] = nextIndex.toString();
       return pathParts.join('/');
     }
     
@@ -336,22 +306,16 @@ export class AddressService {
   }
 
   /**
-   * 保存地址并更新索引
+   * 保存地址
    */
-  private async saveAddressAndUpdateIndex(address: string, path: string, index: number, chainType: string): Promise<void> {
+  private async saveAddress(address: string, path: string, index: number, chainType: string): Promise<void> {
     try {
       // 保存地址到数据库
       await this.db.addGeneratedAddress(address, path, index, chainType);
       
-      // 更新 currentIndex 为下一个值
-      this.currentIndex = index + 1;
-      
-      // 保存更新后的索引到数据库
-      await this.saveCurrentIndex();
-      
-      console.log(`地址已保存: ${address}, 索引: ${index}, 链类型: ${chainType}, 下一个索引: ${this.currentIndex}`);
+      console.log(`地址已保存: ${address}, 索引: ${index}, 链类型: ${chainType}`);
     } catch (error) {
-      console.error('保存地址和更新索引失败:', error);
+      console.error('保存地址失败:', error);
       throw error;
     }
   }

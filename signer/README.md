@@ -182,19 +182,9 @@ POST /api/signer/create
 
 ## 数据库配置
 
-### signer-config.db
+### signer.db
 
-系统会自动创建 SQLite 数据库文件 `signer-config.db`，包含两个表：
-
-#### currentIndex 表
-存储当前使用的派生路径索引：
-```sql
-CREATE TABLE currentIndex (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  value INTEGER NOT NULL DEFAULT 0,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+系统会自动创建 SQLite 数据库文件 `signer.db`，包含一个表：
 
 #### generatedAddresses 表
 存储已生成的地址和对应的路径信息：
@@ -240,12 +230,12 @@ CREATE TABLE generatedAddresses (
 
 ## 查询数据库
 
-# 直接查询 currentIndex
-```
-sqlite3 signer-config.db "SELECT * FROM currentIndex;"
-
 # 查询已生成地址数量
-sqlite3 signer-config.db "SELECT COUNT(*) FROM generatedAddresses;"
+```
+sqlite3 signer.db "SELECT COUNT(*) FROM generatedAddresses;"
+
+# 查询 EVM 链的最大索引
+sqlite3 signer.db "SELECT MAX(index_value) FROM generatedAddresses WHERE chain_type = 'evm';"
 ```
 
 ## 测试

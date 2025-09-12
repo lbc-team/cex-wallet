@@ -14,13 +14,11 @@
 
 1. 配置环境变量（参考 `QUICK_START.md`）
 2. 安装依赖：`npm install`
-3. 启动服务：`./start-services.sh`
 
 ## 文档
 
 - [快速开始指南](QUICK_START.md)
 - [API 使用说明](API_USAGE.md)
-- [集成说明](INTEGRATION_README.md)
 - [Signer 模块文档](signer/README.md)
 - [Wallet 模块文档](wallet/README.md)
 
