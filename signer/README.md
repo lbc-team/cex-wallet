@@ -9,6 +9,7 @@
 - 🛡️ 安全的密钥管理
 - 💾 配置持久化（SQLite 数据库存储当前索引和地址记录）
 - 🔄 自动递增派生路径生成唯一地址
+- 🏷️ 链类型标记，支持多链地址管理
 
 ## 使用场景
 
@@ -16,6 +17,7 @@
 - **多链支持**: 支持多种区块链的钱包创建
 - **地址隔离**: 每个用户使用不同的派生路径，确保地址唯一性
 - **安全存储**: 私钥和助记词的安全管理
+- **链类型管理**: 通过 `chain_type` 字段区分不同链的地址
 
 ## 技术栈
 
@@ -202,6 +204,7 @@ CREATE TABLE generatedAddresses (
   address TEXT UNIQUE NOT NULL,
   path TEXT NOT NULL,
   index_value INTEGER NOT NULL,
+  chain_type TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -211,6 +214,7 @@ CREATE TABLE generatedAddresses (
 - 支持事务操作，确保数据一致性
 - 地址唯一性约束，防止重复生成
 - 自动时间戳记录
+- 链类型标记，支持多链地址管理
 
 **注意事项**：
 - 数据库文件会在每次生成新地址时自动更新

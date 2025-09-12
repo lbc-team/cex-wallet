@@ -156,7 +156,7 @@ export class AddressService {
       const validationPath = `m/44'/60'/0'/0/${validationIndex}`;
       
       // 保存验证地址到数据库，使用 currentIndex = 0
-      await this.db.addGeneratedAddress(validationAccount.address, validationPath, 0);
+      await this.db.addGeneratedAddress(validationAccount.address, validationPath, 0, 'evm');
       
       console.log(`验证地址已创建: ${validationAccount.address}`);
       console.log('注意: 请妥善保管您的密码');
@@ -181,9 +181,9 @@ export class AddressService {
   /**
    * 保存生成的地址到数据库
    */
-  private async saveGeneratedAddress(address: string, path: string, index: number): Promise<void> {
+  private async saveGeneratedAddress(address: string, path: string, index: number, chainType: string): Promise<void> {
     try {
-      await this.db.addGeneratedAddress(address, path, index);
+      await this.db.addGeneratedAddress(address, path, index, chainType);
     } catch (error) {
       console.error('保存生成地址失败:', error);
     }
@@ -269,7 +269,7 @@ export class AddressService {
       const index = parseInt(pathParts[pathParts.length - 1]);
       
       // 保存地址并更新索引
-      await this.saveAddressAndUpdateIndex(account.address, derivationPath, index);
+      await this.saveAddressAndUpdateIndex(account.address, derivationPath, index, chainType);
 
       return {
         success: true,
@@ -338,10 +338,10 @@ export class AddressService {
   /**
    * 保存地址并更新索引
    */
-  private async saveAddressAndUpdateIndex(address: string, path: string, index: number): Promise<void> {
+  private async saveAddressAndUpdateIndex(address: string, path: string, index: number, chainType: string): Promise<void> {
     try {
       // 保存地址到数据库
-      await this.db.addGeneratedAddress(address, path, index);
+      await this.db.addGeneratedAddress(address, path, index, chainType);
       
       // 更新 currentIndex 为下一个值
       this.currentIndex = index + 1;
@@ -349,7 +349,7 @@ export class AddressService {
       // 保存更新后的索引到数据库
       await this.saveCurrentIndex();
       
-      console.log(`地址已保存: ${address}, 索引: ${index}, 下一个索引: ${this.currentIndex}`);
+      console.log(`地址已保存: ${address}, 索引: ${index}, 链类型: ${chainType}, 下一个索引: ${this.currentIndex}`);
     } catch (error) {
       console.error('保存地址和更新索引失败:', error);
       throw error;

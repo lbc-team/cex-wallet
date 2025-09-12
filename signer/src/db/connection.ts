@@ -49,6 +49,7 @@ export class DatabaseConnection {
             address TEXT UNIQUE NOT NULL,
             path TEXT NOT NULL,
             index_value INTEGER NOT NULL,
+            chain_type TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `, (err) => {
@@ -135,11 +136,11 @@ export class DatabaseConnection {
   /**
    * 添加生成的地址
    */
-  addGeneratedAddress(address: string, path: string, index: number): Promise<void> {
+  addGeneratedAddress(address: string, path: string, index: number, chainType: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(
-        'INSERT OR REPLACE INTO generatedAddresses (address, path, index_value) VALUES (?, ?, ?)',
-        [address, path, index],
+        'INSERT OR REPLACE INTO generatedAddresses (address, path, index_value, chain_type) VALUES (?, ?, ?, ?)',
+        [address, path, index, chainType],
         function(err) {
           if (err) {
             reject(err);
