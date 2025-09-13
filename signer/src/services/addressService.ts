@@ -1,7 +1,8 @@
-import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
+
 import { mnemonicToSeedSync } from '@scure/bip39';
 import { HDKey } from '@scure/bip32';
-import { Wallet, CreateWalletRequest, CreateWalletResponse, DerivationPath } from '../types/wallet';
+import { privateKeyToAccount } from 'viem/accounts';
+import { Wallet, CreateWalletResponse, DerivationPath } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
 
 export class AddressService {
@@ -43,7 +44,7 @@ export class AddressService {
   /**
    * 使用密码创建账户（支持 BIP39 passphrase）
    */
-  private createAccountWithPassword(mnemonic: string, index: string): any {
+  private createEvmAccount(mnemonic: string, index: string): any {
     const fullPath = `m/44'/60'/0'/0/${index}`;
     
     // 使用密码生成种子
@@ -66,7 +67,7 @@ export class AddressService {
     // 返回账户信息
     return {
       address: account.address,
-      privateKey: derivedKey.privateKey,
+      // privateKey: derivedKey.privateKey,
       path: fullPath
     };
   }
@@ -112,7 +113,7 @@ export class AddressService {
         const pathParts = validationPath.split('/');
         const index = pathParts[pathParts.length - 1];
         
-        const validationAccount = this.createAccountWithPassword(mnemonic, index);
+        const validationAccount = this.createEvmAccount(mnemonic, index);
         
         // 比较生成的地址与存储的地址
         if (validationAccount.address === firstAddressData.address) {
@@ -138,7 +139,7 @@ export class AddressService {
       const mnemonic = this.getMnemonicFromEnv();
       const validationIndex = "0"; // 验证地址使用索引 0
       
-      const validationAccount = this.createAccountWithPassword(mnemonic, validationIndex);
+      const validationAccount = this.createEvmAccount(mnemonic, validationIndex);
       
       // 构建完整路径用于存储
       const validationPath = `m/44'/60'/0'/0/${validationIndex}`;
@@ -147,7 +148,6 @@ export class AddressService {
       await this.db.addGeneratedAddress(validationAccount.address, validationPath, 0, 'evm');
       
       console.log(`验证地址已创建: ${validationAccount.address}`);
-      console.log('注意: 请妥善保管您的密码');
       
     } catch (error) {
       console.error('创建验证地址失败:', error);
@@ -167,11 +167,12 @@ export class AddressService {
 
 
   /**
-   * 从助记词创建钱包
+   * 创建新钱包 
    */
-  async createWalletFromMnemonic(request: CreateWalletRequest): Promise<CreateWalletResponse> {
+  async createNewWallet(chainType: 'evm' | 'btc' | 'solana'): Promise<CreateWalletResponse> {
     try {
-      const { device, path, chainType, mnemonic } = request;
+      // 从环境变量获取助记词
+      const mnemonic = this.getMnemonicFromEnv();
       
       if (!mnemonic) {
         return {
@@ -180,36 +181,34 @@ export class AddressService {
         };
       }
 
-      // 使用提供的路径或默认路径
-      const derivationPath = path || this.defaultDerivationPaths[chainType];
+      // 从环境变量获取设备名
+      const device = process.env.SIGNER_DEVICE || 'signer_device1';
+      
+      // 根据链类型生成新的派生路径
+      const derivationPath = await this.generateNextDerivationPath(chainType);
 
       // 根据链类型创建账户
       let account;
-      // let privateKey: string;
 
       switch (chainType) {
         case 'evm':
-          // 使用密码进行助记词派生
-          // 从路径中提取索引（最后一部分）
           const pathParts = derivationPath.split('/');
           const index = pathParts[pathParts.length - 1];
           
-          const accountData = this.createAccountWithPassword(mnemonic, index);
+          const accountData = this.createEvmAccount(mnemonic, index);
           account = {
             address: accountData.address,
-            source: accountData.privateKey
           };
           console.log('accountData', { address: accountData.address, path: accountData.path });
-          // privateKey = account.source;
           break;
         case 'btc':
-          // 比特币钱包创建（这里简化处理，实际项目中需要专门的比特币库：bitcoinjs-lib bip39 tiny-secp256k1）
+          // 比特币钱包创建（ 未来支持：bitcoinjs-lib bip39 tiny-secp256k1）
           return {
             success: false,
             error: '比特币钱包创建暂未实现'
           };
         case 'solana':
-          // Solana钱包创建（这里简化处理，实际项目中需要专门的Solana库）
+          // Solana钱包创建 
           return {
             success: false,
             error: 'Solana钱包创建暂未实现'
@@ -223,12 +222,10 @@ export class AddressService {
 
       const wallet: Wallet = {
         address: account.address,
-        // privateKey: privateKey,
         device: device,
         path: derivationPath,
         chainType: chainType,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
       // 从路径中提取索引
@@ -242,36 +239,6 @@ export class AddressService {
         success: true,
         data: wallet
       };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: `钱包创建失败: ${error instanceof Error ? error.message : '未知错误'}`
-      };
-    }
-  }
-
-  /**
-   * 创建新钱包（使用环境变量中的助记词）
-   */
-  async createNewWallet(chainType: 'evm' | 'btc' | 'solana'): Promise<CreateWalletResponse> {
-    try {
-      // 从环境变量获取助记词
-      const mnemonic = this.getMnemonicFromEnv();
-      
-      // 从环境变量获取设备名
-      const device = process.env.SIGNER_DEVICE || 'signer_device1';
-      
-      // 根据链类型生成新的派生路径
-      const derivationPath = await this.generateNextDerivationPath(chainType);
-      
-      // 使用助记词和新的派生路径创建钱包
-      return await this.createWalletFromMnemonic({
-        device,
-        chainType,
-        mnemonic: mnemonic,
-        path: derivationPath
-      });
 
     } catch (error) {
       return {

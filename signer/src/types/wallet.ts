@@ -10,14 +10,6 @@ export interface Wallet {
   updatedAt?: string;
 }
 
-// 创建钱包请求
-export interface CreateWalletRequest {
-  device: string;
-  path?: string;
-  chainType: 'evm' | 'btc' | 'solana';
-  mnemonic?: string; // 可选的助记词，如果不提供则生成新的
-}
-
 // 钱包创建响应
 export interface CreateWalletResponse {
   success: boolean;

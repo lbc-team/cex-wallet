@@ -103,19 +103,6 @@ export async function promptForPassword(
 }
 
 /**
- * 确认密码输入（用于设置新密码时）
- * @param prompt 提示信息
- * @param minLength 最小长度要求
- * @returns Promise<string> 确认后的密码
- */
-export async function promptForPasswordConfirmation(
-  prompt: string = '请确认密码:',
-  minLength: number = 8
-): Promise<string> {
-  return promptForPassword(prompt, minLength);
-}
-
-/**
  * 验证密码强度
  * @param password 密码
  * @param minLength 最小长度
