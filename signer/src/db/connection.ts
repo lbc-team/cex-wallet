@@ -57,7 +57,6 @@ export class DatabaseConnection {
    * 等待数据库初始化完成
    */
   async waitForInitialization(): Promise<void> {
-    console.log('等待数据库初始化完成...');
     // 等待真正的初始化完成
     await this.initializationPromise;
     console.log('数据库初始化完成');

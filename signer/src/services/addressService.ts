@@ -75,9 +75,7 @@ export class AddressService {
    * 等待数据库初始化完成
    */
   private async waitForDatabaseInitialization(): Promise<void> {
-    console.log('等待数据库初始化...');
     await this.db.waitForInitialization();
-    console.log('数据库初始化完成');
   }
 
   /**

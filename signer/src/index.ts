@@ -1,102 +1,12 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
-import * as readline from 'readline';
 import { AddressService } from './services/addressService';
 import { createSignerRoutes } from './routes/signer';
+import { promptForPassword } from './utils/passwordInput';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-// 交互式密码输入（隐藏输入）
-async function promptForPassword(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    console.log('请输入助记词密码（至少8个字符）:');
-    
-    // 检查是否支持原始模式（交互式终端）
-    const isTTY = process.stdin.isTTY;
-    
-    if (isTTY && process.stdin.setRawMode) {
-      // 交互式终端，使用隐藏输入
-      process.stdout.write('密码: ');
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      process.stdin.setEncoding('utf8');
-      
-      let password = '';
-      
-      const onData = (char: string) => {
-        switch (char) {
-          case '\n':
-          case '\r':
-          case '\u0004': // Ctrl+D
-            process.stdin.setRawMode(false);
-            process.stdin.pause();
-            process.stdin.removeListener('data', onData);
-            process.stdout.write('\n');
-            
-            if (!password) {
-              console.error('错误: 密码不能为空');
-              process.exit(1);
-            }
-            
-            if (password.length < 8) {
-              console.error('错误: 密码长度至少需要8个字符');
-              process.exit(1);
-            }
-            
-            resolve(password);
-            break;
-          case '\u0003': // Ctrl+C
-            process.stdin.setRawMode(false);
-            process.stdin.pause();
-            process.stdin.removeListener('data', onData);
-            console.log('\n\n操作已取消');
-            process.exit(0);
-            break;
-          case '\u007f': // Backspace
-            if (password.length > 0) {
-              password = password.slice(0, -1);
-              process.stdout.write('\b \b');
-            }
-            break;
-          default:
-            password += char;
-            process.stdout.write('*');
-            break;
-        }
-      };
-      
-      process.stdin.on('data', onData);
-    } else {
-      // 非交互式终端（如管道输入），使用简单输入
-      process.stdout.write('密码: ');
-      process.stdin.resume();
-      process.stdin.setEncoding('utf8');
-      
-      let password = '';
-      
-      const onData = (data: string) => {
-        password = data.trim();
-        process.stdin.pause();
-        process.stdin.removeListener('data', onData);
-        
-        if (!password) {
-          console.error('错误: 密码不能为空');
-          process.exit(1);
-        }
-        
-        if (password.length < 8) {
-          console.error('错误: 密码长度至少需要8个字符');
-          process.exit(1);
-        }
-        
-        resolve(password);
-      };
-      
-      process.stdin.on('data', onData);
-    }
-  });
-}
 
 // 中间件
 app.use(express.json());
@@ -196,8 +106,6 @@ async function initializeService() {
     app.listen(PORT, () => {
       console.log(`\n签名器服务器运行在端口 ${PORT}`);
       console.log(`访问 http://localhost:${PORT} 查看API`);
-      console.log(`健康检查: http://localhost:${PORT}/health`);
-      console.log(`使用密码保护助记词派生`);
     });
     
   } catch (error) {
