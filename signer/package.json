@@ -2,7 +2,7 @@
   "name": "signer",
   "version": "1.0.0",
   "main": "dist/index.js",
-  "description": "CEX钱包系统 - 签名器模块，负责真实的钱包创建和管理",
+  "description": "中心化交易所钱包系统 - 签名机模块，钱包创建和管理",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -23,10 +23,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@scure/bip32": "^2.0.0",
+    "@scure/bip39": "^2.0.0",
+    "dotenv": "^16.4.5",
     "express": "^5.1.0",
-    "viem": "^2.37.3",
     "sqlite3": "^5.1.7",
-    "dotenv": "^16.4.5"
+    "viem": "^2.37.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

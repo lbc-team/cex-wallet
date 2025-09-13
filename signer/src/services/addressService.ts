@@ -249,7 +249,7 @@ export class AddressService {
   }
 
   /**
-   * 生成下一个派生路径
+   * 获取下一个派生路径
    */
   private async generateNextDerivationPath(chainType: 'evm' | 'btc' | 'solana'): Promise<string> {
     const basePath = this.defaultDerivationPaths[chainType];
