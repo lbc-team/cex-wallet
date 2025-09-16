@@ -1,0 +1,37 @@
+{
+  "name": "cex-wallet-scanner",
+  "version": "1.0.0",
+  "description": "以太坊区块链扫描器 - CEX钱包系统",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "dev:watch": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "test": "ts-node tests/run-tests.ts"
+  },
+  "keywords": [
+    "ethereum",
+    "blockchain",
+    "scanner",
+    "wallet",
+    "cex"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^1.19.9",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.3.1",
+    "winston": "^3.11.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.2.2",
+    "ts-node": "^10.9.1",
+    "nodemon": "^3.0.1"
+  }
+}

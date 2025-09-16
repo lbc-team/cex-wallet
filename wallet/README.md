@@ -200,6 +200,24 @@ Content-Type: application/json
 ```
 
 
+## 数据库管理
+
+### 自动初始化
+
+wallet 服务启动时会自动检查并创建所需的数据库表，包括：
+- `users` - 用户表
+- `wallets` - 钱包表  
+- `transactions` - 交易表（scan 服务使用）
+- `balances` - 余额表
+- `blocks` - 区块表（scan 服务使用）
+- `tokens` - 代币表（scan 服务使用）
+
+无需手动执行数据库初始化脚本。如需手动创建表，可运行：
+```bash
+npm run build
+node dist/scripts/createTables.js
+```
+
 ## 数据库结构
 
 ### 用户表 (users)
@@ -241,7 +259,7 @@ Content-Type: application/json
 | amount | REAL | 交易金额 |
 | fee | REAL | 交易手续费 |
 | type | TEXT | 交易类型 充值提现归集调度：deposit/withdraw/collect/rebalance |
-| status | TEXT | 交易状态：pending/confirmed/failed |
+| status | TEXT | 交易状态：confirmed/safe/finalized/failed/ |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
@@ -254,10 +272,15 @@ Content-Type: application/json
 | token_symbol | TEXT | 代币代号 |
 | address_type | INTEGER | 地址类型：0-用户地址，1-热钱包地址(归集地址)，2-多签地址 |
 | balance | TEXT | 可用余额，大整数存储 |
-| pending_balance | TEXT | 处理中的资金，正在充值或取现的资金 ， 正数为正在充值，负数： 正在提现 |
 | locked_balance | TEXT | 充值但风控锁定余额，大整数存储 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+
+**余额管理机制**:
+- 移除了 `pending_balance` 字段，简化重组处理逻辑
+- 交易状态：`confirmed` → `safe` → `finalized`
+- 只有达到 `finalized` 状态的存款才会更新 `balance`
+- 重组时只需回滚 `finalized` 状态的交易，大大简化处理逻辑
 
 ### 代币表 (tokens)
 | 字段 | 类型 | 说明 |
