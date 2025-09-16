@@ -243,18 +243,45 @@ Content-Type: application/json
 | type | TEXT | 交易类型 充值提现归集调度：deposit/withdraw/collect/rebalance |
 | status | TEXT | 交易状态：pending/confirmed/failed |
 | created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
 
 ### 用户余额表 (balances)
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | INTEGER | 主键，UUID格式 |
+| id | INTEGER | 主键 |
 | user_id | INTEGER | 用户ID |
 | address | TEXT | 钱包地址 |
 | token_symbol | TEXT | 代币代号 |
 | address_type | INTEGER | 地址类型：0-用户地址，1-热钱包地址(归集地址)，2-多签地址 |
 | balance | TEXT | 可用余额，大整数存储 |
-| lock_balance | TEXT | 锁定余额，大整数存储 |
-| timestamp | INTEGER | 时间戳 |
+| pending_balance | TEXT | 处理中的资金，正在充值或取现的资金 ， 正数为正在充值，负数： 正在提现 |
+| locked_balance | TEXT | 充值但风控锁定余额，大整数存储 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+### 代币表 (tokens)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键  |
+| token_address | TEXT | 代币合约地址 |
+| uint | INTEGER | 代币精度（小数位数） |
+| tokens_name | TEXT | 代币名称 |
+| collect_amount | TEXT | 归集金额，大整数存储 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+### 区块表 (blocks)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| hash | TEXT | 主键，区块哈希 |
+| parent_hash | TEXT | 父区块哈希 |
+| number | TEXT | 区块号，大整数存储 |
+| timestamp | INTEGER | 区块时间戳 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+
+
 
 
 ## 工作原理
