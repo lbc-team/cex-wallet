@@ -108,7 +108,7 @@ export class BalanceModel {
     }
 
     // 添加排序
-    const orderBy = options?.orderBy || 'timestamp';
+    const orderBy = options?.orderBy || 'created_at';
     const orderDirection = options?.orderDirection || 'DESC';
     sql += ` ORDER BY ${orderBy} ${orderDirection}`;
 
@@ -124,6 +124,97 @@ export class BalanceModel {
     }
 
     return await this.db.query<Balance>(sql, params);
+  }
+
+  // 获取用户各代币总余额（所有链的总和，处理decimals并格式化）
+  async getUserTotalBalancesByToken(user_id: number): Promise<{
+    token_symbol: string;
+    total_balance: string;
+    chain_count: number;
+  }[]> {
+    const sql = `
+      SELECT 
+        b.token_symbol,
+        SUM(CAST(b.balance AS REAL) / POWER(10, t.decimals)) as normalized_total,
+        COUNT(DISTINCT b.chain_type) as chain_count
+      FROM balances b
+      JOIN tokens t ON b.token_id = t.id
+      WHERE b.user_id = ? 
+      GROUP BY b.token_symbol 
+      HAVING normalized_total > 0
+      ORDER BY normalized_total DESC
+    `;
+    
+    const rows = await this.db.query<{
+      token_symbol: string;
+      normalized_total: number;
+      chain_count: number;
+    }>(sql, [user_id]);
+
+    return rows.map(row => ({
+      token_symbol: row.token_symbol,
+      total_balance: row.normalized_total.toFixed(6),
+      chain_count: row.chain_count
+    }));
+  }
+
+  // 获取用户指定代币的详细余额信息（处理不同链的decimals并格式化）
+  async getUserTokenBalance(user_id: number, token_symbol: string): Promise<{
+    token_symbol: string;
+    chain_details: {
+      chain_type: string;
+      token_id: number;
+      balance: string;
+      decimals: number;
+      normalized_balance: string;
+    }[];
+    total_normalized_balance: string;
+    chain_count: number;
+  } | null> {
+    const sql = `
+      SELECT 
+        b.token_symbol,
+        b.chain_type,
+        b.token_id,
+        b.balance,
+        t.decimals,
+        CAST(b.balance AS REAL) / POWER(10, t.decimals) as normalized_balance
+      FROM balances b
+      JOIN tokens t ON b.token_id = t.id
+      WHERE b.user_id = ? AND b.token_symbol = ?
+      ORDER BY b.chain_type, normalized_balance DESC
+    `;
+    
+    const rows = await this.db.query<{
+      token_symbol: string;
+      chain_type: string;
+      token_id: number;
+      balance: string;
+      decimals: number;
+      normalized_balance: number;
+    }>(sql, [user_id, token_symbol]);
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    // 计算总的标准化余额
+    const totalNormalized = rows.reduce((sum, row) => {
+      return sum + row.normalized_balance;
+    }, 0);
+
+    return {
+      token_symbol: rows[0]!.token_symbol,
+      chain_details: rows.map(row => ({
+        chain_type: row.chain_type,
+        token_id: row.token_id,
+        balance: row.balance,
+        decimals: row.decimals,
+        normalized_balance: row.normalized_balance.toFixed(6)
+      })),
+      total_normalized_balance: totalNormalized.toFixed(6),
+      chain_count: new Set(rows.map(row => row.chain_type)).size
+    };
   }
 
 

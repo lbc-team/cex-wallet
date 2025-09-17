@@ -61,20 +61,23 @@ export function walletRoutes(dbService: DatabaseService): Router {
   });
 
 
-  // 获取钱包余额
-  router.get('/wallet/:id/balance', async (req: Request<{ id: string }>, res: Response) => {
-    const walletId = parseInt(req.params.id, 10);
+  // 获取用户余额总和（所有链的总和）
+  router.get('/user/:id/balance/total', async (req: Request<{ id: string }>, res: Response) => {
+    const userId = parseInt(req.params.id, 10);
     
-    if (isNaN(walletId)) {
-      const errorResponse: ApiResponse = { error: '无效的钱包ID' };
+    if (isNaN(userId)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
       res.status(400).json(errorResponse);
       return;
     }
 
-    const result = await walletBusinessService.getWalletBalance(walletId);
+    const result = await walletBusinessService.getUserTotalBalance(userId);
     
     if (result.success) {
-      const response: ApiResponse = { data: result.data };
+      const response: ApiResponse = { 
+        message: '获取用户余额总和成功',
+        data: result.data 
+      };
       res.json(response);
     } else {
       const errorResponse: ApiResponse = { error: result.error || '未知错误' };
@@ -82,8 +85,65 @@ export function walletRoutes(dbService: DatabaseService): Router {
     }
   });
 
+  // 获取用户充值中的余额
+  router.get('/user/:id/balance/pending', async (req: Request<{ id: string }>, res: Response) => {
+    const userId = parseInt(req.params.id, 10);
+    
+    if (isNaN(userId)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
 
+    const result = await walletBusinessService.getUserPendingDeposits(userId);
+    
+    if (result.success) {
+      const response: ApiResponse = { 
+        message: '获取充值中余额成功',
+        data: result.data 
+      };
+      res.json(response);
+    } else {
+      const errorResponse: ApiResponse = { error: result.error || '未知错误' };
+      res.status(500).json(errorResponse);
+    }
+  });
 
+  // 获取用户指定代币的余额详情
+  router.get('/user/:id/balance/token/:symbol', async (req: Request<{ id: string; symbol: string }>, res: Response) => {
+    const userId = parseInt(req.params.id, 10);
+    const tokenSymbol = req.params.symbol;
+    
+    if (isNaN(userId)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    if (!tokenSymbol || tokenSymbol.trim() === '') {
+      const errorResponse: ApiResponse = { error: '代币符号不能为空' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    const result = await walletBusinessService.getUserTokenBalance(userId, tokenSymbol.toUpperCase());
+    
+    if (result.success) {
+      const response: ApiResponse = { 
+        message: `获取${tokenSymbol.toUpperCase()}余额详情成功`,
+        data: result.data 
+      };
+      res.json(response);
+    } else {
+      if (result.error?.includes('用户没有')) {
+        const errorResponse: ApiResponse = { error: result.error };
+        res.status(404).json(errorResponse);
+      } else {
+        const errorResponse: ApiResponse = { error: result.error || '未知错误' };
+        res.status(500).json(errorResponse);
+      }
+    }
+  });
 
   return router;
 }

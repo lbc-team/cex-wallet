@@ -127,6 +127,46 @@ export class TransactionModel {
     return await this.db.query<Transaction>(sql, params);
   }
 
+  // 获取用户充值中的余额（confirmed 和 safe 状态的 deposit 交易，处理decimals并格式化）
+  async getUserPendingDepositBalances(user_id: number): Promise<{
+    token_symbol: string;
+    pending_amount: string;
+    transaction_count: number;
+  }[]> {
+    const sql = `
+      SELECT 
+        CASE 
+          WHEN t.token_addr IS NULL THEN 'ETH'
+          ELSE COALESCE(tk.token_symbol, 'UNKNOWN')
+        END as token_symbol,
+        SUM(t.amount) as raw_amount,
+        COALESCE(tk.decimals, 18) as decimals,
+        COUNT(*) as transaction_count
+      FROM transactions t
+      LEFT JOIN wallets w ON t.to_addr = w.address
+      LEFT JOIN tokens tk ON t.token_addr = tk.token_address
+      WHERE w.user_id = ? 
+        AND t.type = 'deposit' 
+        AND t.status IN ('confirmed', 'safe')
+      GROUP BY token_symbol, tk.decimals
+      HAVING raw_amount > 0
+      ORDER BY raw_amount DESC
+    `;
+    
+    const rows = await this.db.query<{
+      token_symbol: string;
+      raw_amount: number;
+      decimals: number;
+      transaction_count: number;
+    }>(sql, [user_id]);
+
+    return rows.map(row => ({
+      token_symbol: row.token_symbol,
+      pending_amount: (row.raw_amount / Math.pow(10, row.decimals)).toFixed(6),
+      transaction_count: row.transaction_count
+    }));
+  }
+
   // 获取所有交易
   async findAll(options?: TransactionQueryOptions): Promise<Transaction[]> {
     let sql = 'SELECT * FROM transactions WHERE 1=1';

@@ -118,5 +118,98 @@ export class WalletBusinessService {
     }
   }
 
+  /**
+   * 获取用户余额总和（所有链的总和）
+   */
+  async getUserTotalBalance(userId: number): Promise<{
+    success: boolean;
+    data?: {
+      token_symbol: string;
+      total_balance: string;
+      chain_count: number;
+    }[];
+    error?: string;
+  }> {
+    try {
+      const balances = await this.dbService.balances.getUserTotalBalancesByToken(userId);
+      return {
+        success: true,
+        data: balances
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '获取用户余额失败'
+      };
+    }
+  }
+
+  /**
+   * 获取用户充值中的余额
+   */
+  async getUserPendingDeposits(userId: number): Promise<{
+    success: boolean;
+    data?: {
+      token_symbol: string;
+      pending_amount: string;
+      transaction_count: number;
+    }[];
+    error?: string;
+  }> {
+    try {
+      const pendingDeposits = await this.dbService.transactions.getUserPendingDepositBalances(userId);
+      return {
+        success: true,
+        data: pendingDeposits
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '获取充值中余额失败'
+      };
+    }
+  }
+
+  /**
+   * 获取用户指定代币的余额详情（处理不同链的decimals）
+   */
+  async getUserTokenBalance(userId: number, tokenSymbol: string): Promise<{
+    success: boolean;
+    data?: {
+      token_symbol: string;
+      chain_details: {
+        chain_type: string;
+        token_id: number;
+        balance: string;
+        decimals: number;
+        normalized_balance: string;
+      }[];
+      total_normalized_balance: string;
+      chain_count: number;
+    };
+    error?: string;
+  }> {
+    try {
+      const tokenBalance = await this.dbService.balances.getUserTokenBalance(userId, tokenSymbol);
+      
+      if (!tokenBalance) {
+        return {
+          success: false,
+          error: `用户没有 ${tokenSymbol} 代币余额`
+        };
+      }
+
+      return {
+        success: true,
+        data: tokenBalance
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '获取代币余额失败'
+      };
+    }
+  }
+
 
 }

@@ -17,10 +17,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "axios": "^1.11.0",
+    "axios": "^1.12.2",
+    "dotenv": "^16.4.5",
     "express": "^5.1.0",
-    "sqlite3": "^5.1.7",
-    "dotenv": "^16.4.5"
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
