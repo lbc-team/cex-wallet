@@ -1,5 +1,5 @@
 import { viemClient } from '../utils/viemClient';
-import { transactionDAO, walletDAO, tokenDAO, balanceDAO } from '../db/models';
+import { transactionDAO, walletDAO, tokenDAO, balanceDAO, database } from '../db/models';
 import logger from '../utils/logger';
 import config from '../config';
 import { Transaction, Block } from 'viem';
@@ -21,7 +21,13 @@ export class TransactionAnalyzer {
   private supportedTokens: Map<string, any> = new Map();
   private lastAddressUpdate: number = 0;
   private lastTokenUpdate: number = 0;
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
+  private readonly CACHE_DURATION = 15 * 60 * 1000; // 15分钟缓存（有数据变化检测兜底）
+  
+  // 检测用户数据 或 Token 变化
+  private lastUserCount = 0;
+  private lastTokenCount = 0;
+  private readonly UPDATE_CHECK_INTERVAL = 30 * 1000; // 30秒检查一次
+  private lastUpdateCheck = 0;
 
   constructor() {
     this.loadUserAddresses();
@@ -166,7 +172,10 @@ export class TransactionAnalyzer {
           const transferEvent = viemClient.parseERC20Transfer(log);
           if (transferEvent && transferEvent.to && this.isUserAddress(transferEvent.to)) {
             const wallet = await walletDAO.getWalletByAddress(transferEvent.to);
-            if (wallet) {
+            // 获取代币信息
+            const tokenInfo = this.getTokenInfo(tx.to!);
+            
+            if (wallet && tokenInfo) {
               logger.info('检测到Token存款', {
                 txHash: tx.hash,
                 tokenAddress: tx.to,
@@ -305,11 +314,18 @@ export class TransactionAnalyzer {
   }
 
   /**
-   * 如果需要，刷新缓存
+   * 如果需要，刷新缓存（包括数据变化检测）
    */
   private async refreshCacheIfNeeded(): Promise<void> {
     const now = Date.now();
     
+    // 检查数据变化（更频繁）
+    if (now - this.lastUpdateCheck > this.UPDATE_CHECK_INTERVAL) {
+      await this.checkForDataUpdates();
+      this.lastUpdateCheck = now;
+    }
+    
+    // 定期刷新缓存
     if (now - this.lastAddressUpdate > this.CACHE_DURATION) {
       await this.loadUserAddresses();
     }
@@ -320,12 +336,60 @@ export class TransactionAnalyzer {
   }
 
   /**
+   * 检查数据是否有更新（轻量级检查）
+   */
+  private async checkForDataUpdates(): Promise<void> {
+    try {
+      const chainId = await viemClient.getChainId();
+      
+      // 检查用户数量变化
+      const userCount = await database.get('SELECT COUNT(*) as count FROM wallets');
+      const tokenCount = await database.get('SELECT COUNT(*) as count FROM tokens WHERE chain_id = ?', [chainId]);
+
+      let needRefresh = false;
+      
+      if (userCount.count !== this.lastUserCount) {
+        logger.info('检测到用户数量变化，将刷新地址缓存', {
+          oldCount: this.lastUserCount,
+          newCount: userCount.count
+        });
+        this.lastUserCount = userCount.count;
+        needRefresh = true;
+      }
+
+      if (tokenCount.count !== this.lastTokenCount) {
+        logger.info('检测到代币数量变化，将刷新代币缓存', {
+          oldCount: this.lastTokenCount,
+          newCount: tokenCount.count,
+          chainId
+        });
+        this.lastTokenCount = tokenCount.count;
+        needRefresh = true;
+      }
+
+      if (needRefresh) {
+        await this.refreshCache();
+      }
+
+    } catch (error) {
+      logger.error('检查数据更新失败', { error });
+    }
+  }
+
+  /**
    * 手动刷新缓存
    */
   async refreshCache(): Promise<void> {
     await this.loadUserAddresses();
     await this.loadSupportedTokens();
     logger.info('缓存刷新完成');
+  }
+
+  /**
+   * 获取代币信息
+   */
+  private getTokenInfo(tokenAddress: string): any {
+    return this.supportedTokens.get(tokenAddress.toLowerCase()) || null;
   }
 
   /**
