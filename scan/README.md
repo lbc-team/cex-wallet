@@ -99,6 +99,10 @@ SCAN_INTERVAL=12
 # RPC 请求并发数 (可选，默认为 5)
 MAX_CONCURRENT_REQUESTS=5
 
+# 终结性配置
+# 是否使用网络终结性标记 (可选，默认为 true)
+USE_NETWORK_FINALITY=true
+
 # 日志级别 (可选，默认为 info)
 LOG_LEVEL=info
 ```
@@ -126,6 +130,31 @@ npm run dev
 npm run build
 npm start
 ```
+
+### 网络终结性配置
+
+服务支持两种确认机制：
+
+#### 1. 使用 POS 网络终结性模式（默认，更准确）
+```bash
+USE_NETWORK_FINALITY=true
+CONFIRMATION_BLOCKS=32
+```
+- 基于以太坊网络的 safe/finalized 标记
+- 更准确反映网络共识状态
+- 网络不支持时自动回退到确认数模式
+- 需要网络支持（主网、测试网支持，本地节点可能不支持）
+
+#### 2. 使用经过多少区块来确认交易的终结性
+```bash
+USE_NETWORK_FINALITY=false
+CONFIRMATION_BLOCKS=32
+```
+- 基于区块高度差计算确认数
+- safe 状态 = CONFIRMATION_BLOCKS / 2 (16个确认)
+- finalized 状态 = CONFIRMATION_BLOCKS (32个确认)
+- 适用于所有网络环境
+
 
 ## 服务管理
 
@@ -175,16 +204,36 @@ kill -TERM <process_id>
 - `status`: 交易状态 (confirmed/safe/finalized/failed)
 
 ### 交易状态流程
+
+#### 确认数模式（当前默认）
 ```
-confirmed (入库默认状态) → safe (12个确认) → finalized (24个确认) → 更新余额
+confirmed (入库默认状态) → safe (16个确认) → finalized (32个确认) → 更新余额
 ```
 
 | 状态 | 确认数 | 说明 |
 |------|--------|------|
-| confirmed | 0+ | 交易已上链，默认状态 |
-| safe | 12+ | 交易相对安全，不易被重组 |
-| finalized | 24+ | 交易最终确认，更新用户余额 |
-| failed | - | 交易执行失败或被重组回滚 |
+| confirmed | 0+ | 交易已上链，开始确认 |
+| safe | 16+ | 交易相对安全，不易被重组 |
+| finalized | 32+ | 交易最终确认，更新用户余额 |
+| failed | - | 交易失败或被重组回滚 |
+
+#### 网络终结性模式（可选启用）
+```
+confirmed (入库默认状态) → safe (≤网络safe区块) → finalized (≤网络finalized区块) → 更新余额
+```
+
+| 状态 | 判断依据 | 说明 |
+|------|----------|------|
+| confirmed | 交易已上链 | 交易已上链，等待网络确认 |
+| safe | tx.block_no ≤ safe_block | 基于网络safe标记，更准确 |
+| finalized | tx.block_no ≤ finalized_block | 基于网络finalized标记，真正终结 |
+| failed | - | 交易失败或被重组回滚 |
+
+**网络终结性优势**：
+- 更准确反映以太坊网络的实际共识状态
+- 动态适应网络状况变化
+- 符合EIP-3675以太坊PoS终结性标准
+- 与DeFi生态保持一致的终结性理解
 
 ### 扫描进度管理
 - 通过查询 `blocks` 表的最大区块号获取扫描进度

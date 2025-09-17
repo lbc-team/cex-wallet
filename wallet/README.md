@@ -176,28 +176,7 @@ GET /api/user/{user_id}/address?chain_type=evm
 }
 ```
 
-#### 4. 获取钱包余额
-```http
-GET /api/wallet/{wallet_id}/balance
-```
-**响应示例**:
-```json
-{
-  "data": {
-    "balance": 100.5
-  }
-}
-```
 
-#### 5. 更新钱包余额
-```http
-PUT /api/wallet/{wallet_id}/balance
-Content-Type: application/json
-
-{
-  "balance": 150.0
-}
-```
 
 
 ## 数据库管理
@@ -246,6 +225,21 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
+
+### 区块表 (blocks)
+区块和交易表，需要为每个链创建一个对应的表：
+
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| hash | TEXT | 主键，区块哈希 |
+| parent_hash | TEXT | 父区块哈希 |
+| number | TEXT | 区块号，大整数存储 |
+| timestamp | INTEGER | 区块时间戳 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+
 ### 交易记录表 (transactions)
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -259,7 +253,8 @@ node dist/scripts/createTables.js
 | amount | REAL | 交易金额 |
 | fee | REAL | 交易手续费 |
 | type | TEXT | 交易类型 充值提现归集调度：deposit/withdraw/collect/rebalance |
-| status | TEXT | 交易状态：confirmed/safe/finalized/failed/ |
+| status | TEXT | 交易状态：confirmed/safe/finalized/failed |
+| confirmation_count | INTEGER | 确认数（网络终结性模式下可选） |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
@@ -284,6 +279,15 @@ node dist/scripts/createTables.js
 - 交易状态：`confirmed` → `safe` → `finalized`
 - 只有达到 `finalized` 状态的存款才会更新 `balance`
 - 重组时只需回滚 `finalized` 状态的交易，大大简化处理逻辑
+
+**确认机制**（支持两种模式）:
+1. **确认数模式**（当前默认）：基于区块高度差计算确认数
+   - `confirmed` → `safe`：达到配置的基础确认数（如16）
+   - `safe` → `finalized`：达到配置的最终确认数（如32）
+2. **网络终结性模式**（可选启用）：基于以太坊网络的 safe/finalized 标记
+   - `confirmed` → `safe`：交易所在区块 ≤ 网络 safe 区块
+   - `safe` → `finalized`：交易所在区块 ≤ 网络 finalized 区块
+   - 更准确反映网络共识状态，但需要网络支持（主网/测试网支持，本地节点可能不支持）
 
 ### 代币表 (tokens)
 | 字段 | 类型 | 说明 |
@@ -386,15 +390,6 @@ JOIN tokens t ON b.token_id = t.id
 WHERE b.user_id = 1 AND t.token_symbol = 'USDC';
 ```
 
-### 区块表 (blocks)
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| hash | TEXT | 主键，区块哈希 |
-| parent_hash | TEXT | 父区块哈希 |
-| number | TEXT | 区块号，大整数存储 |
-| timestamp | INTEGER | 区块时间戳 |
-| created_at | DATETIME | 创建时间 |
-| updated_at | DATETIME | 更新时间 |
 
 
 
@@ -492,12 +487,13 @@ curl http://localhost:3000/health
 # 获取用户钱包地址
 curl "http://localhost:3000/api/user/123/address?chain_type=evm"
 
-# 获取钱包余额
-curl http://localhost:3000/api/wallet/1/balance
+# 获取用户余额总和（所有链）
+curl http://localhost:3000/api/user/123/balance/total
 
-# 更新钱包余额
-curl -X PUT http://localhost:3000/api/wallet/1/balance \
-  -H "Content-Type: application/json" \
-  -d '{"balance": 150.0}'
+# 获取用户充值中余额
+curl http://localhost:3000/api/user/123/balance/pending
+
+# 获取用户指定代币余额详情
+curl http://localhost:3000/api/user/123/balance/token/USDT
 ```
 

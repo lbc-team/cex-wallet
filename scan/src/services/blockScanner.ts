@@ -2,6 +2,7 @@ import { viemClient } from '../utils/viemClient';
 import { blockDAO, transactionDAO, walletDAO, tokenDAO, balanceDAO, database } from '../db/models';
 import { transactionAnalyzer } from './transactionAnalyzer';
 import { reorgHandler } from './reorgHandler';
+import { confirmationManager } from './confirmationManager';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -32,10 +33,15 @@ export class BlockScanner {
     }
 
     this.isScanning = true;
+    
+    // 初始化确认管理器
+    await confirmationManager.initialize();
+    
     logger.info('启动区块扫描器', {
       startBlock: config.startBlock,
       batchSize: config.scanBatchSize,
-      confirmationBlocks: config.confirmationBlocks
+      confirmationBlocks: config.confirmationBlocks,
+      useNetworkFinality: config.useNetworkFinality
     });
 
     try {
@@ -216,7 +222,7 @@ export class BlockScanner {
       }
 
       // 处理交易确认
-      await this.processConfirmations(blockNumber);
+      await confirmationManager.processConfirmations();
 
       logger.debug('区块扫描完成', {
         blockNumber,
@@ -228,160 +234,6 @@ export class BlockScanner {
     } catch (error) {
       logger.error('处理有效区块失败', { blockNumber, error });
       throw error;
-    }
-  }
-
-
-  /**
-   * 处理交易确认
-   */
-  private async processConfirmations(currentBlock: number): Promise<void> {
-    try {
-      // 获取未确认的交易
-      const pendingTransactions = await transactionDAO.getPendingTransactions();
-
-      for (const tx of pendingTransactions) {
-        const confirmations = currentBlock - tx.block_no;
-        
-        // 更新确认数
-        await transactionDAO.updateTransactionConfirmation(tx.tx_hash, confirmations);
-
-        // 检查是否达到确认要求
-        if (confirmations >= config.confirmationBlocks) {
-          // 验证交易仍在链上
-          const receipt = await viemClient.getTransactionReceipt(tx.tx_hash);
-          
-          if (receipt && receipt.status === 'success') {
-            if (tx.status === 'confirmed' && confirmations >= config.confirmationBlocks) {
-              // 达到基础确认数，状态从 confirmed -> safe
-              await this.safeTransaction(tx);
-            } else if (tx.status === 'safe' && confirmations >= config.confirmationBlocks * 2) {
-              // 达到双倍确认数，状态从 safe -> finalized，并更新余额
-              await this.finalizeTransaction(tx);
-            }
-          } else if (receipt && receipt.status === 'reverted') {
-            // 交易失败
-            await this.failTransaction(tx);
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('处理确认失败', { currentBlock, error });
-    }
-  }
-
-  /**
-   * 将交易标记为安全状态
-   */
-  private async safeTransaction(transaction: any): Promise<void> {
-    try {
-      // 更新交易状态为 safe
-      await database.run(
-        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        ['safe', transaction.tx_hash]
-      );
-
-      logger.info('交易已标记为安全', {
-        txHash: transaction.tx_hash,
-        type: transaction.type,
-        confirmations: transaction.confirmation_count
-      });
-
-    } catch (error) {
-      logger.error('标记交易安全失败', { txHash: transaction.tx_hash, error });
-    }
-  }
-
-  /**
-   * 最终确认交易并更新余额
-   */
-  private async finalizeTransaction(transaction: any): Promise<void> {
-    try {
-      if (transaction.type === 'deposit') {
-        const wallet = await walletDAO.getWalletByAddress(transaction.to_addr);
-        if (wallet) {
-          // 动态获取当前链ID
-          const chainId = await viemClient.getChainId();
-          
-          let token: any = null;
-          let tokenSymbol = 'ETH';
-          
-          if (transaction.token_addr) {
-            // 获取代币信息，使用动态链ID
-            token = await tokenDAO.getTokenByAddress(transaction.token_addr, 'eth', chainId);
-            tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
-          } else {
-            // 原生代币，使用 is_native 字段查找
-            token = await tokenDAO.getNativeToken(chainId);
-            tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
-          }
-
-          if (!token) {
-            logger.error('未找到代币信息', { 
-              tokenAddr: transaction.token_addr, 
-              tokenSymbol 
-            });
-            return;
-          }
-
-          const amount = BigInt(Math.abs(transaction.amount * 1e18));
-          
-          // 使用 BalanceDAO 方法更新余额
-          await balanceDAO.updateBalance(
-            wallet.user_id,
-            transaction.to_addr,
-            token.chain_type,
-            token.id,
-            token.token_symbol,
-            amount.toString()
-          );
-
-          logger.info('存款余额已更新', {
-            txHash: transaction.tx_hash,
-            address: transaction.to_addr,
-            chainType: token.chain_type,
-            chainId: token.chain_id,
-            tokenSymbol: token.token_symbol,
-            amount: amount.toString()
-          });
-        }
-      }
-
-      // 更新交易状态为 finalized
-      await database.run(
-        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        ['finalized', transaction.tx_hash]
-      );
-
-      logger.info('交易已最终确认', {
-        txHash: transaction.tx_hash,
-        type: transaction.type,
-        confirmations: transaction.confirmation_count
-      });
-
-    } catch (error) {
-      logger.error('最终确认交易失败', { txHash: transaction.tx_hash, error });
-    }
-  }
-
-  /**
-   * 处理失败交易
-   */
-  private async failTransaction(transaction: any): Promise<void> {
-    try {
-      // 更新状态为失败
-      await database.run(
-        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        ['failed', transaction.tx_hash]
-      );
-
-      logger.warn('交易执行失败', {
-        txHash: transaction.tx_hash,
-        type: transaction.type
-      });
-
-    } catch (error) {
-      logger.error('处理失败交易失败', { txHash: transaction.tx_hash, error });
     }
   }
 

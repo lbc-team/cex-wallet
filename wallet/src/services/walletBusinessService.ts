@@ -96,27 +96,6 @@ export class WalletBusinessService {
     }
   }
 
-  /**
-   * 获取钱包余额
-   */
-  async getWalletBalance(walletId: number): Promise<{
-    success: boolean;
-    data?: { balance: number };
-    error?: string;
-  }> {
-    try {
-      const balance = await this.dbService.wallets.getBalance(walletId);
-      return {
-        success: true,
-        data: { balance }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '获取钱包余额失败'
-      };
-    }
-  }
 
   /**
    * 获取用户余额总和（所有链的总和）

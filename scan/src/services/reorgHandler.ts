@@ -370,7 +370,7 @@ export class ReorgHandler {
   }
 
   /**
-   * 获取重组统计信息
+   * 获取重组统计信息， 用于Dashboard展示 或 Debug
    */
   async getReorgStats(): Promise<{
     totalReorgs: number;

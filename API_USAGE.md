@@ -39,23 +39,7 @@ GET /api/user/{user_id}/address?chain_type=evm
 }
 ```
 
-### 2. 获取钱包余额
-
-**请求**：
-```http
-GET /api/wallet/{wallet_id}/balance
-```
-
-**响应**：
-```json
-{
-  "data": {
-    "balance": 100.5
-  }
-}
-```
-
-### 3. 获取用户余额总和
+### 2. 获取用户余额总和
 
 **请求**：
 ```http
@@ -83,7 +67,7 @@ GET /api/user/{user_id}/balance/total
 }
 ```
 
-### 4. 获取用户充值中的余额
+### 3. 获取用户充值中的余额
 
 **请求**：
 ```http
@@ -111,7 +95,7 @@ GET /api/user/{user_id}/balance/pending
 }
 ```
 
-### 5. 获取用户指定代币的余额详情
+### 4. 获取用户指定代币的余额详情
 
 **请求**：
 ```http
@@ -162,13 +146,6 @@ GET /api/user/{user_id}/balance/token/{token_symbol}
 ```bash
 # 获取用户ID为123的钱包地址（如果不存在则创建）
 curl "http://localhost:3000/api/user/123/address?chain_type=evm"
-```
-
-### 获取钱包余额
-
-```bash
-# 获取钱包ID为1的余额
-curl http://localhost:3000/api/wallet/1/balance
 ```
 
 ### 获取用户余额总和

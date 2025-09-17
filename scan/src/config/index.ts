@@ -20,6 +20,9 @@ export interface Config {
   scanInterval: number;
   maxConcurrentRequests: number;
   
+  // 终结性配置
+  useNetworkFinality: boolean;
+  
   // 服务配置
   logLevel: string;
 }
@@ -39,6 +42,9 @@ const config: Config = {
   reorgCheckDepth: parseInt(process.env.REORG_CHECK_DEPTH || '64'),
   scanInterval: parseInt(process.env.SCAN_INTERVAL || '12'),
   maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '5'),
+  
+  // 终结性配置
+  useNetworkFinality: process.env.USE_NETWORK_FINALITY === 'true',
   
   // 服务配置
   logLevel: process.env.LOG_LEVEL || 'info'

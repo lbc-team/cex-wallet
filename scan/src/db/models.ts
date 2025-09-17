@@ -176,7 +176,7 @@ export class TransactionDAO {
   }
 
   /**
-   * 更新交易确认数
+   * 更新交易确认数（使用网络终结性时可能不需要）
    */
   async updateTransactionConfirmation(txHash: string, confirmationCount: number): Promise<void> {
     try {
@@ -187,6 +187,22 @@ export class TransactionDAO {
       logger.debug('更新交易确认数', { txHash, confirmationCount });
     } catch (error) {
       logger.error('更新交易确认数失败', { txHash, confirmationCount, error });
+      throw error;
+    }
+  }
+
+  /**
+   * 更新交易状态
+   */
+  async updateTransactionStatus(txHash: string, status: string): Promise<void> {
+    try {
+      await database.run(
+        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
+        [status, txHash]
+      );
+      logger.debug('更新交易状态', { txHash, status });
+    } catch (error) {
+      logger.error('更新交易状态失败', { txHash, status, error });
       throw error;
     }
   }

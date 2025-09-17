@@ -282,6 +282,60 @@ export class ViemClient {
       return false;
     }
   }
+
+  /**
+   * 获取 safe 区块（网络认为相对安全的区块）
+   */
+  async getSafeBlock(): Promise<{ number: bigint; hash: string } | null> {
+    try {
+      const block = await this.currentClient.getBlock({ blockTag: 'safe' });
+      return {
+        number: block.number!,
+        hash: block.hash!
+      };
+    } catch (error) {
+      logger.debug('获取 safe 区块失败，可能网络不支持', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 获取 finalized 区块（网络认为已终结的区块）
+   */
+  async getFinalizedBlock(): Promise<{ number: bigint; hash: string } | null> {
+    try {
+      const block = await this.currentClient.getBlock({ blockTag: 'finalized' });
+      return {
+        number: block.number!,
+        hash: block.hash!
+      };
+    } catch (error) {
+      logger.debug('获取 finalized 区块失败，可能网络不支持', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 检查网络是否支持 safe/finalized tag
+   */
+  async supportsFinality(): Promise<{ safe: boolean; finalized: boolean }> {
+    const safeSupported = (await this.getSafeBlock()) !== null;
+    const finalizedSupported = (await this.getFinalizedBlock()) !== null;
+    
+    logger.info('网络终结性支持检测', {
+      safe: safeSupported,
+      finalized: finalizedSupported
+    });
+    
+    return {
+      safe: safeSupported,
+      finalized: finalizedSupported
+    };
+  }
 }
 
 // 创建单例实例
