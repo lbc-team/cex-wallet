@@ -28,9 +28,9 @@ async function initializeApp(): Promise<void> {
 
     logger.info('CEX钱包扫描器启动完成');
 
-    // 优雅关闭处理
+    // 关闭处理
     const gracefulShutdown = async (signal: string) => {
-      logger.info(`收到 ${signal} 信号，开始优雅关闭...`);
+      logger.info(`收到 ${signal} 信号，开始关闭...`);
 
       try {
         // 停止扫描服务
@@ -38,7 +38,7 @@ async function initializeApp(): Promise<void> {
         logger.info('扫描服务已停止');
         process.exit(0);
       } catch (error) {
-        logger.error('优雅关闭过程中出错', { error });
+        logger.error('关闭过程中出错', { error });
         process.exit(1);
       }
     };

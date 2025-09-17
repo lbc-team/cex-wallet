@@ -118,24 +118,5 @@ export class WalletBusinessService {
     }
   }
 
-  /**
-   * 更新钱包余额
-   */
-  async updateWalletBalance(walletId: number, balance: number): Promise<{
-    success: boolean;
-    error?: string;
-  }> {
-    try {
-      await this.dbService.wallets.updateBalance(walletId, balance);
-      return {
-        success: true
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : '更新钱包余额失败'
-      };
-    }
-  }
 
 }

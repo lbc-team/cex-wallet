@@ -269,15 +269,18 @@ node dist/scripts/createTables.js
 | id | INTEGER | 主键 |
 | user_id | INTEGER | 用户ID |
 | address | TEXT | 钱包地址 |
-| token_symbol | TEXT | 代币代号 |
+| chain_type | TEXT | 链类型：eth/btc/sol/polygon/bsc 等 |
+| token_id | INTEGER | 代币ID，关联tokens表 |
+| token_symbol | TEXT | 代币符号，冗余字段便于查询 |
 | address_type | INTEGER | 地址类型：0-用户地址，1-热钱包地址(归集地址)，2-多签地址 |
 | balance | TEXT | 可用余额，大整数存储 |
 | locked_balance | TEXT | 充值但风控锁定余额，大整数存储 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
+**多链余额索引**: `UNIQUE(user_id, chain_type, token_id, address)`
+
 **余额管理机制**:
-- 移除了 `pending_balance` 字段，简化重组处理逻辑
 - 交易状态：`confirmed` → `safe` → `finalized`
 - 只有达到 `finalized` 状态的存款才会更新 `balance`
 - 重组时只需回滚 `finalized` 状态的交易，大大简化处理逻辑
@@ -286,12 +289,102 @@ node dist/scripts/createTables.js
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键  |
-| token_address | TEXT | 代币合约地址 |
-| uint | INTEGER | 代币精度（小数位数） |
-| tokens_name | TEXT | 代币名称 |
-| collect_amount | TEXT | 归集金额，大整数存储 |
+| chain_type | TEXT | 链类型：eth/btc/sol/polygon/bsc 等 |
+| chain_id | INTEGER | 链ID：1(以太坊主网)/5(Goerli)/137(Polygon)/56(BSC) 等 |
+| token_address | TEXT | 代币合约地址（原生代币为空） |
+| token_symbol | TEXT | 代币符号：USDC/ETH/BTC/SOL 等 |
+| token_name | TEXT | 代币全名：USD Coin/Ethereum/Bitcoin 等 |
+| decimals | INTEGER | 代币精度（小数位数） |
+| is_native | BOOLEAN | 是否为链原生代币（ETH/BTC/SOL等） |
+| collect_amount | TEXT | 归集金额阈值，大整数存储 |
+| status | INTEGER | 代币状态：0-禁用，1-启用 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+
+**多链代币索引**: `UNIQUE(chain_type, chain_id, token_address, token_symbol)`
+
+#### Chain ID 说明
+`chain_id` 字段用于精确标识区块链网络，支持同一链类型的不同网络：
+
+| Chain Type | Chain ID | 网络名称 | 说明 |
+|------------|----------|----------|------|
+| eth | 1 | 以太坊主网 | Ethereum Mainnet |
+| eth | 5 | Goerli测试网 | Ethereum Goerli Testnet |
+| eth | 11155111 | Sepolia测试网 | Ethereum Sepolia Testnet |
+| polygon | 137 | Polygon主网 | Polygon Mainnet |
+| polygon | 80001 | Mumbai测试网 | Polygon Mumbai Testnet |
+| bsc | 56 | BSC主网 | Binance Smart Chain |
+| bsc | 97 | BSC测试网 | BSC Testnet |
+| arbitrum | 42161 | Arbitrum主网 | Arbitrum One |
+| optimism | 10 | Optimism主网 | Optimism Mainnet |
+
+### 多链余额管理示例
+
+#### 代币配置示例
+```sql
+-- 以太坊主网 ETH
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('eth', 1, NULL, 'ETH', 'Ethereum', 18, 1, 1);
+
+-- 以太坊主网 USDC
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('eth', 1, '0xA0b86a33E6441e15c6aF01C1E1E30f4d7Fc7fF7b', 'USDC', 'USD Coin', 6, 0, 1);
+
+-- 以太坊测试网 Goerli ETH
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('eth', 5, NULL, 'ETH', 'Ethereum Goerli', 18, 1, 1);
+
+-- Polygon主网 MATIC
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('polygon', 137, NULL, 'MATIC', 'Polygon', 18, 1, 1);
+
+-- Polygon主网 USDC
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('polygon', 137, '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', 'USDC', 'USD Coin', 6, 0, 1);
+
+-- BSC主网 BNB
+INSERT INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, status) 
+VALUES ('bsc', 56, NULL, 'BNB', 'Binance Coin', 18, 1, 1);
+```
+
+#### 用户余额查询示例
+```sql
+-- 查询用户所有链上的USDC余额（包含链ID信息）
+SELECT 
+    t.chain_type,
+    t.chain_id,
+    t.token_symbol,
+    SUM(CAST(b.balance AS INTEGER)) as total_balance,
+    CASE t.chain_id
+        WHEN 1 THEN '以太坊主网'
+        WHEN 5 THEN '以太坊测试网'
+        WHEN 137 THEN 'Polygon主网'
+        WHEN 56 THEN 'BSC主网'
+        ELSE '未知网络'
+    END as network_name
+FROM balances b
+JOIN tokens t ON b.token_id = t.id  
+WHERE b.user_id = 1 AND t.token_symbol = 'USDC'
+GROUP BY t.chain_type, t.chain_id, t.token_symbol;
+
+-- 查询用户在特定链上的余额（如以太坊主网）
+SELECT 
+    t.token_symbol,
+    t.token_name,
+    b.balance,
+    t.decimals
+FROM balances b
+JOIN tokens t ON b.token_id = t.id  
+WHERE b.user_id = 1 AND t.chain_type = 'eth' AND t.chain_id = 1;
+
+-- 查询用户USDC总余额（跨链汇总）
+SELECT 
+    token_symbol,
+    SUM(CAST(balance AS INTEGER)) as total_balance
+FROM balances b
+JOIN tokens t ON b.token_id = t.id  
+WHERE b.user_id = 1 AND t.token_symbol = 'USDC';
+```
 
 ### 区块表 (blocks)
 | 字段 | 类型 | 说明 |

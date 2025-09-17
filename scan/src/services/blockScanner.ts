@@ -300,41 +300,48 @@ export class BlockScanner {
       if (transaction.type === 'deposit') {
         const wallet = await walletDAO.getWalletByAddress(transaction.to_addr);
         if (wallet) {
+          // 动态获取当前链ID
+          const chainId = await viemClient.getChainId();
+          
+          let token: any = null;
           let tokenSymbol = 'ETH';
+          
           if (transaction.token_addr) {
-            const token = await tokenDAO.getTokenByAddress(transaction.token_addr);
-            tokenSymbol = token ? token.tokens_name : 'UNKNOWN';
+            // 获取代币信息，使用动态链ID
+            token = await tokenDAO.getTokenByAddress(transaction.token_addr, 'eth', chainId);
+            tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
+          } else {
+            // 原生代币，使用 is_native 字段查找
+            token = await tokenDAO.getNativeToken(chainId);
+            tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
+          }
+
+          if (!token) {
+            logger.error('未找到代币信息', { 
+              tokenAddr: transaction.token_addr, 
+              tokenSymbol 
+            });
+            return;
           }
 
           const amount = BigInt(Math.abs(transaction.amount * 1e18));
           
-          // 获取或创建余额记录
-          let balance = await database.get(
-            'SELECT * FROM balances WHERE user_id = ? AND address = ? AND token_symbol = ?',
-            [wallet.user_id, transaction.to_addr, tokenSymbol]
+          // 使用 BalanceDAO 方法更新余额
+          await balanceDAO.updateBalance(
+            wallet.user_id,
+            transaction.to_addr,
+            token.chain_type,
+            token.id,
+            token.token_symbol,
+            amount.toString()
           );
-
-          if (!balance) {
-            // 创建新的余额记录
-            await database.run(
-              'INSERT INTO balances (user_id, address, token_symbol, balance) VALUES (?, ?, ?, ?)',
-              [wallet.user_id, transaction.to_addr, tokenSymbol, amount.toString()]
-            );
-          } else {
-            // 更新现有余额
-            const currentBalance = BigInt(balance.balance || '0');
-            const newBalance = currentBalance + amount;
-            
-            await database.run(
-              'UPDATE balances SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND address = ? AND token_symbol = ?',
-              [newBalance.toString(), wallet.user_id, transaction.to_addr, tokenSymbol]
-            );
-          }
 
           logger.info('存款余额已更新', {
             txHash: transaction.tx_hash,
             address: transaction.to_addr,
-            tokenSymbol,
+            chainType: token.chain_type,
+            chainId: token.chain_id,
+            tokenSymbol: token.token_symbol,
             amount: amount.toString()
           });
         }

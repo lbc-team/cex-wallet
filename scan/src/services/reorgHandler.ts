@@ -246,7 +246,8 @@ export class ReorgHandler {
   }
 
   /**
-   * 回滚单笔交易
+   * 回滚交易的余额更新
+   * 由于在 finalized 状态的交易才更新余额，通常这里是不会出现的
    */
   private async rollbackTransaction(tx: any): Promise<void> {
     try {
@@ -315,8 +316,8 @@ export class ReorgHandler {
     try {
       logger.info('开始重新同步正确链', { startBlock, endBlock });
 
-      // 清理孤立区块数据
-      await this.cleanupOrphanedBlocks();
+      // 清理孤立区块数据， 不清理，方便追踪重组
+      // await this.cleanupOrphanedBlocks();
 
       // 这里应该调用扫描器重新扫描这些区块
       // 但由于这个方法是在扫描过程中调用的，我们只需要返回

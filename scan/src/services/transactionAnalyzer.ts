@@ -100,7 +100,9 @@ export class TransactionAnalyzer {
       // 检查是否是ETH转账到用户地址
       if (tx.to && this.isUserAddress(tx.to) && tx.value > 0n) {
         const wallet = await walletDAO.getWalletByAddress(tx.to);
-        if (wallet) {
+        const ethToken = this.supportedTokens.get('native');
+        
+        if (wallet && ethToken) {
           logger.info('检测到ETH存款', {
             txHash: tx.hash,
             to: tx.to,
@@ -115,7 +117,7 @@ export class TransactionAnalyzer {
             fromAddress: tx.from || '',
             toAddress: tx.to,
             amount: tx.value,
-            tokenSymbol: 'ETH',
+            tokenSymbol: ethToken.token_symbol,
             userId: wallet.user_id
           };
         }
@@ -162,13 +164,13 @@ export class TransactionAnalyzer {
         // 检查是否是Transfer事件
         if (log.address.toLowerCase() === tx.to!.toLowerCase()) {
           const transferEvent = viemClient.parseERC20Transfer(log);
-          if (transferEvent && this.isUserAddress(transferEvent.to)) {
+          if (transferEvent && transferEvent.to && this.isUserAddress(transferEvent.to)) {
             const wallet = await walletDAO.getWalletByAddress(transferEvent.to);
             if (wallet) {
               logger.info('检测到Token存款', {
                 txHash: tx.hash,
                 tokenAddress: tx.to,
-                tokenSymbol: tokenInfo.tokens_name,
+                tokenSymbol: tokenInfo.token_symbol,
                 to: transferEvent.to,
                 amount: transferEvent.value.toString(),
                 userId: wallet.user_id
@@ -182,7 +184,7 @@ export class TransactionAnalyzer {
                 toAddress: transferEvent.to,
                 amount: transferEvent.value,
                 tokenAddress: tx.to || undefined,
-                tokenSymbol: tokenInfo.tokens_name,
+                tokenSymbol: tokenInfo.token_symbol,
                 userId: wallet.user_id
               };
             }
@@ -203,6 +205,16 @@ export class TransactionAnalyzer {
    */
   async processDeposit(deposit: DepositTransaction): Promise<void> {
     try {
+      // 获取代币信息以确定精度
+      let tokenInfo = null;
+      if (deposit.tokenAddress) {
+        tokenInfo = this.supportedTokens.get(deposit.tokenAddress.toLowerCase());
+      } else {
+        tokenInfo = this.supportedTokens.get('native');
+      }
+      
+      const decimals = tokenInfo?.decimals || 18;
+      
       // 保存交易记录
       await transactionDAO.insertTransaction({
         block_hash: deposit.blockHash,
@@ -211,7 +223,7 @@ export class TransactionAnalyzer {
         from_addr: deposit.fromAddress,
         to_addr: deposit.toAddress,
         token_addr: deposit.tokenAddress,
-        amount: parseFloat(viemClient.formatUnits(deposit.amount, 18)), // 暂时用18位精度
+        amount: parseFloat(viemClient.formatUnits(deposit.amount, decimals)),
         fee: 0, // 这里是存款，没有手续费
         type: 'deposit',
         status: 'confirmed',
@@ -224,7 +236,8 @@ export class TransactionAnalyzer {
         txHash: deposit.txHash,
         userId: deposit.userId,
         tokenSymbol: deposit.tokenSymbol,
-        amount: deposit.amount.toString()
+        amount: viemClient.formatUnits(deposit.amount, decimals),
+        decimals
       });
 
     } catch (error) {
@@ -257,18 +270,35 @@ export class TransactionAnalyzer {
   }
 
   /**
-   * 加载支持的代币列表
+   * 加载支持的代币列表（仅当前链）
    */
   private async loadSupportedTokens(): Promise<void> {
     try {
-      const tokens = await tokenDAO.getAllTokens();
+      // 获取当前链ID
+      const chainId = await viemClient.getChainId();
+      
+      // 只获取当前链的代币
+      const tokens = await tokenDAO.getTokensByChain(chainId);
       this.supportedTokens.clear();
+      
       tokens.forEach(token => {
-        this.supportedTokens.set(token.token_address.toLowerCase(), token);
+        // 处理原生代币（如ETH）- token_address 为 null
+        if (!token.token_address && token.is_native) {
+          this.supportedTokens.set('native', token);
+        } 
+        // 处理ERC20代币
+        else if (token.token_address) {
+          this.supportedTokens.set(token.token_address.toLowerCase(), token);
+        }
       });
       this.lastTokenUpdate = Date.now();
       
-      logger.info('支持的代币列表加载完成', { count: tokens.length });
+      logger.info('支持的代币列表加载完成', { 
+        chainId,
+        count: tokens.length,
+        nativeTokens: tokens.filter(t => t.is_native).length,
+        erc20Tokens: tokens.filter(t => !t.is_native && t.token_address).length
+      });
     } catch (error) {
       logger.error('加载支持的代币列表失败', { error });
     }

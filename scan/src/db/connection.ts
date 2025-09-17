@@ -10,12 +10,28 @@ export class Database {
   constructor() {
     const dbPath = path.resolve(config.databaseUrl);
     
-    this.db = new sqlite3.Database(dbPath, (err) => {
+    this.db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
       if (err) {
         logger.error('数据库连接失败', { path: dbPath, error: err.message });
         throw err;
       } else {
         logger.info('数据库连接成功', { path: dbPath });
+        
+        // 启用 WAL 模式以支持并发读写
+        this.db?.run('PRAGMA journal_mode=WAL', (walErr) => {
+          if (walErr) {
+            logger.warn('启用WAL模式失败', { error: walErr.message });
+          } else {
+            logger.debug('WAL模式已启用');
+          }
+        });
+
+        // 设置忙碌超时
+        this.db?.run('PRAGMA busy_timeout=30000', (timeoutErr) => {
+          if (timeoutErr) {
+            logger.warn('设置忙碌超时失败', { error: timeoutErr.message });
+          }
+        });
       }
     });
   }

@@ -98,17 +98,7 @@ export class WalletModel {
     return await this.balanceModel.getTotalBalanceByAddress(wallet.address);
   }
 
-  // 更新钱包余额（更新balances表）
-  async updateBalance(id: number, balance: number): Promise<void> {
-    // 获取钱包地址
-    const wallet = await this.findById(id);
-    if (!wallet) {
-      throw new Error('钱包不存在');
-    }
 
-    // 使用余额模型更新余额
-    await this.balanceModel.updateWalletBalance(wallet.address, 'ETH', balance);
-  }
 
   // 更新钱包信息
   async update(id: number, updateData: UpdateWalletRequest): Promise<Wallet> {

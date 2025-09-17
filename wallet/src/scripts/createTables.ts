@@ -84,10 +84,15 @@ async function createTables() {
     await db.run(`
       CREATE TABLE IF NOT EXISTS tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        token_address TEXT UNIQUE NOT NULL,
-        uint INTEGER DEFAULT 18,
-        tokens_name TEXT,
+        chain_type TEXT NOT NULL,
+        chain_id INTEGER NOT NULL,
+        token_address TEXT,
+        token_symbol TEXT NOT NULL,
+        token_name TEXT,
+        decimals INTEGER DEFAULT 18,
+        is_native BOOLEAN DEFAULT 0,
         collect_amount TEXT DEFAULT '0',
+        status INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -99,12 +104,15 @@ async function createTables() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         address TEXT NOT NULL,
-        token_symbol TEXT,
+        chain_type TEXT NOT NULL,
+        token_id INTEGER NOT NULL,
+        token_symbol TEXT NOT NULL,
         address_type INTEGER DEFAULT 0,
         balance TEXT DEFAULT '0',
         locked_balance TEXT DEFAULT '0',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (token_id) REFERENCES tokens(id)
       )
     `);
 
@@ -117,10 +125,14 @@ async function createTables() {
       `CREATE INDEX IF NOT EXISTS idx_transactions_block_hash ON transactions(block_hash)`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_to_addr ON transactions(to_addr)`,
       `CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_balances_user_address ON balances(user_id, address)`,
+      `CREATE INDEX IF NOT EXISTS idx_balances_user_chain_token ON balances(user_id, chain_type, token_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_balances_user_symbol ON balances(user_id, token_symbol)`,
       `CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)`,
-      `CREATE INDEX IF NOT EXISTS idx_tokens_address ON tokens(token_address)`,
-      `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`
+      `CREATE INDEX IF NOT EXISTS idx_tokens_chain_symbol ON tokens(chain_type, chain_id, token_symbol)`,
+      `CREATE INDEX IF NOT EXISTS idx_tokens_chain_address ON tokens(chain_type, chain_id, token_address)`,
+      `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_balances_unique ON balances(user_id, chain_type, token_id, address)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`
     ];
 
     for (const indexSql of indexes) {

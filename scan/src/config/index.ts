@@ -34,10 +34,10 @@ const config: Config = {
   
   // 扫描配置
   startBlock: parseInt(process.env.START_BLOCK || '1'),
-  confirmationBlocks: parseInt(process.env.CONFIRMATION_BLOCKS || '12'),
+  confirmationBlocks: parseInt(process.env.CONFIRMATION_BLOCKS || '32'),
   scanBatchSize: parseInt(process.env.SCAN_BATCH_SIZE || '10'),
   reorgCheckDepth: parseInt(process.env.REORG_CHECK_DEPTH || '64'),
-  scanInterval: parseInt(process.env.SCAN_INTERVAL || '30'),
+  scanInterval: parseInt(process.env.SCAN_INTERVAL || '12'),
   maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '5'),
   
   // 服务配置

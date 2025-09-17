@@ -56,3 +56,5 @@ build/
 .DS_Store
 Thumbs.db
 wallet.db
+wallet.db-shm
+wallet.db-wal
