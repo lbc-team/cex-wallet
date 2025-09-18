@@ -35,179 +35,157 @@ export class TransactionAnalyzer {
   }
 
   /**
-   * 分析区块中的交易
+   * 优化版区块分析：使用 bloom 过滤器预筛选相关交易
+   * 通过 getLogs 和地址过滤，只获取与用户地址相关的转账事件，避免逐笔分析所有交易
    */
   async analyzeBlock(blockNumber: number): Promise<DepositTransaction[]> {
     try {
-      logger.debug('开始分析区块交易', { blockNumber });
-
-      const block = await viemClient.getBlock(blockNumber);
-      if (!block) {
-        logger.warn('区块不存在', { blockNumber });
-        return [];
-      }
-
-      const deposits: DepositTransaction[] = [];
+      logger.debug('开始 bloom 过滤器优化分析区块交易', { blockNumber });
 
       // 确保地址和代币信息是最新的
       await this.refreshCacheIfNeeded();
 
-      // 分析区块中的每笔交易
-      for (const txData of block.transactions) {
+      if (this.userAddresses.size === 0) {
+        logger.debug('无用户地址，跳过区块分析', { blockNumber });
+        return [];
+      }
+
+      const deposits: DepositTransaction[] = [];
+      const userAddressList = Array.from(this.userAddresses);
+      const tokenAddressList = Array.from(this.supportedTokens.keys()).filter(key => key !== 'native');
+
+      // 使用 bloom 过滤器原理：通过 getLogs 预筛选相关的转账事件，减少需要处理的交易数量
+      const transferData = await viemClient.getUserTransfersInBlocks(
+        blockNumber,
+        blockNumber,
+        userAddressList,
+        tokenAddressList
+      );
+
+      // 处理ERC20转账
+      for (const log of transferData.erc20Logs) {
         try {
-          if (typeof txData === 'string') {
-            // 如果是交易哈希，需要获取交易详情
-            const tx = await viemClient.getTransaction(txData);
-            if (tx) {
-              const deposit = await this.analyzeTransaction(tx, block.hash!, blockNumber);
-              if (deposit) {
-                deposits.push(deposit);
-              }
-            }
-          } else {
-            // 如果已经是交易对象
-            const deposit = await this.analyzeTransaction(txData, block.hash!, blockNumber);
-            if (deposit) {
-              deposits.push(deposit);
-            }
+          const deposit = await this.processERC20TransferLog(log, blockNumber);
+          if (deposit) {
+            deposits.push(deposit);
           }
         } catch (error) {
-          logger.warn('分析单个交易失败', { 
-            blockNumber, 
-            txHash: typeof txData === 'string' ? txData : txData.hash,
+          logger.warn('处理ERC20转账日志失败', { 
+            blockNumber,
+            logAddress: log.address,
             error 
           });
         }
       }
 
-      logger.debug('区块交易分析完成', {
+      // 处理ETH转账
+      for (const ethTx of transferData.ethTransactions) {
+        try {
+          const deposit = await this.processEthTransfer(ethTx, blockNumber);
+          if (deposit) {
+            deposits.push(deposit);
+          }
+        } catch (error) {
+          logger.warn('处理ETH转账失败', { 
+            blockNumber,
+            txHash: ethTx.hash,
+            error 
+          });
+        }
+      }
+
+      logger.info('优化区块交易分析完成', {
         blockNumber,
-        totalTransactions: block.transactions.length,
-        deposits: deposits.length
+        erc20Logs: transferData.erc20Logs.length,
+        ethTransactions: transferData.ethTransactions.length,
+        totalDeposits: deposits.length
       });
 
       return deposits;
 
     } catch (error) {
-      logger.error('分析区块交易失败', { blockNumber, error });
+      logger.error('优化分析区块交易失败', { blockNumber, error });
       throw error;
     }
   }
 
   /**
-   * 分析单个交易
+   * 批量分析多个区块：使用 bloom 过滤器优化批量处理
+   * 一次性获取多个区块的相关转账事件
    */
-  private async analyzeTransaction(
-    tx: Transaction,
-    blockHash: string,
-    blockNumber: number
-  ): Promise<DepositTransaction | null> {
+  async analyzeBlocksOptimized(fromBlock: number, toBlock: number): Promise<DepositTransaction[]> {
     try {
-      // 检查是否是ETH转账到用户地址
-      if (tx.to && this.isUserAddress(tx.to) && tx.value > 0n) {
-        const wallet = await walletDAO.getWalletByAddress(tx.to);
-        const ethToken = this.supportedTokens.get('native');
-        
-        if (wallet && ethToken) {
-          logger.info('检测到ETH存款', {
-            txHash: tx.hash,
-            to: tx.to,
-            amount: viemClient.formatEther(tx.value),
-            userId: wallet.user_id
-          });
+      logger.info('开始批量 bloom 过滤器优化分析区块', { fromBlock, toBlock });
 
-          return {
-            txHash: tx.hash,
-            blockHash,
-            blockNumber,
-            fromAddress: tx.from || '',
-            toAddress: tx.to,
-            amount: tx.value,
-            tokenSymbol: ethToken.token_symbol,
-            userId: wallet.user_id
-          };
-        }
+      // 确保地址和代币信息是最新的
+      await this.refreshCacheIfNeeded();
+
+      if (this.userAddresses.size === 0) {
+        logger.debug('无用户地址，跳过批量分析', { fromBlock, toBlock });
+        return [];
       }
 
-      // 检查是否是Token转账
-      if (tx.to && this.supportedTokens.has(tx.to.toLowerCase())) {
-        const tokenDeposit = await this.analyzeTokenTransfer(tx, blockHash, blockNumber);
-        if (tokenDeposit) {
-          return tokenDeposit;
-        }
-      }
+      const deposits: DepositTransaction[] = [];
+      const userAddressList = Array.from(this.userAddresses);
+      const tokenAddressList = Array.from(this.supportedTokens.keys()).filter(key => key !== 'native');
 
-      return null;
+      // 批量获取多个区块的相关转账（使用 bloom 过滤器预筛选）
+      const transferData = await viemClient.getUserTransfersInBlocks(
+        fromBlock,
+        toBlock,
+        userAddressList,
+        tokenAddressList
+      );
 
-    } catch (error) {
-      logger.warn('分析单个交易失败', { txHash: tx.hash, error });
-      return null;
-    }
-  }
-
-  /**
-   * 分析Token转账
-   */
-  private async analyzeTokenTransfer(
-    tx: Transaction,
-    blockHash: string,
-    blockNumber: number
-  ): Promise<DepositTransaction | null> {
-    try {
-      // 获取交易收据以获取事件日志
-      const receipt = await viemClient.getTransactionReceipt(tx.hash);
-      if (!receipt) {
-        return null;
-      }
-
-      const tokenInfo = this.supportedTokens.get(tx.to!.toLowerCase());
-      if (!tokenInfo) {
-        return null;
-      }
-
-      // 分析每个日志事件
-      for (const log of receipt.logs) {
-        // 检查是否是Transfer事件
-        if (log.address.toLowerCase() === tx.to!.toLowerCase()) {
-          const transferEvent = viemClient.parseERC20Transfer(log);
-          if (transferEvent && transferEvent.to && this.isUserAddress(transferEvent.to)) {
-            const wallet = await walletDAO.getWalletByAddress(transferEvent.to);
-            // 获取代币信息
-            const tokenInfo = this.getTokenInfo(tx.to!);
-            
-            if (wallet && tokenInfo) {
-              logger.info('检测到Token存款', {
-                txHash: tx.hash,
-                tokenAddress: tx.to,
-                tokenSymbol: tokenInfo.token_symbol,
-                to: transferEvent.to,
-                amount: transferEvent.value.toString(),
-                userId: wallet.user_id
-              });
-
-              return {
-                txHash: tx.hash,
-                blockHash,
-                blockNumber,
-                fromAddress: transferEvent.from,
-                toAddress: transferEvent.to,
-                amount: transferEvent.value,
-                tokenAddress: tx.to || undefined,
-                tokenSymbol: tokenInfo.token_symbol,
-                userId: wallet.user_id
-              };
-            }
+      // 处理ERC20转账日志
+      for (const log of transferData.erc20Logs) {
+        try {
+          const deposit = await this.processERC20TransferLog(log);
+          if (deposit) {
+            deposits.push(deposit);
           }
+        } catch (error) {
+          logger.warn('批量处理ERC20转账日志失败', { 
+            logAddress: log.address,
+            blockNumber: log.blockNumber,
+            error 
+          });
         }
       }
 
-      return null;
+      // 处理ETH转账
+      for (const ethTx of transferData.ethTransactions) {
+        try {
+          const deposit = await this.processEthTransfer(ethTx);
+          if (deposit) {
+            deposits.push(deposit);
+          }
+        } catch (error) {
+          logger.warn('批量处理ETH转账失败', { 
+            txHash: ethTx.hash,
+            blockNumber: ethTx.blockNumber,
+            error 
+          });
+        }
+      }
+
+      logger.info('批量优化区块分析完成', {
+        fromBlock,
+        toBlock,
+        blockCount: toBlock - fromBlock + 1,
+        erc20Logs: transferData.erc20Logs.length,
+        ethTransactions: transferData.ethTransactions.length,
+        totalDeposits: deposits.length
+      });
+
+      return deposits;
 
     } catch (error) {
-      logger.warn('分析Token转账失败', { txHash: tx.hash, error });
-      return null;
+      logger.error('批量优化分析区块失败', { fromBlock, toBlock, error });
+      throw error;
     }
   }
+
 
   /**
    * 处理检测到的存款
@@ -393,6 +371,136 @@ export class TransactionAnalyzer {
   }
 
   /**
+   * 处理ERC20转账日志
+   */
+  private async processERC20TransferLog(log: any, blockNumber?: number): Promise<DepositTransaction | null> {
+    try {
+      // 解析Transfer事件
+      const transferEvent = viemClient.parseERC20Transfer(log);
+      if (!transferEvent) {
+        return null;
+      }
+
+      // 检查接收地址是否是用户地址
+      if (!this.isUserAddress(transferEvent.to)) {
+        return null;
+      }
+
+      // 获取用户钱包信息
+      const wallet = await walletDAO.getWalletByAddress(transferEvent.to);
+      if (!wallet) {
+        return null;
+      }
+
+      // 获取代币信息
+      const tokenInfo = this.getTokenInfo(log.address);
+      if (!tokenInfo) {
+        logger.warn('未找到代币信息', { tokenAddress: log.address });
+        return null;
+      }
+
+      // 获取区块信息
+      let blockHash = log.blockHash;
+      let actualBlockNumber = blockNumber || parseInt(log.blockNumber, 16);
+      
+      if (!blockHash) {
+        const block = await viemClient.getBlock(actualBlockNumber);
+        blockHash = block?.hash || '';
+      }
+
+      logger.info('检测到ERC20存款（优化版）', {
+        txHash: log.transactionHash,
+        tokenAddress: log.address,
+        tokenSymbol: tokenInfo.token_symbol,
+        to: transferEvent.to,
+        amount: transferEvent.value.toString(),
+        userId: wallet.user_id,
+        blockNumber: actualBlockNumber
+      });
+
+      return {
+        txHash: log.transactionHash,
+        blockHash,
+        blockNumber: actualBlockNumber,
+        fromAddress: transferEvent.from,
+        toAddress: transferEvent.to,
+        amount: transferEvent.value,
+        tokenAddress: log.address,
+        tokenSymbol: tokenInfo.token_symbol,
+        userId: wallet.user_id
+      };
+
+    } catch (error) {
+      logger.warn('处理ERC20转账日志失败', { 
+        logAddress: log.address,
+        txHash: log.transactionHash,
+        error 
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 处理ETH转账
+   */
+  private async processEthTransfer(tx: any, blockNumber?: number): Promise<DepositTransaction | null> {
+    try {
+      // 检查接收地址是否是用户地址
+      if (!tx.to || !this.isUserAddress(tx.to) || tx.value <= 0n) {
+        return null;
+      }
+
+      // 获取用户钱包信息
+      const wallet = await walletDAO.getWalletByAddress(tx.to);
+      if (!wallet) {
+        return null;
+      }
+
+      // 获取ETH代币信息
+      const ethToken = this.supportedTokens.get('native');
+      if (!ethToken) {
+        logger.warn('未找到ETH代币信息');
+        return null;
+      }
+
+      // 获取区块信息
+      let blockHash = tx.blockHash;
+      let actualBlockNumber = blockNumber || tx.blockNumber;
+      
+      if (!blockHash) {
+        const block = await viemClient.getBlock(actualBlockNumber);
+        blockHash = block?.hash || '';
+      }
+
+      logger.info('检测到ETH存款（优化版）', {
+        txHash: tx.hash,
+        to: tx.to,
+        amount: viemClient.formatEther(tx.value),
+        userId: wallet.user_id,
+        blockNumber: actualBlockNumber
+      });
+
+      return {
+        txHash: tx.hash,
+        blockHash,
+        blockNumber: actualBlockNumber,
+        fromAddress: tx.from || '',
+        toAddress: tx.to,
+        amount: tx.value,
+        tokenSymbol: ethToken.token_symbol,
+        userId: wallet.user_id
+      };
+
+    } catch (error) {
+      logger.warn('处理ETH转账失败', { 
+        txHash: tx.hash,
+        error 
+      });
+      return null;
+    }
+  }
+
+  /**
    * 获取统计信息
    */
   getStats(): {
@@ -410,26 +518,30 @@ export class TransactionAnalyzer {
   }
 
   /**
-   * 分析历史区块（用于补扫）
+   * 分析历史区块（用于补扫）- 使用批量处理
    */
   async analyzeHistoricalBlocks(startBlock: number, endBlock: number): Promise<void> {
     try {
-      logger.info('开始分析历史区块', { startBlock, endBlock });
+      logger.info('开始分析历史区块（使用批量优化）', { startBlock, endBlock });
 
-      for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
-        const deposits = await this.analyzeBlock(blockNumber);
+      const batchSize = 10; // 每批处理10个区块
+      for (let batchStart = startBlock; batchStart <= endBlock; batchStart += batchSize) {
+        const batchEnd = Math.min(batchStart + batchSize - 1, endBlock);
         
+        // 使用批量优化方法分析区块
+        const deposits = await this.analyzeBlocksOptimized(batchStart, batchEnd);
+        
+        // 处理检测到的存款
         for (const deposit of deposits) {
           await this.processDeposit(deposit);
         }
 
-        if (blockNumber % 100 === 0) {
-          logger.info('历史区块分析进度', { 
-            current: blockNumber, 
-            total: endBlock,
-            progress: ((blockNumber - startBlock) / (endBlock - startBlock) * 100).toFixed(2) + '%'
-          });
-        }
+        logger.info('历史区块分析进度', { 
+          batchStart,
+          batchEnd,
+          deposits: deposits.length,
+          progress: ((batchEnd - startBlock) / (endBlock - startBlock) * 100).toFixed(2) + '%'
+        });
       }
 
       logger.info('历史区块分析完成', { startBlock, endBlock });

@@ -201,6 +201,106 @@ export class ViemClient {
   }
 
   /**
+   * 获取指定区块范围内涉及用户地址的ERC20转账日志
+   */
+  async getERC20TransfersToUsers(
+    fromBlock: number | 'latest',
+    toBlock: number | 'latest',
+    tokenAddresses: string[],
+    userAddresses: string[]
+  ): Promise<Log[]> {
+    try {
+      if (tokenAddresses.length === 0 || userAddresses.length === 0) {
+        return [];
+      }
+
+      // Transfer(address indexed from, address indexed to, uint256 value)
+      const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+      const logs = await this.currentClient.getLogs({
+        fromBlock: typeof fromBlock === 'number' ? `0x${fromBlock.toString(16)}` : fromBlock,
+        toBlock: typeof toBlock === 'number' ? `0x${toBlock.toString(16)}` : toBlock,
+        address: tokenAddresses, // 过滤特定的Token合约
+        topics: [
+          transferTopic, // Transfer事件
+          null, // from地址（不过滤）
+          userAddresses.map(addr => `0x${addr.slice(2).padStart(64, '0')}`) // to地址（过滤用户地址）
+        ]
+      });
+
+      logger.debug('获取ERC20转账日志', {
+        fromBlock,
+        toBlock,
+        tokenCount: tokenAddresses.length,
+        userCount: userAddresses.length,
+        logCount: logs.length
+      });
+
+      return logs;
+    } catch (error) {
+      logger.error('获取ERC20转账日志失败', { 
+        fromBlock, 
+        toBlock, 
+        tokenAddresses: tokenAddresses.length,
+        userAddresses: userAddresses.length,
+        error 
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * 批量获取多个区块的用户相关转账
+   */
+  async getUserTransfersInBlocks(
+    fromBlock: number,
+    toBlock: number,
+    userAddresses: string[],
+    tokenAddresses: string[]
+  ): Promise<{
+    erc20Logs: Log[];
+    ethTransactions: Transaction[];
+  }> {
+    try {
+      const [erc20Logs] = await Promise.all([
+        this.getERC20TransfersToUsers(fromBlock, toBlock, tokenAddresses, userAddresses),
+        // ETH转账需要特殊处理，因为getLogs无法直接过滤ETH转账
+      ]);
+
+      // 对于ETH转账，我们需要获取这些区块并过滤
+      const ethTransactions: Transaction[] = [];
+      
+      // 如果区块范围较小，可以逐块检查ETH转账
+      if (toBlock - fromBlock <= 10) {
+        for (let blockNum = fromBlock; blockNum <= toBlock; blockNum++) {
+          const block = await this.getBlock(blockNum);
+          if (block?.transactions) {
+            for (const txData of block.transactions) {
+              if (typeof txData !== 'string') {
+                // 检查是否是ETH转账到用户地址
+                if (txData.to && 
+                    userAddresses.some(addr => addr.toLowerCase() === txData.to!.toLowerCase()) && 
+                    txData.value > 0n) {
+                  ethTransactions.push(txData);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        erc20Logs,
+        ethTransactions
+      };
+
+    } catch (error) {
+      logger.error('批量获取用户转账失败', { fromBlock, toBlock, error });
+      throw error;
+    }
+  }
+
+  /**
    * 检查连接状态
    */
   async checkConnection(): Promise<boolean> {
