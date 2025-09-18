@@ -210,8 +210,7 @@ export class TransactionAnalyzer {
         from_addr: deposit.fromAddress,
         to_addr: deposit.toAddress,
         token_addr: deposit.tokenAddress,
-        amount: parseFloat(viemClient.formatUnits(deposit.amount, decimals)),
-        fee: 0, // 这里是存款，没有手续费
+        amount: deposit.amount.toString(),
         type: 'deposit',
         status: 'confirmed',
         confirmation_count: 0

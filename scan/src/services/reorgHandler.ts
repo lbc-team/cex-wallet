@@ -270,7 +270,7 @@ export class ReorgHandler {
             tokenSymbol = token ? token.tokens_name : 'UNKNOWN';
           }
 
-          const amount = BigInt(Math.abs(tx.amount * 1e18));
+          const amount = BigInt(tx.amount); // amount已经是以最小单位存储的字符串
 
           // 获取当前余额
           const balance = await database.get(

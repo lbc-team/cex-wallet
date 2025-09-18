@@ -135,27 +135,66 @@ export class BalanceModel {
     const sql = `
       SELECT 
         b.token_symbol,
-        SUM(CAST(b.balance AS REAL) / POWER(10, t.decimals)) as normalized_total,
+        b.balance,
+        t.decimals,
         COUNT(DISTINCT b.chain_type) as chain_count
       FROM balances b
       JOIN tokens t ON b.token_id = t.id
       WHERE b.user_id = ? 
-      GROUP BY b.token_symbol 
-      HAVING normalized_total > 0
-      ORDER BY normalized_total DESC
+      GROUP BY b.token_symbol, t.decimals
+      ORDER BY b.token_symbol
     `;
     
     const rows = await this.db.query<{
       token_symbol: string;
-      normalized_total: number;
+      balance: string;
+      decimals: number;
       chain_count: number;
     }>(sql, [user_id]);
 
-    return rows.map(row => ({
-      token_symbol: row.token_symbol,
-      total_balance: row.normalized_total.toFixed(6),
-      chain_count: row.chain_count
-    }));
+    // 使用JavaScript处理大数值计算，避免SQLite精度丢失
+    const tokenBalances = new Map<string, { total: bigint, decimals: number, chain_count: number }>();
+    
+    for (const row of rows) {
+      const balance = BigInt(row.balance);
+      if (balance > 0n) {
+        if (tokenBalances.has(row.token_symbol)) {
+          const existing = tokenBalances.get(row.token_symbol)!;
+          existing.total += balance;
+          existing.chain_count += row.chain_count;
+        } else {
+          tokenBalances.set(row.token_symbol, {
+            total: balance,
+            decimals: row.decimals,
+            chain_count: row.chain_count
+          });
+        }
+      }
+    }
+
+    const result = Array.from(tokenBalances.entries()).map(([token_symbol, data]) => {
+      // 将wei转换为标准单位并保持6位小数精度
+      const divisor = BigInt(10 ** data.decimals);
+      const integerPart = data.total / divisor;
+      const fractionalPart = data.total % divisor;
+      
+      // 计算小数部分，保持6位精度
+      const fractionalStr = fractionalPart.toString().padStart(data.decimals, '0');
+      const truncatedFractional = fractionalStr.slice(0, 6).padEnd(6, '0');
+      
+      const total_balance = `${integerPart}.${truncatedFractional}`;
+      
+      return {
+        token_symbol,
+        total_balance,
+        chain_count: data.chain_count
+      };
+    });
+
+    // 按数值大小排序（从大到小）
+    result.sort((a, b) => parseFloat(b.total_balance) - parseFloat(a.total_balance));
+    
+    return result;
   }
 
   // 获取用户指定代币的详细余额信息（处理不同链的decimals并格式化）

@@ -20,8 +20,7 @@ export interface Transaction {
   from_addr: string;
   to_addr: string;
   token_addr?: string;
-  amount: number;
-  fee: number;
+  amount: string;
   type: string;
   status: string;
   confirmation_count?: number;
@@ -163,9 +162,9 @@ export class TransactionDAO {
     try {
       const result = await database.run(
         `INSERT INTO transactions 
-         (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, fee, type, status, confirmation_count, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [tx.block_hash, tx.block_no, tx.tx_hash, tx.from_addr, tx.to_addr, tx.token_addr, tx.amount, tx.fee, tx.type, tx.status, tx.confirmation_count || 0]
+         (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status, confirmation_count, created_at) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [tx.block_hash, tx.block_no, tx.tx_hash, tx.from_addr, tx.to_addr, tx.token_addr, tx.amount, tx.type, tx.status, tx.confirmation_count || 0]
       );
       logger.debug('插入交易', { txHash: tx.tx_hash, id: result.lastID });
       return result.lastID!;

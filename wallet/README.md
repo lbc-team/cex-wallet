@@ -250,8 +250,7 @@ node dist/scripts/createTables.js
 | from_addr | TEXT |  发起地址 |
 | to_addr | TEXT |  接收地址 |
 | token_addr | TEXT |  Token 合约地址 |
-| amount | REAL | 交易金额 |
-| fee | REAL | 交易手续费 |
+| amount | TEXT | 交易金额（存储为字符串避免精度丢失） |
 | type | TEXT | 交易类型 充值提现归集调度：deposit/withdraw/collect/rebalance |
 | status | TEXT | 交易状态：confirmed/safe/finalized/failed |
 | confirmation_count | INTEGER | 确认数（网络终结性模式下可选） |

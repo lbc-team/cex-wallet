@@ -227,7 +227,7 @@ export class ConfirmationManager {
             return;
           }
 
-          const amount = BigInt(Math.abs(tx.amount * Math.pow(10, token.decimals)));
+          const amount = BigInt(tx.amount); // amount已经是以最小单位存储的字符串
           
           // 使用 BalanceDAO 方法更新余额
           await balanceDAO.updateBalance(

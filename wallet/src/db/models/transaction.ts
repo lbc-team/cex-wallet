@@ -9,8 +9,7 @@ export interface Transaction {
   from_addr: string;
   to_addr: string;
   token_addr?: string;
-  amount: number;
-  fee?: number;
+  amount: string;
   type: 'deposit' | 'withdraw' | 'collect' | 'rebalance';
   status: 'pending' | 'confirmed' | 'failed';
   created_at?: string;
@@ -24,8 +23,7 @@ export interface CreateTransactionRequest {
   from_addr: string;
   to_addr: string;
   token_addr?: string;
-  amount: number;
-  fee?: number;
+  amount: string;
   type: 'deposit' | 'withdraw' | 'collect' | 'rebalance';
   status?: 'pending' | 'confirmed' | 'failed';
 }
@@ -33,7 +31,7 @@ export interface CreateTransactionRequest {
 // 交易更新接口
 export interface UpdateTransactionRequest {
   status?: 'pending' | 'confirmed' | 'failed';
-  amount?: number;
+  amount?: string;
 }
 
 // 交易查询选项
@@ -59,11 +57,11 @@ export class TransactionModel {
 
   // 创建新交易
   async create(transactionData: CreateTransactionRequest): Promise<Transaction> {
-    const { block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, fee, type, status = 'pending' } = transactionData;
+    const { block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status = 'pending' } = transactionData;
     
     const result = await this.db.run(
-      'INSERT INTO transactions (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, fee, type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, fee, type, status]
+      'INSERT INTO transactions (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status]
     );
 
     const newTransaction = await this.findById(result.lastID);
@@ -139,7 +137,7 @@ export class TransactionModel {
           WHEN t.token_addr IS NULL THEN 'ETH'
           ELSE COALESCE(tk.token_symbol, 'UNKNOWN')
         END as token_symbol,
-        SUM(t.amount) as raw_amount,
+        SUM(CAST(t.amount AS REAL)) as raw_amount,
         COALESCE(tk.decimals, 18) as decimals,
         COUNT(*) as transaction_count
       FROM transactions t
@@ -312,7 +310,7 @@ export class TransactionModel {
     let sql = `
       SELECT 
         COUNT(*) as totalTransactions,
-        COALESCE(SUM(amount), 0) as totalAmount,
+        COALESCE(SUM(CAST(amount AS REAL)), 0) as totalAmount,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingCount,
         SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmedCount,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failedCount
@@ -353,11 +351,11 @@ export class TransactionModel {
     const sql = `
       SELECT 
         DATE(created_at) as date,
-        SUM(CASE WHEN type = 'deposit' AND status = 'confirmed' THEN amount ELSE 0 END) as total_deposits,
-        SUM(CASE WHEN type IN ('withdraw', 'transfer') AND status = 'confirmed' THEN amount ELSE 0 END) as total_withdrawals,
+        SUM(CASE WHEN type = 'deposit' AND status = 'confirmed' THEN CAST(amount AS REAL) ELSE 0 END) as total_deposits,
+        SUM(CASE WHEN type IN ('withdraw', 'transfer') AND status = 'confirmed' THEN CAST(amount AS REAL) ELSE 0 END) as total_withdrawals,
         SUM(CASE 
-          WHEN type = 'deposit' AND status = 'confirmed' THEN amount 
-          WHEN type IN ('withdraw', 'transfer') AND status = 'confirmed' THEN -amount 
+          WHEN type = 'deposit' AND status = 'confirmed' THEN CAST(amount AS REAL) 
+          WHEN type IN ('withdraw', 'transfer') AND status = 'confirmed' THEN -CAST(amount AS REAL) 
           ELSE 0 
         END) as net_change
       FROM transactions 
