@@ -129,10 +129,19 @@ export class Database {
   }
 
   /**
-   * 执行事务
+   * 执行事务 - 支持嵌套事务检测
    */
+  private inTransaction: boolean = false;
+  
   async transaction<T>(callback: () => Promise<T>): Promise<T> {
+    // 如果已经在事务中，直接执行回调（支持伪嵌套）
+    if (this.inTransaction) {
+      logger.debug('检测到嵌套事务调用，直接执行回调');
+      return await callback();
+    }
+    
     try {
+      this.inTransaction = true;
       await this.run('BEGIN TRANSACTION');
       const result = await callback();
       await this.run('COMMIT');
@@ -140,7 +149,16 @@ export class Database {
     } catch (error) {
       await this.run('ROLLBACK');
       throw error;
+    } finally {
+      this.inTransaction = false;
     }
+  }
+
+  /**
+   * 检查是否在事务中
+   */
+  isInTransaction(): boolean {
+    return this.inTransaction;
   }
 
   /**

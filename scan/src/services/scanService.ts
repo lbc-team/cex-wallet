@@ -1,5 +1,5 @@
 import { blockScanner } from './blockScanner';
-import { transactionAnalyzer } from './transactionAnalyzer';
+import { transactionAnalyzer } from './txAnalyzer';
 import { database } from '../db/connection';
 import logger from '../utils/logger';
 import config from '../config';

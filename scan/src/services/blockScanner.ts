@@ -1,6 +1,6 @@
 import { viemClient } from '../utils/viemClient';
 import { blockDAO, transactionDAO, walletDAO, tokenDAO, balanceDAO, database } from '../db/models';
-import { transactionAnalyzer } from './transactionAnalyzer';
+import { transactionAnalyzer } from './txAnalyzer';
 import { reorgHandler } from './reorgHandler';
 import { confirmationManager } from './confirmationManager';
 import logger from '../utils/logger';
@@ -105,7 +105,7 @@ export class BlockScanner {
       });
 
       try {
-        await this.scanBlockBatch(currentBlock, endBlock);
+        await this.scanBlockBatchStrategy(currentBlock, endBlock);
         
         // 扫描进度通过 blocks 表自动更新
         currentBlock = endBlock + 1;
@@ -137,20 +137,212 @@ export class BlockScanner {
   }
 
   /**
-   * 扫描区块批次
+   * 扫描区块批次 - 智能选择最优处理策略
+   */
+  private async scanBlockBatchStrategy(startBlock: number, endBlock: number): Promise<void> {
+    const batchSize = endBlock - startBlock + 1;
+    
+    // 检查 endBlock 是否已经 finalized
+    const finalizedBlock = await viemClient.getFinalizedBlock();
+    const isEndBlockFinalized = finalizedBlock && endBlock <= Number(finalizedBlock.number);
+    
+    logger.debug('区块批次处理策略分析', {
+      startBlock,
+      endBlock,
+      batchSize,
+      finalizedBlockNumber: finalizedBlock ? Number(finalizedBlock.number) : null,
+      isEndBlockFinalized
+    });
+
+    // 策略选择：
+    // 1. 如果 endBlock 已经 finalized，优先使用历史分析模式（最高效）
+    // 2. 否则使用批量模式（兼容所有批次大小）
+    
+    if (isEndBlockFinalized && batchSize > 3) {
+      // 使用历史分析模式处理 finalized 区块
+      await this.scanBlockBatchHistorical(startBlock, endBlock);
+    } else {
+      // 使用批量模式（兼容大小批次）
+      await this.scanBlockBatch(startBlock, endBlock);
+    }
+  }
+
+
+  /**
+   * 批量扫描区块（兼容所有批次大小，支持 bloom 过滤器优化）
    */
   private async scanBlockBatch(startBlock: number, endBlock: number): Promise<void> {
-    for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
-      if (!this.isScanning) {
-        break;
+    try {
+      logger.debug('使用批量模式扫描区块', { startBlock, endBlock });
+
+      // 批量获取并验证区块信息，同时检查重组
+      const blocks: any[] = [];
+      let reorgDetected = false;
+      let reorgInfo = null;
+
+      for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
+        if (!this.isScanning) {
+          break;
+        }
+        
+        const block = await viemClient.getBlock(blockNumber);
+        if (!block) {
+          throw new Error(`区块 ${blockNumber} 不存在`);
+        }
+
+        // 检查重组（只需检查第一个区块，如果有重组会处理整个范围）
+        if (blockNumber === startBlock) {
+          reorgInfo = await reorgHandler.checkAndHandleReorg(blockNumber, block.hash!);
+          if (reorgInfo) {
+            reorgDetected = true;
+            logger.warn('批量扫描中检测到重组，切换到重组处理模式', {
+              blockNumber,
+              commonAncestor: reorgInfo.commonAncestor,
+              blocksToRescan: reorgInfo.blocksToRescan
+            });
+            break; // 退出循环，使用重组处理逻辑
+          }
+        }
+
+        blocks.push({ number: blockNumber, data: block });
       }
 
-      try {
-        await this.scanSingleBlock(blockNumber);
-      } catch (error) {
-        logger.error('扫描单个区块失败', { blockNumber, error });
-        throw error;
+      // 如果检测到重组，使用单独的重组处理逻辑
+      if (reorgDetected && reorgInfo) {
+        const rescanStart = reorgInfo.commonAncestor + 1;
+        const rescanEnd = endBlock;
+        
+        logger.info('重组处理：重新扫描区块范围', { rescanStart, rescanEnd });
+        
+        for (let rescanBlock = rescanStart; rescanBlock <= rescanEnd; rescanBlock++) {
+          if (!this.isScanning) {
+            break;
+          }
+          
+          const chainBlock = await viemClient.getBlock(rescanBlock);
+          if (chainBlock) {
+            await this.processValidBlock(rescanBlock, chainBlock);
+          }
+        }
+        return; // 重组处理完成，直接返回
       }
+
+      // 批量分析交易（使用 bloom 过滤器优化）
+      const deposits = await transactionAnalyzer.analyzeBatchBlocksForDeposits(startBlock, endBlock);
+
+      // 使用事务批量保存所有数据
+      await database.transaction(async () => {
+        // 批量保存区块信息
+        for (const block of blocks) {
+          await blockDAO.insertBlock({
+            hash: block.data.hash!,
+            parent_hash: block.data.parentHash,
+            number: block.data.number!.toString(),
+            timestamp: Number(block.data.timestamp),
+            status: 'confirmed'
+          });
+        }
+
+        // 批量处理存款
+        for (const deposit of deposits) {
+          await transactionAnalyzer.processDeposit(deposit);
+        }
+
+        // 处理确认
+        await confirmationManager.processConfirmations();
+
+        logger.debug('批量区块扫描事务提交成功', {
+          startBlock,
+          endBlock,
+          blocksProcessed: blocks.length,
+          deposits: deposits.length
+        });
+      });
+
+    } catch (error) {
+      logger.error('批量优化扫描失败，回退到逐个处理', { startBlock, endBlock, error });
+      // 回退到逐个处理模式
+      for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
+        if (!this.isScanning) {
+          break;
+        }
+        try {
+          await this.scanSingleBlock(blockNumber);
+        } catch (singleBlockError) {
+          logger.error('逐个扫描区块失败', { blockNumber, error: singleBlockError });
+          throw singleBlockError;
+        }
+      }
+    }
+  }
+
+  /**
+   * 历史分析模式扫描区块（适用于 finalized 区块，最高效）
+   */
+  private async scanBlockBatchHistorical(startBlock: number, endBlock: number): Promise<void> {
+    try {
+      logger.info('使用历史分析模式扫描 finalized 区块', { 
+        startBlock, 
+        endBlock,
+        reason: 'endBlock已finalized，使用最优策略'
+      });
+
+      // 分步处理，避免嵌套事务问题
+      
+      // 1. 批量获取并保存区块信息
+      const blocks: any[] = [];
+      await database.transaction(async () => {
+        for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
+          if (!this.isScanning) {
+            break;
+          }
+          
+          const block = await viemClient.getBlock(blockNumber);
+          if (!block) {
+            throw new Error(`区块 ${blockNumber} 不存在`);
+          }
+
+          // 保存区块信息
+          await blockDAO.insertBlock({
+            hash: block.hash!,
+            parent_hash: block.parentHash,
+            number: block.number!.toString(),
+            timestamp: Number(block.timestamp),
+            status: 'confirmed'
+          });
+
+          blocks.push({ number: blockNumber, data: block });
+        }
+        
+        logger.debug('历史分析模式：区块信息保存完成', {
+          startBlock,
+          endBlock,
+          blocksProcessed: blocks.length
+        });
+      });
+
+      // 2. 使用历史分析方法处理交易（内部有自己的事务管理）
+      await transactionAnalyzer.analyzeHistoricalBlocks(startBlock, endBlock);
+
+      // 3. 最后处理确认（单独事务）
+      await database.transaction(async () => {
+        await confirmationManager.processConfirmations();
+      });
+
+      logger.info('历史分析模式扫描完成', {
+        startBlock,
+        endBlock,
+        blocksProcessed: blocks.length
+      });
+
+    } catch (error) {
+      logger.error('历史分析模式扫描失败，回退到批量优化模式', { 
+        startBlock, 
+        endBlock, 
+        error 
+      });
+      // 回退到批量优化模式
+      await this.scanBlockBatch(startBlock, endBlock);
     }
   }
 
@@ -200,29 +392,38 @@ export class BlockScanner {
   }
 
   /**
-   * 处理有效区块
+   * 处理有效区块 - 使用事务确保数据一致性
    */
   private async processValidBlock(blockNumber: number, block: any): Promise<void> {
     try {
-      // 保存区块信息
-      await blockDAO.insertBlock({
-        hash: block.hash!,
-        parent_hash: block.parentHash,
-        number: block.number!.toString(),
-        timestamp: Number(block.timestamp),
-        status: 'confirmed'
-      });
-
-      // 分析区块中的交易
+      // 分析区块中的交易（在事务外进行，避免长时间锁定）
       const deposits = await transactionAnalyzer.analyzeBlock(blockNumber);
+      
+      // 使用事务处理所有数据库写入操作，确保完整的数据一致性
+      await database.transaction(async () => {
+        // 1. 保存区块信息
+        await blockDAO.insertBlock({
+          hash: block.hash!,
+          parent_hash: block.parentHash,
+          number: block.number!.toString(),
+          timestamp: Number(block.timestamp),
+          status: 'confirmed'
+        });
 
-      // 处理检测到的存款
-      for (const deposit of deposits) {
-        await transactionAnalyzer.processDeposit(deposit);
-      }
+        // 2. 处理检测到的存款
+        for (const deposit of deposits) {
+          await transactionAnalyzer.processDeposit(deposit);
+        }
 
-      // 处理交易确认
-      await confirmationManager.processConfirmations();
+        // 3. 处理交易确认（包含在同一事务中，确保状态一致性）
+        await confirmationManager.processConfirmations();
+
+        logger.debug('区块完整处理事务提交成功', {
+          blockNumber,
+          hash: block.hash,
+          deposits: deposits.length
+        });
+      });
 
       logger.debug('区块扫描完成', {
         blockNumber,
@@ -232,7 +433,11 @@ export class BlockScanner {
       });
 
     } catch (error) {
-      logger.error('处理有效区块失败', { blockNumber, error });
+      logger.error('处理有效区块失败', { 
+        blockNumber, 
+        blockHash: block.hash,
+        error 
+      });
       throw error;
     }
   }
