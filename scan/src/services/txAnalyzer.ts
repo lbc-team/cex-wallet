@@ -269,12 +269,12 @@ export class TransactionAnalyzer {
       this.supportedTokens.clear();
       
       tokens.forEach(token => {
-        // 处理原生代币（如ETH）- token_address 为 null
-        if (!token.token_address && token.is_native) {
+        // 处理原生代币（如ETH）- token_address 为 null 或全零地址
+        if ((!token.token_address || token.token_address === '0x0000000000000000000000000000000000000000') && token.is_native) {
           this.supportedTokens.set('native', token);
         } 
         // 处理ERC20代币
-        else if (token.token_address) {
+        else if (token.token_address && token.token_address !== '0x0000000000000000000000000000000000000000') {
           this.supportedTokens.set(token.token_address.toLowerCase(), token);
         }
       });
@@ -401,7 +401,12 @@ export class TransactionAnalyzer {
 
       // 获取区块信息
       let blockHash = log.blockHash;
-      let actualBlockNumber = blockNumber || parseInt(log.blockNumber, 16);
+      let actualBlockNumber = blockNumber || Number(log.blockNumber); // 优先使用传入的blockNumber，回退到log.blockNumber
+      
+      if (!actualBlockNumber) {
+        logger.error('区块号不能为空', { txHash: log.transactionHash });
+        return null;
+      }
       
       if (!blockHash) {
         const block = await viemClient.getBlock(actualBlockNumber);
@@ -465,7 +470,12 @@ export class TransactionAnalyzer {
 
       // 获取区块信息
       let blockHash = tx.blockHash;
-      let actualBlockNumber = blockNumber || tx.blockNumber;
+      let actualBlockNumber = blockNumber || Number(tx.blockNumber); // 优先使用传入的blockNumber，回退到tx.blockNumber
+      
+      if (!actualBlockNumber) {
+        logger.error('区块号不能为空', { txHash: tx.hash });
+        return null;
+      }
       
       if (!blockHash) {
         const block = await viemClient.getBlock(actualBlockNumber);
@@ -477,7 +487,7 @@ export class TransactionAnalyzer {
         to: tx.to,
         amount: viemClient.formatEther(tx.value),
         userId: wallet.user_id,
-        blockNumber: actualBlockNumber
+        blockNumber: actualBlockNumber?.toString()
       });
 
       return {

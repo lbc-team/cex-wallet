@@ -208,12 +208,12 @@ export class ConfirmationManager {
           let token: any = null;
           let tokenSymbol = 'ETH';
           
-          if (tx.token_addr) {
-            // 获取代币信息，使用动态链ID
+          if (tx.token_addr && tx.token_addr !== '0x0000000000000000000000000000000000000000') {
+            // 匹配链ID 的 ERC20代币
             token = await tokenDAO.getTokenByAddress(tx.token_addr, 'eth', chainId);
             tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
           } else {
-            // 原生代币，使用 is_native 字段查找
+            // 原生代币（token_addr为null或全零地址），使用 is_native 字段查找
             token = await tokenDAO.getNativeToken(chainId);
             tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
           }

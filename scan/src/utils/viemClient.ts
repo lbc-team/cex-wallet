@@ -264,9 +264,10 @@ export class ViemClient {
     try {
       const [erc20Logs] = await Promise.all([
         this.getERC20TransfersToUsers(fromBlock, toBlock, tokenAddresses, userAddresses),
-        // ETH转账需要特殊处理，因为getLogs无法直接过滤ETH转账
+        
       ]);
 
+      // ETH转账需要特殊处理，因为getLogs无法直接过滤ETH转账
       // 对于ETH转账，我们需要获取这些区块并过滤
       const ethTransactions: Transaction[] = [];
       
@@ -278,9 +279,18 @@ export class ViemClient {
             for (const txData of block.transactions) {
               if (typeof txData !== 'string') {
                 // 检查是否是ETH转账到用户地址
+                
                 if (txData.to && 
                     userAddresses.some(addr => addr.toLowerCase() === txData.to!.toLowerCase()) && 
                     txData.value > 0n) {
+                  logger.info('发现ETH转账', {
+                    blockNumber: txData.blockNumber?.toString(),
+                    txHash: txData.hash,
+                    from: txData.from,
+                    to: txData.to,
+                    value: txData.value.toString(),
+                    valueETH: Number(txData.value) / 1e18
+                  });
                   ethTransactions.push(txData);
                 }
               }
