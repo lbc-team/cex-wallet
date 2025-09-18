@@ -1,5 +1,6 @@
 import { viemClient } from '../utils/viemClient';
-import { blockDAO, transactionDAO, walletDAO, balanceDAO, database } from '../db/models';
+import { blockDAO, transactionDAO, walletDAO, database } from '../db/models';
+import { creditDAO } from '../db/creditDAO';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -172,6 +173,18 @@ export class ReorgHandler {
 
       const orphanedBlocks: string[] = [];
       let revertedTransactions = 0;
+
+      // 首先删除受影响区块的Credit记录
+      const deletedCredits = await creditDAO.deleteByBlockRange(
+        commonAncestor + 1,
+        currentBlock
+      );
+      
+      logger.info('重组回滚Credit记录', {
+        startBlock: commonAncestor + 1,
+        endBlock: currentBlock,
+        deletedCredits
+      });
 
       // 回滚从共同祖先之后的所有区块
       for (let blockNumber = commonAncestor + 1; blockNumber <= currentBlock; blockNumber++) {

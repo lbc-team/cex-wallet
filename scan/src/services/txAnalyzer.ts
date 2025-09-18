@@ -1,5 +1,6 @@
 import { viemClient } from '../utils/viemClient';
-import { transactionDAO, walletDAO, tokenDAO, balanceDAO, database } from '../db/models';
+import { transactionDAO, walletDAO, tokenDAO, database } from '../db/models';
+import { creditDAO } from '../db/creditDAO';
 import logger from '../utils/logger';
 import config from '../config';
 import { Transaction, Block } from 'viem';
@@ -14,6 +15,7 @@ export interface DepositTransaction {
   tokenAddress?: string;
   tokenSymbol: string;
   userId: number;
+  logIndex?: number; // 事件在区块中的索引
 }
 
 export class TransactionAnalyzer {
@@ -216,7 +218,24 @@ export class TransactionAnalyzer {
         confirmation_count: 0
       });
 
-      // 等交易 finalized 后直接更新 balance
+      // 立即创建Credit记录（使用真实的事件索引）
+      await creditDAO.createDepositCredit({
+        userId: deposit.userId,
+        address: deposit.toAddress,
+        tokenId: tokenInfo.id,
+        tokenSymbol: deposit.tokenSymbol,
+        amount: deposit.amount.toString(),
+        txHash: deposit.txHash,
+        blockNumber: deposit.blockNumber,
+        eventIndex: deposit.logIndex, // 使用真实的事件索引
+        status: 'confirmed', // 初始状态为confirmed
+        metadata: {
+          fromAddress: deposit.fromAddress,
+          tokenAddress: deposit.tokenAddress,
+          decimals: decimals,
+          logIndex: deposit.logIndex
+        }
+      });
 
       logger.info('存款处理完成', {
         txHash: deposit.txHash,
@@ -431,7 +450,8 @@ export class TransactionAnalyzer {
         amount: transferEvent.value,
         tokenAddress: log.address,
         tokenSymbol: tokenInfo.token_symbol,
-        userId: wallet.user_id
+        userId: wallet.user_id,
+        logIndex: Number(log.logIndex) // 添加真实的事件索引
       };
 
     } catch (error) {
@@ -497,7 +517,8 @@ export class TransactionAnalyzer {
         toAddress: tx.to,
         amount: tx.value,
         tokenSymbol: ethToken.token_symbol,
-        userId: wallet.user_id
+        userId: wallet.user_id,
+        logIndex: Number(tx.transactionIndex) || 0 // ETH转账使用交易索引作为事件索引
       };
 
     } catch (error) {

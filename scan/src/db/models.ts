@@ -54,17 +54,6 @@ export interface Token {
   updated_at: string;
 }
 
-export interface Balance {
-  id: number;
-  user_id: number;
-  address: string;
-  token_symbol: string;
-  address_type: number;
-  balance: string;
-  locked_balance: string;
-  created_at: string;
-  updated_at: string;
-}
 
 
 /**
@@ -354,102 +343,12 @@ export class TokenDAO {
   }
 }
 
-/**
- * 余额数据访问对象
- */
-export class BalanceDAO {
-  /**
-   * 获取用户余额（支持多链）
-   */
-  async getBalance(userId: number, address: string, tokenId: number): Promise<Balance | null> {
-    try {
-      const balance = await database.get(
-        'SELECT * FROM balances WHERE user_id = ? AND address = ? AND token_id = ?',
-        [userId, address, tokenId]
-      );
-      return balance;
-    } catch (error) {
-      logger.error('获取余额失败', { userId, address, tokenId, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 根据代币符号获取用户余额（跨链汇总）
-   */
-  async getBalanceBySymbol(userId: number, tokenSymbol: string): Promise<Balance[]> {
-    try {
-      const balances = await database.all(
-        'SELECT b.* FROM balances b JOIN tokens t ON b.token_id = t.id WHERE b.user_id = ? AND t.token_symbol = ?',
-        [userId, tokenSymbol]
-      );
-      return balances;
-    } catch (error) {
-      logger.error('根据符号获取余额失败', { userId, tokenSymbol, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 获取用户在指定链上的余额
-   */
-  async getBalanceByChain(userId: number, chainType: string, chainId: number): Promise<Balance[]> {
-    try {
-      const balances = await database.all(
-        'SELECT b.* FROM balances b JOIN tokens t ON b.token_id = t.id WHERE b.user_id = ? AND t.chain_type = ? AND t.chain_id = ?',
-        [userId, chainType, chainId]
-      );
-      return balances;
-    } catch (error) {
-      logger.error('获取链余额失败', { userId, chainType, chainId, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 更新余额（支持多链）
-   */
-  async updateBalance(userId: number, address: string, chainType: string, tokenId: number, tokenSymbol: string, amount: string): Promise<void> {
-    try {
-      // 先查找是否存在记录
-      const existing = await database.get(
-        'SELECT * FROM balances WHERE user_id = ? AND address = ? AND chain_type = ? AND token_id = ?',
-        [userId, address, chainType, tokenId]
-      );
-
-      if (existing) {
-        // 更新现有记录
-        const currentBalance = BigInt(existing.balance || '0');
-        const newBalance = currentBalance + BigInt(amount);
-        
-        await database.run(
-          'UPDATE balances SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND address = ? AND chain_type = ? AND token_id = ?',
-          [newBalance.toString(), userId, address, chainType, tokenId]
-        );
-      } else {
-        // 创建新记录
-        await database.run(
-          `INSERT INTO balances (user_id, address, chain_type, token_id, token_symbol, address_type, balance, locked_balance, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-          [userId, address, chainType, tokenId, tokenSymbol, 0, amount, '0']
-        );
-      }
-      
-      logger.debug('更新余额', { userId, address, chainType, tokenId, tokenSymbol, amount });
-    } catch (error) {
-      logger.error('更新余额失败', { userId, address, chainType, tokenId, tokenSymbol, amount, error });
-      throw error;
-    }
-  }
-
-}
 
 // 导出DAO实例
 export const blockDAO = new BlockDAO();
 export const transactionDAO = new TransactionDAO();
 export const walletDAO = new WalletDAO();
 export const tokenDAO = new TokenDAO();
-export const balanceDAO = new BalanceDAO();
 
 // 导出数据库实例
 export { database } from './connection';

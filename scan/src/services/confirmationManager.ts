@@ -1,5 +1,6 @@
 import { viemClient } from '../utils/viemClient';
-import { transactionDAO, walletDAO, tokenDAO, balanceDAO } from '../db/models';
+import { transactionDAO, walletDAO, tokenDAO } from '../db/models';
+import { creditDAO } from '../db/creditDAO';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -227,17 +228,11 @@ export class ConfirmationManager {
             return;
           }
 
-          const amount = BigInt(tx.amount); // amount已经是以最小单位存储的字符串
+          const amount = tx.amount; // amount已经是以最小单位存储的字符串
           
-          // 使用 BalanceDAO 方法更新余额
-          await balanceDAO.updateBalance(
-            wallet.user_id,
-            tx.to_addr,
-            token.chain_type,
-            token.id,
-            token.token_symbol,
-            amount.toString()
-          );
+          // 更新现有Credit记录的状态为finalized（Credit记录已在processDeposit时创建）
+          await creditDAO.updateCreditStatusByTxHash(tx.tx_hash, 'finalized');
+
 
           await transactionDAO.updateTransactionStatus(tx.tx_hash, 'finalized');
 

@@ -1,15 +1,18 @@
 import { DatabaseService } from '../db';
 import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
+import { BalanceService } from './balanceService';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
   private dbService: DatabaseService;
   private signerService: SignerService;
+  private balanceService: BalanceService;
 
   constructor(dbService: DatabaseService) {
     this.dbService = dbService;
     this.signerService = new SignerService();
+    this.balanceService = new BalanceService(dbService);
   }
 
   /**
@@ -98,19 +101,23 @@ export class WalletBusinessService {
 
 
   /**
-   * 获取用户余额总和（所有链的总和）
+   * 获取用户余额总和（所有链的总和）- 使用新的Credits系统
    */
   async getUserTotalBalance(userId: number): Promise<{
     success: boolean;
     data?: {
       token_symbol: string;
       total_balance: string;
-      chain_count: number;
+      available_balance: string;
+      frozen_balance: string;
+      address_count: number;
     }[];
     error?: string;
   }> {
     try {
-      const balances = await this.dbService.balances.getUserTotalBalancesByToken(userId);
+      // 使用Credits系统获取用户余额
+      const balances = await this.balanceService.getUserTotalBalancesByToken(userId);
+      
       return {
         success: true,
         data: balances
@@ -169,18 +176,33 @@ export class WalletBusinessService {
     error?: string;
   }> {
     try {
-      const tokenBalance = await this.dbService.balances.getUserTokenBalance(userId, tokenSymbol);
+      // 使用Credits系统获取用户指定代币余额
+      const balances = await this.balanceService.getUserBalances(userId);
+      const tokenBalances = balances.filter(b => b.token_symbol === tokenSymbol);
       
-      if (!tokenBalance) {
+      if (tokenBalances.length === 0) {
         return {
           success: false,
           error: `用户没有 ${tokenSymbol} 代币余额`
         };
       }
 
+      // 简化返回格式，只返回第一个地址的余额信息
+      const firstBalance = tokenBalances[0];
       return {
         success: true,
-        data: tokenBalance
+        data: {
+          token_symbol: tokenSymbol,
+          chain_details: [{
+            chain_type: 'eth', // 简化处理
+            token_id: firstBalance.token_id,
+            balance: firstBalance.total_balance,
+            decimals: firstBalance.decimals,
+            normalized_balance: firstBalance.total_balance_formatted
+          }],
+          total_normalized_balance: firstBalance.total_balance_formatted,
+          chain_count: tokenBalances.length
+        }
       };
     } catch (error) {
       return {

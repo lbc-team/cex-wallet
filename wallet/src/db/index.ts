@@ -21,19 +21,21 @@ export {
   UserQueryOptions 
 } from './models/user';
 export { 
-  BalanceModel, 
-  Balance, 
-  CreateBalanceRequest, 
-  UpdateBalanceRequest,
-  BalanceQueryOptions 
-} from './models/balance';
+  CreditModel, 
+  Credit, 
+  CreateCreditRequest, 
+  UserBalance,
+  CreditQueryOptions,
+  CreditType,
+  BusinessType 
+} from './models/credit';
 
 // 导入类型和函数用于内部使用
 import { DatabaseConnection, getDatabase, initDatabase } from './connection';
 import { WalletModel } from './models/wallet';
 import { TransactionModel } from './models/transaction';
 import { UserModel } from './models/user';
-import { BalanceModel } from './models/balance';
+import { CreditModel } from './models/credit';
 
 // 数据库服务类 - 统一管理所有模型
 export class DatabaseService {
@@ -41,14 +43,14 @@ export class DatabaseService {
   public users: UserModel;
   public wallets: WalletModel;
   public transactions: TransactionModel;
-  public balances: BalanceModel;
+  public credits: CreditModel;
 
   constructor(connection: DatabaseConnection) {
     this.connection = connection;
     this.users = new UserModel(connection);
     this.wallets = new WalletModel(connection);
     this.transactions = new TransactionModel(connection);
-    this.balances = new BalanceModel(connection);
+    this.credits = new CreditModel(connection);
   }
 
   // 获取数据库连接

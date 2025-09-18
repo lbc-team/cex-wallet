@@ -134,23 +134,48 @@ export class DatabaseConnection {
         )
       `);
 
-      // 创建余额表
+      // 创建资金 Credits 流水表（替代直接更新 balances）
       await this.run(`
-        CREATE TABLE IF NOT EXISTS balances (
+        CREATE TABLE IF NOT EXISTS credits (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
           address TEXT NOT NULL,
-          chain_type TEXT NOT NULL,
           token_id INTEGER NOT NULL,
           token_symbol TEXT NOT NULL,
-          address_type INTEGER DEFAULT 0,
-          balance TEXT DEFAULT '0',
-          locked_balance TEXT DEFAULT '0',
+          amount TEXT NOT NULL,
+          credit_type TEXT NOT NULL,
+          business_type TEXT NOT NULL,
+          reference_id TEXT NOT NULL,
+          reference_type TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          block_number INTEGER,
+          tx_hash TEXT,
+          event_index INTEGER DEFAULT 0,
+          metadata TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id),
           FOREIGN KEY (token_id) REFERENCES tokens(id)
         )
       `);
+
+      // 创建余额缓存表（用于高频查询优化）
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS user_balance_cache (
+          user_id INTEGER NOT NULL,
+          token_id INTEGER NOT NULL,
+          token_symbol TEXT NOT NULL,
+          available_balance TEXT NOT NULL DEFAULT '0',
+          frozen_balance TEXT NOT NULL DEFAULT '0',
+          total_balance TEXT NOT NULL DEFAULT '0',
+          last_credit_id INTEGER NOT NULL DEFAULT 0,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, token_id),
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (token_id) REFERENCES tokens(id)
+        )
+      `);
+
 
       // 创建索引
       const indexes = [
@@ -160,13 +185,21 @@ export class DatabaseConnection {
         `CREATE INDEX IF NOT EXISTS idx_transactions_block_hash ON transactions(block_hash)`,
         `CREATE INDEX IF NOT EXISTS idx_transactions_to_addr ON transactions(to_addr)`,
         `CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`,
-        `CREATE INDEX IF NOT EXISTS idx_balances_user_chain_token ON balances(user_id, chain_type, token_id)`,
-        `CREATE INDEX IF NOT EXISTS idx_balances_user_symbol ON balances(user_id, token_symbol)`,
+        
+        // Credits表索引
+        `CREATE INDEX IF NOT EXISTS idx_credits_user_token ON credits(user_id, token_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_user_status ON credits(user_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_reference ON credits(reference_id, reference_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_tx_hash ON credits(tx_hash)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_block_number ON credits(block_number)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_status ON credits(status)`,
+        `CREATE INDEX IF NOT EXISTS idx_credits_type ON credits(credit_type)`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_credits_unique ON credits(reference_id, reference_type, event_index)`,
+        
         `CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)`,
         `CREATE INDEX IF NOT EXISTS idx_tokens_chain_symbol ON tokens(chain_type, chain_id, token_symbol)`,
         `CREATE INDEX IF NOT EXISTS idx_tokens_chain_address ON tokens(chain_type, chain_id, token_address)`,
         `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_balances_unique ON balances(user_id, chain_type, token_id, address)`,
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`
       ];
 
@@ -174,10 +207,128 @@ export class DatabaseConnection {
         await this.run(indexSql);
       }
 
+      // 创建余额聚合视图
+      await this.createBalanceViews();
+
       console.log('数据库表初始化完成');
       
     } catch (error) {
       console.error('数据库表初始化失败', error);
+      throw error;
+    }
+  }
+
+  // 创建余额聚合视图
+  private async createBalanceViews(): Promise<void> {
+    try {
+      // 1. 用户余额实时视图（按地址分组）
+      await this.run(`
+        CREATE VIEW IF NOT EXISTS v_user_balances AS
+        SELECT 
+          c.user_id,
+          c.address,
+          c.token_id,
+          c.token_symbol,
+          t.decimals,
+          SUM(CASE 
+            WHEN c.credit_type NOT IN ('freeze') AND c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) as available_balance,
+          SUM(CASE 
+            WHEN c.credit_type = 'freeze' AND c.status = 'finalized' 
+            THEN ABS(CAST(c.amount AS REAL))
+            ELSE 0 
+          END) as frozen_balance,
+          SUM(CASE 
+            WHEN c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) as total_balance,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.credit_type NOT IN ('freeze') AND c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as available_balance_formatted,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.credit_type = 'freeze' AND c.status = 'finalized' 
+            THEN ABS(CAST(c.amount AS REAL))
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as frozen_balance_formatted,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as total_balance_formatted,
+          MAX(c.updated_at) as last_updated
+        FROM credits c
+        JOIN tokens t ON c.token_id = t.id
+        GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
+        HAVING total_balance > 0
+      `);
+
+      // 2. 用户代币总余额视图（跨地址聚合）
+      await this.run(`
+        CREATE VIEW IF NOT EXISTS v_user_token_totals AS
+        SELECT 
+          c.user_id,
+          c.token_id,
+          c.token_symbol,
+          t.decimals,
+          SUM(CASE 
+            WHEN c.credit_type NOT IN ('freeze') AND c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) as total_available_balance,
+          SUM(CASE 
+            WHEN c.credit_type = 'freeze' AND c.status = 'finalized' 
+            THEN ABS(CAST(c.amount AS REAL))
+            ELSE 0 
+          END) as total_frozen_balance,
+          SUM(CASE 
+            WHEN c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) as total_balance,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.credit_type NOT IN ('freeze') AND c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as total_available_formatted,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.credit_type = 'freeze' AND c.status = 'finalized' 
+            THEN ABS(CAST(c.amount AS REAL))
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as total_frozen_formatted,
+          PRINTF('%.6f', SUM(CASE 
+            WHEN c.status = 'finalized' 
+            THEN CAST(c.amount AS REAL) 
+            ELSE 0 
+          END) / POWER(10, t.decimals)) as total_balance_formatted,
+          COUNT(DISTINCT c.address) as address_count,
+          MAX(c.updated_at) as last_updated
+        FROM credits c
+        JOIN tokens t ON c.token_id = t.id
+        GROUP BY c.user_id, c.token_id, c.token_symbol, t.decimals
+        HAVING total_balance > 0
+      `);
+
+      // 3. 用户余额统计视图
+      await this.run(`
+        CREATE VIEW IF NOT EXISTS v_user_balance_stats AS
+        SELECT 
+          user_id,
+          COUNT(DISTINCT token_id) as token_count,
+          COUNT(DISTINCT address) as address_count,
+          SUM(CASE WHEN total_balance > 0 THEN 1 ELSE 0 END) as positive_balance_count,
+          MAX(last_updated) as last_balance_update
+        FROM v_user_token_totals
+        GROUP BY user_id
+      `);
+
+      console.log('余额聚合视图创建完成');
+    } catch (error) {
+      console.error('创建余额视图失败', error);
       throw error;
     }
   }
