@@ -32,7 +32,7 @@ GET /api/user/{user_id}/address?chain_type=evm
 GET /api/user/{user_id}/balance/total
 ```
 
-**说明**：获取用户在所有链上的代币余额总和，不区分 chain_id
+**说明**：获取用户在所有链上的代币余额总和，基于Credits流水表聚合计算，支持可用余额和冻结余额
 
 **响应**：
 ```json
@@ -42,12 +42,16 @@ GET /api/user/{user_id}/balance/total
     {
       "token_symbol": "USDT",
       "total_balance": "3.500000",
-      "chain_count": 3
+      "available_balance": "3.000000",
+      "frozen_balance": "0.500000",
+      "address_count": 2
     },
     {
       "token_symbol": "ETH",
       "total_balance": "2.000000",
-      "chain_count": 1
+      "available_balance": "2.000000",
+      "frozen_balance": "0.000000",
+      "address_count": 1
     }
   ]
 }

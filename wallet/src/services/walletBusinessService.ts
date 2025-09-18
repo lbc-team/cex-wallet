@@ -188,7 +188,7 @@ export class WalletBusinessService {
       }
 
       // 简化返回格式，只返回第一个地址的余额信息
-      const firstBalance = tokenBalances[0];
+      const firstBalance = tokenBalances[0]!; // 已经检查了length > 0，所以安全
       return {
         success: true,
         data: {

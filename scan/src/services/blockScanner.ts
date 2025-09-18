@@ -1,5 +1,5 @@
 import { viemClient } from '../utils/viemClient';
-import { blockDAO, transactionDAO, walletDAO, tokenDAO, balanceDAO, database } from '../db/models';
+import { blockDAO, transactionDAO, walletDAO, tokenDAO, database } from '../db/models';
 import { transactionAnalyzer } from './txAnalyzer';
 import { reorgHandler } from './reorgHandler';
 import { confirmationManager } from './confirmationManager';

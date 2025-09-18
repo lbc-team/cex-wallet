@@ -1,5 +1,4 @@
 import { DatabaseConnection } from '../connection';
-import { BalanceModel } from './balance';
 
 // 钱包接口定义
 export interface Wallet {
@@ -30,11 +29,9 @@ export interface UpdateWalletRequest {
 // 钱包数据模型类
 export class WalletModel {
   private db: DatabaseConnection;
-  private balanceModel: BalanceModel;
 
   constructor(database: DatabaseConnection) {
     this.db = database;
-    this.balanceModel = new BalanceModel(database);
   }
 
   // 创建新钱包
@@ -84,18 +81,6 @@ export class WalletModel {
   // 获取所有钱包
   async findAll(): Promise<Wallet[]> {
     return await this.db.query<Wallet>('SELECT * FROM wallets ORDER BY created_at DESC');
-  }
-
-  // 获取钱包余额（从余额表获取）
-  async getBalance(id: number): Promise<number> {
-    // 获取钱包地址
-    const wallet = await this.findById(id);
-    if (!wallet) {
-      throw new Error('钱包不存在');
-    }
-
-    // 使用余额模型获取余额总和
-    return await this.balanceModel.getTotalBalanceByAddress(wallet.address);
   }
 
 

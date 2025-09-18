@@ -257,27 +257,144 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
-### 用户余额表 (balances)
+### 资金流水表 (credits)
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | INTEGER | 主键 |
+| id | INTEGER | 主键，自增 |
 | user_id | INTEGER | 用户ID |
 | address | TEXT | 钱包地址 |
-| chain_type | TEXT | 链类型：eth/btc/sol/polygon/bsc 等 |
 | token_id | INTEGER | 代币ID，关联tokens表 |
 | token_symbol | TEXT | 代币符号，冗余字段便于查询 |
-| address_type | INTEGER | 地址类型：0-用户地址，1-热钱包地址(归集地址)，2-多签地址 |
-| balance | TEXT | 可用余额，大整数存储 |
-| locked_balance | TEXT | 充值但风控锁定余额，大整数存储 |
+| amount | TEXT | 金额，正数入账负数出账，以最小单位存储 |
+| credit_type | TEXT | 流水类型：deposit/withdraw/collect/rebalance/trade_buy/trade_sell/freeze/unfreeze等 |
+| business_type | TEXT | 业务类型：blockchain/spot_trade/internal_transfer/admin_adjust等 |
+| reference_id | TEXT | 关联业务ID（如txHash_eventIndex） |
+| reference_type | TEXT | 关联业务类型（如blockchain_tx） |
+| status | TEXT | 状态：pending/confirmed/finalized/failed |
+| block_number | INTEGER | 区块号（链上交易才有） |
+| tx_hash | TEXT | 交易哈希（链上交易才有） |
+| event_index | INTEGER | 事件索引（区块链事件的logIndex） |
+| metadata | TEXT | JSON格式的扩展信息 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
-**多链余额索引**: `UNIQUE(user_id, chain_type, token_id, address)`
+**唯一性约束**: `UNIQUE(reference_id, reference_type, event_index)`
 
-**余额管理机制**:
-- 交易状态：`confirmed` → `safe` → `finalized`
-- 只有达到 `finalized` 状态的存款才会更新 `balance`
-- 重组时只需回滚 `finalized` 状态的交易，大大简化处理逻辑
+用户做现货交易时，同样用 credits 跟踪
+
+
+### 余额缓存表 (user_balance_cache)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| user_id | INTEGER | 用户ID（复合主键） |
+| token_id | INTEGER | 代币ID（复合主键） |
+| token_symbol | TEXT | 代币符号 |
+| available_balance | TEXT | 可用余额，最小单位存储 |
+| frozen_balance | TEXT | 冻结余额，最小单位存储 |
+| total_balance | TEXT | 总余额，最小单位存储 |
+| last_credit_id | INTEGER | 最后处理的credit记录ID |
+| updated_at | DATETIME | 缓存更新时间 |
+
+**主键**: `PRIMARY KEY(user_id, token_id)`
+
+### 余额聚合视图
+
+#### v_user_balances（按地址分组的用户余额）
+```sql
+SELECT 
+  user_id, address, token_id, token_symbol, decimals,
+  available_balance, frozen_balance, total_balance,
+  available_balance_formatted, frozen_balance_formatted, total_balance_formatted
+FROM credits c JOIN tokens t ON c.token_id = t.id
+GROUP BY user_id, address, token_id
+```
+
+#### v_user_token_totals（用户代币总余额）
+```sql
+SELECT 
+  user_id, token_id, token_symbol,
+  total_available_balance, total_frozen_balance, total_balance,
+  total_available_formatted, total_frozen_formatted, total_balance_formatted,
+  address_count
+FROM credits c JOIN tokens t ON c.token_id = t.id
+GROUP BY user_id, token_id
+```
+
+
+#### 5. **简化重组处理**
+```sql
+-- 重组回滚只需一条SQL
+DELETE FROM credits 
+WHERE block_number >= start_block AND block_number <= end_block;
+
+-- 余额自动重新计算（通过视图或缓存刷新）
+```
+
+### 数据一致性保证
+- 所有Credit操作都在数据库事务中执行
+- 状态变更：`pending` → `confirmed` → `finalized`
+- 只有 `finalized` 状态的Credit才计入余额
+- 支持状态回滚和重新确认
+
+### Credits系统使用示例
+
+#### 链上充值处理
+```typescript
+// 1. 扫描到充值事件
+const deposit = {
+  txHash: "0x123...abc",
+  logIndex: 2, // 真实的事件索引
+  userId: 1001,
+  tokenId: 1,
+  amount: "1000000000000000000" // 1 ETH in wei
+};
+
+// 2. 创建Credit记录
+await creditDAO.createDepositCredit({
+  userId: deposit.userId,
+  address: deposit.toAddress,
+  tokenId: deposit.tokenId,
+  tokenSymbol: "ETH",
+  amount: deposit.amount,
+  txHash: deposit.txHash,
+  blockNumber: deposit.blockNumber,
+  eventIndex: deposit.logIndex, // 使用真实索引
+  status: 'confirmed'
+});
+
+// 3. 确认后更新状态
+await creditDAO.updateCreditStatusByTxHash(deposit.txHash, 'finalized');
+```
+
+#### 内部转账处理
+```typescript
+// 用户A向用户B转账100 USDT
+await balanceService.createTransferCredit({
+  fromUserId: 1001,
+  toUserId: 1002,
+  fromAddress: "0xaaa...",
+  toAddress: "0xbbb...",
+  tokenId: 2,
+  tokenSymbol: "USDT",
+  amount: "100000000", // 100 USDT (6 decimals)
+  transferId: "transfer_uuid_123"
+});
+```
+
+#### 余额查询
+```typescript
+// 高性能查询（使用缓存）
+const balances = await balanceService.getUserTotalBalancesByToken(1001);
+
+// 实时查询（直接计算）
+const realTimeBalances = await balanceService.getUserBalances(1001, undefined, false);
+
+// 查询历史记录
+const history = await balanceService.getUserBalanceHistory(1001, {
+  tokenId: 1,
+  limit: 50
+});
+```
 
 **确认机制**（支持两种模式）:
 1. **确认数模式**（当前默认）：基于区块高度差计算确认数

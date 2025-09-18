@@ -51,7 +51,7 @@ export class BalanceService {
       block_number: params.blockNumber,
       tx_hash: params.txHash,
       event_index: 0,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     return await this.creditModel.create(creditData);
@@ -85,7 +85,7 @@ export class BalanceService {
       block_number: params.blockNumber,
       tx_hash: params.txHash,
       event_index: 0,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     return await this.creditModel.create(creditData);
@@ -117,7 +117,7 @@ export class BalanceService {
       reference_type: 'internal_transfer',
       status: 'finalized',
       event_index: 0,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     const toCreditData: CreateCreditRequest = {
@@ -132,7 +132,7 @@ export class BalanceService {
       reference_type: 'internal_transfer',
       status: 'finalized',
       event_index: 1,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     const fromCredit = await this.creditModel.create(fromCreditData);
@@ -166,7 +166,7 @@ export class BalanceService {
       reference_type: params.referenceType,
       status: 'finalized',
       event_index: 0,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     return await this.creditModel.create(creditData);
@@ -197,7 +197,7 @@ export class BalanceService {
       reference_type: params.referenceType,
       status: 'finalized',
       event_index: 1,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : undefined
+      metadata: params.metadata ? JSON.stringify(params.metadata) : ''
     };
 
     return await this.creditModel.create(creditData);
@@ -333,15 +333,18 @@ export class BalanceService {
     limit?: number;
     offset?: number;
   }): Promise<Credit[]> {
-    return await this.creditModel.findByUser(userId, {
-      token_id: options?.tokenId,
-      credit_type: options?.creditType,
-      business_type: options?.businessType,
-      limit: options?.limit,
-      offset: options?.offset,
+    const queryOptions: any = {
       order_by: 'created_at',
       order_direction: 'DESC'
-    });
+    };
+    
+    if (options?.tokenId !== undefined) queryOptions.token_id = options.tokenId;
+    if (options?.creditType !== undefined) queryOptions.credit_type = options.creditType;
+    if (options?.businessType !== undefined) queryOptions.business_type = options.businessType;
+    if (options?.limit !== undefined) queryOptions.limit = options.limit;
+    if (options?.offset !== undefined) queryOptions.offset = options.offset;
+    
+    return await this.creditModel.findByUser(userId, queryOptions);
   }
 
   /**
