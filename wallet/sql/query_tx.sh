@@ -1,0 +1,1 @@
+sqlite3 wallet.db "SELECT from_addr, to_addr, token_addr, amount, type, status FROM transactions ORDER BY id LIMIT 100;"

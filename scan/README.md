@@ -184,60 +184,6 @@ kill -TERM <process_id>
 - 进程每5分钟输出内存使用情况
 - 所有扫描活动都会记录在日志中
 
-## 数据库结构
-
-### 区块表 (blocks)
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| hash | TEXT | 区块哈希 (主键) |
-| parent_hash | TEXT | 父区块哈希 |
-| number | TEXT | 区块号 |
-| timestamp | INTEGER | 区块时间戳 |
-| status | TEXT | 区块状态 (confirmed/orphaned) |
-| created_at | DATETIME | 创建时间 |
-| updated_at | DATETIME | 更新时间 |
-
-### 交易表扩展字段
-- `confirmation_count`: 确认数
-- `block_hash`: 所属区块哈希
-- `block_no`: 区块号
-- `status`: 交易状态 (confirmed/safe/finalized/failed)
-
-### 交易状态流程
-
-#### 确认数模式（当前默认）
-```
-confirmed (入库默认状态) → safe (16个确认) → finalized (32个确认) → 更新余额
-```
-
-| 状态 | 确认数 | 说明 |
-|------|--------|------|
-| confirmed | 0+ | 交易已上链，开始确认 |
-| safe | 16+ | 交易相对安全，不易被重组 |
-| finalized | 32+ | 交易最终确认，更新用户余额 |
-| failed | - | 交易失败或被重组回滚 |
-
-#### 网络终结性模式（可选启用）
-```
-confirmed (入库默认状态) → safe (≤网络safe区块) → finalized (≤网络finalized区块) → 更新余额
-```
-
-| 状态 | 判断依据 | 说明 |
-|------|----------|------|
-| confirmed | 交易已上链 | 交易已上链，等待网络确认 |
-| safe | tx.block_no ≤ safe_block | 基于网络safe标记，更准确 |
-| finalized | tx.block_no ≤ finalized_block | 基于网络finalized标记，真正终结 |
-| failed | - | 交易失败或被重组回滚 |
-
-**网络终结性优势**：
-- 更准确反映以太坊网络的实际共识状态
-- 动态适应网络状况变化
-- 符合EIP-3675以太坊PoS终结性标准
-- 与DeFi生态保持一致的终结性理解
-
-### 扫描进度管理
-- 通过查询 `blocks` 表的最大区块号获取扫描进度
-- 无需额外的状态表，简化数据库结构
 
 ## 监控和日志
 
@@ -258,35 +204,6 @@ confirmed (入库默认状态) → safe (≤网络safe区块) → finalized (≤
 - **确认状态**: 待确认交易数量
 - **内存使用**: 服务进程内存占用
 
-## 故障排除
-
-### 常见问题
-
-1. **RPC连接失败**
-   - 检查 `ETH_RPC_URL` 配置
-   - 验证API密钥是否正确
-   - 检查网络连接
-
-2. **扫描延迟过大**
-   - 增加 `MAX_CONCURRENT_REQUESTS`
-   - 减少 `SCAN_BATCH_SIZE`
-   - 检查RPC服务性能
-
-3. **数据库问题**
-   - 确保 wallet 服务已启动过（自动创建数据库表）
-   - 检查数据库文件权限
-   - 确保没有其他进程占用数据库
-   - 可选：手动运行 `createTables.js` 脚本
-
-4. **内存使用过高**
-   - 减少扫描批次大小
-   - 降低并发请求数
-   - 增加服务器内存
-
-5. **重组处理异常**
-   - 检查 `REORG_CHECK_DEPTH` 配置是否合理
-   - 验证RPC节点数据一致性
-   - 确认数据库写入权限
 
 ### 日志分析
 
@@ -307,27 +224,6 @@ grep "区块扫描完成" logs/combined.log | tail -10
 grep "内存使用情况" logs/combined.log | tail -5
 ```
 
-## 性能优化
-
-### 配置调优
-
-```bash
-# 高性能配置（适用于专用服务器）
-SCAN_BATCH_SIZE=20
-MAX_CONCURRENT_REQUESTS=10
-SCAN_INTERVAL=15
-
-# 低资源配置（适用于共享服务器）
-SCAN_BATCH_SIZE=5
-MAX_CONCURRENT_REQUESTS=3
-SCAN_INTERVAL=60
-```
-
-### 数据库优化
-
-- 定期清理旧的孤块记录
-- 为常用查询字段创建索引
-- 定期备份数据库
 
 ## 重组处理详解
 
@@ -390,13 +286,3 @@ npm test
 curl http://localhost:3002/api/scan/status
 ```
 
-## 贡献指南
-
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 创建 Pull Request
-
-## 许可证
-
-MIT License

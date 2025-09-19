@@ -52,27 +52,43 @@
 - 业务查询：一律按 `status != 'orphaned'` 过滤孤块，避免误用。
 
 #### 5. 数据库与表的关键要点
-- tokens：`chain_type`、`chain_id`、`token_symbol`、`token_name`、`token_address?`、`decimals`、`is_native`、`collect_amount`、`status`。
-- balances：`user_id`、`address`、`chain_type`、`token_id(FK)`、`token_symbol`、`balance`（字符串大整数，最小单位）等。
-- transactions：`tx_hash(唯一)`、`from_addr`、`to_addr`、`token_addr?`、`amount`（展示层标准化值）`type`、`status`（confirmed/safe/finalized）、`confirmation_count` 等。
+- **tokens**：`chain_type`、`chain_id`、`token_symbol`、`token_name`、`token_address?`、`decimals`、`is_native`、`collect_amount`、`status`。
+- **credits**：`user_id`、`address`、`token_id(FK)`、`amount`（最小单位字符串）、`credit_type`、`business_type`、`reference_id`（txHash_logIndex）、`status`、`event_index`（真实logIndex）等。
+- **transactions**：`tx_hash(唯一)`、`from_addr`、`to_addr`、`token_addr?`、`amount`（最小单位字符串）、`type`、`status`（confirmed/safe/finalized）、`confirmation_count` 等。
+- **视图**：`v_user_balances`（按地址）、`v_user_token_totals`（跨地址聚合）、`v_user_balance_stats`（统计）。
+- **缓存**：`user_balance_cache`（高频查询优化）。
 - 规范：
-  - 仅 finalized 入账，pending_balance 移除；
+  - 基于事件溯源，所有余额变更记录为Credit流水；
+  - 完美幂等性，通过 `reference_id` 防重复处理；
+  - 仅 finalized 状态的Credit计入余额；
   - 地址大小写不敏感查询；
   - SQLite 以读写+创建模式打开，启用 WAL 与 `busy_timeout=30000`。
 
 #### 6. wallet 余额 API（统一 decimals 处理与 6 位小数格式化）
 所有金额字段以字符串返回，精确到小数点后 6 位（如 "10.123456"），并在详情接口同时保留原始大整数与 decimals。
 
-1) 获取“用户余额总和”（跨链按代币聚合）
+1) 获取"用户余额总和"（基于Credits流水聚合）
 - 路由：`GET /api/user/{user_id}/balance/total`
-- 说明：`SUM(balance / 10^decimals)` 按 `token_symbol` 聚合，返回各代币总余额与链数。
+- 说明：从Credits流水表聚合计算，支持可用余额和冻结余额分别显示。
 - 响应示例：
 ```json
 {
   "message": "获取用户余额总和成功",
   "data": [
-    { "token_symbol": "USDT", "total_balance": "3.500000", "chain_count": 3 },
-    { "token_symbol": "ETH",  "total_balance": "2.000000", "chain_count": 1 }
+    { 
+      "token_symbol": "USDT", 
+      "total_balance": "3.500000",
+      "available_balance": "3.000000",
+      "frozen_balance": "0.500000",
+      "address_count": 2 
+    },
+    { 
+      "token_symbol": "ETH",  
+      "total_balance": "2.000000",
+      "available_balance": "2.000000", 
+      "frozen_balance": "0.000000",
+      "address_count": 1 
+    }
   ]
 }
 ```

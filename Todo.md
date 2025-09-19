@@ -1,8 +1,4 @@
-确认/终结判定不够“链原生”
-建议：以太坊使用 viem 的 safe/finalized block tag（而非纯高度阈值）判定 confirmed/safe/finalized，更贴近实际终结语义。
-金额存储精度风险
-现 transactions.amount 为 REAL，易有精度丢失。
-建议：统一存“最小单位整数”（TEXT/INTEGER），展示层再按 decimals 格式化（已做）；保留或移除 REAL，避免混用。
+
 ETH 入账范围偏窄
 目前仅识别“直转地址”的 ETH 入账，忽略合约内部转账（internal value transfer）。
 建议：可选集成 trace（如 debug_traceBlock）或事件型补充，以覆盖内部转账场景。
@@ -18,6 +14,7 @@ finalize 后入账依赖状态防重，但缺少“入账流水（ledger）”�
 观测性与弹性
 目前仅日志，缺指标/告警与退避策略。
 建议：增加 Prometheus 指标（滞后高度、TPS、reorg 次数、orphaned 数、DB 阻塞率）、RPC 失败退避与切换、批处理并发上限自适应。
+
 API 访问安全
 wallet API 未鉴权，适合内网/开发环境，不适合直接对外。
 建议：接入认证/授权（服务间 token、IP 白名单、网关），做频率限制与审计日志。
@@ -27,6 +24,7 @@ wallet API 未鉴权，适合内网/开发环境，不适合直接对外。
 Token 查询接口一致性
 DAO 已将 getTokensByChain/getNativeToken 简化为只用 chainId，但 getTokenByAddress 仍带 chainType 参数。
 建议：统一以 chainId 为主键维度，减少歧义。
+
 多链扩展准备
 设计已支持多链，但仅实现 EVM；Solana 未落地。
 建议：抽象扫描器接口，按链类型实现适配器（EVM/Solana），复用统一入账与重组处理框架。
@@ -38,5 +36,21 @@ collect_amount 等字段未实装归集；风控（黑名单、异常地址）�
 建议：对外 API 默认 6 位，支持 precision 可选参数（向下兼容）。
 这些优化分为“安全一致性”（终结判定、幂等、鉴权、重组治理），“可观测与弹性”（指标、退避、清理），“覆盖面与性能”（internal transfer、批处理）三大类。优先级建议：终结判定与幂等流水 > API 鉴权 > 指标与重组清理 > 性能优化与多链扩展。
 
-用户很多的情况
+
+
+
+一个交易中，存在多个代币多用户
+
+internal transfer 问题
+
+
+
+余额表设计， 流水表设计 （无法跟踪、审计）
+如何避免重复入账的问题， 
+
+
+交易所 ETH 充币
+
+
+
 
