@@ -115,6 +115,23 @@ async function createTables() {
       )
     `);
 
+    // 创建内部钱包表
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS internal_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        address TEXT UNIQUE NOT NULL,
+        device TEXT,
+        path TEXT,
+        chain_type TEXT DEFAULT 'evm',
+        chain_id INTEGER NOT NULL,
+        wallet_type TEXT DEFAULT 'hot',
+        nonce INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
 
     // 创建索引
     const indexes = [
@@ -130,6 +147,10 @@ async function createTables() {
       `CREATE INDEX IF NOT EXISTS idx_tokens_chain_symbol ON tokens(chain_type, chain_id, token_symbol)`,
       `CREATE INDEX IF NOT EXISTS idx_tokens_chain_address ON tokens(chain_type, chain_id, token_address)`,
       `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_internal_wallets_address ON internal_wallets(address)`,
+      `CREATE INDEX IF NOT EXISTS idx_internal_wallets_chain ON internal_wallets(chain_type, chain_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_internal_wallets_type ON internal_wallets(wallet_type)`,
+      `CREATE INDEX IF NOT EXISTS idx_internal_wallets_active ON internal_wallets(is_active)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_balances_unique ON balances(user_id, chain_type, token_id, address)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`
     ];

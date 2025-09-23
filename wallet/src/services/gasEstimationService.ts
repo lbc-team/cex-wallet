@@ -1,5 +1,16 @@
 import { createPublicClient, http, parseUnits } from 'viem';
-import { mainnet } from 'viem/chains';
+import { mainnet, sepolia, bsc, bscTestnet, localhost } from 'viem/chains';
+
+// 支持的链类型
+export type SupportedChain = 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost';
+
+// 链配置接口
+export interface ChainConfig {
+  chain: any;
+  rpcUrl: string;
+  name: string;
+  chainId: number;
+}
 
 // Gas 费用估算结果接口
 export interface GasEstimation {
@@ -21,19 +32,94 @@ export interface GasEstimation {
 
 /**
  * Gas 费用估算服务
- * 动态从以太坊网络获取最优的 gas 参数
+ * 支持多个网络的 gas 费用估算
  */
 export class GasEstimationService {
-  private publicClient: ReturnType<typeof createPublicClient>;
-  private rpcUrl: string;
+  private publicClients: Map<SupportedChain, any> = new Map();
+  private chainConfigs: Map<SupportedChain, ChainConfig> = new Map();
 
   constructor() {
-    // 从环境变量获取 RPC URL，默认使用免费的公共节点
-    this.rpcUrl = process.env.ETH_RPC_URL || 'https://eth.llamarpc.com';
-    this.publicClient = createPublicClient({
+    this.initializeChainConfigs();
+  }
+
+  /**
+   * 初始化链配置
+   */
+  private initializeChainConfigs(): void {
+    // 以太坊主网
+    this.chainConfigs.set('mainnet', {
       chain: mainnet,
-      transport: http(this.rpcUrl)
+      rpcUrl: process.env.ETH_RPC_URL || 'https://eth.llamarpc.com',
+      name: 'Ethereum Mainnet',
+      chainId: 1
     });
+
+    // 以太坊测试网 (Sepolia)
+    this.chainConfigs.set('sepolia', {
+      chain: sepolia,
+      rpcUrl: process.env.SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
+      name: 'Ethereum Sepolia',
+      chainId: 11155111
+    });
+
+    // BSC 主网
+    this.chainConfigs.set('bsc', {
+      chain: bsc,
+      rpcUrl: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org',
+      name: 'BSC Mainnet',
+      chainId: 56
+    });
+
+    // BSC 测试网
+    this.chainConfigs.set('bscTestnet', {
+      chain: bscTestnet,
+      rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545',
+      name: 'BSC Testnet',
+      chainId: 97
+    });
+
+    // 本地开发网络
+    this.chainConfigs.set('localhost', {
+      chain: localhost,
+      rpcUrl: process.env.LOCALHOST_RPC_URL || 'http://localhost:8545',
+      name: 'Localhost',
+      chainId: 31337
+    });
+  }
+
+  /**
+   * 获取指定链的客户端
+   */
+  private getPublicClient(chain: SupportedChain): any {
+    if (!this.publicClients.has(chain)) {
+      const config = this.chainConfigs.get(chain);
+      if (!config) {
+        throw new Error(`Unsupported chain: ${chain}`);
+      }
+
+      const client = createPublicClient({
+        chain: config.chain,
+        transport: http(config.rpcUrl)
+      });
+
+      this.publicClients.set(chain, client);
+    }
+
+    return this.publicClients.get(chain);
+  }
+
+  /**
+   * 获取支持的链列表
+   */
+  getSupportedChains(): SupportedChain[] {
+    return Array.from(this.chainConfigs.keys());
+  }
+
+  /**
+   * 获取链配置信息
+   */
+  getChainConfig(chain: SupportedChain): ChainConfig | undefined {
+    return this.chainConfigs.get(chain);
   }
 
   /**
@@ -43,10 +129,14 @@ export class GasEstimationService {
     from: string;
     to: string;
     amount: string; // wei 单位
+    chain?: SupportedChain;
   }): Promise<GasEstimation> {
+    const chain = params.chain || 'mainnet';
+    const publicClient = this.getPublicClient(chain);
+    
     try {
       // 1. 从历史数据获取所有费用信息
-      const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory();
+      const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory(chain);
 
       // 2. 使用配置的 gas 限制
       const gasLimit = 21000n; // ETH 转账的标准 gas
@@ -82,10 +172,14 @@ export class GasEstimationService {
     to: string;
     tokenAddress: string;
     amount: string; // 最小单位
+    chain?: SupportedChain;
   }): Promise<GasEstimation> {
+    const chain = params.chain || 'mainnet';
+    const publicClient = this.getPublicClient(chain);
+    
     try {
       // 1. 从历史数据获取所有费用信息
-      const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory();
+      const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory(chain);
 
       // 2. 编码 ERC20 transfer 调用数据
       const transferData = this.encodeERC20Transfer(params.to, params.amount);
@@ -119,10 +213,12 @@ export class GasEstimationService {
   /**
    * 从历史数据获取基础费用、gas 价格和优先费用
    */
-  private async getFeeDataFromHistory(): Promise<[bigint, bigint, bigint]> {
+  private async getFeeDataFromHistory(chain: SupportedChain = 'mainnet'): Promise<[bigint, bigint, bigint]> {
+    const publicClient = this.getPublicClient(chain);
+    
     try {
       // 获取最近 20 个区块的费用历史
-      const feeHistory = await this.publicClient.request({
+      const feeHistory = await publicClient.request({
         method: 'eth_feeHistory',
         params: [
           '0x14', // 20 个区块
@@ -132,15 +228,15 @@ export class GasEstimationService {
       });
 
       // 获取最新的基础费用
-      const baseFeePerGas = BigInt(feeHistory.baseFeePerGas[feeHistory.baseFeePerGas.length - 1]);
+      const baseFeePerGas = BigInt(feeHistory.baseFeePerGas?.[feeHistory.baseFeePerGas.length - 1] || '0');
       
       // 获取当前 gas 价格
-      const gasPrice = await this.publicClient.getGasPrice();
+      const gasPrice = await publicClient.getGasPrice();
       
       // 分析最近 10 个区块的费用趋势
-      const recentRewards = feeHistory.reward.slice(-10);
-      const allRewards = recentRewards.flat().map((reward: string[]) => 
-        reward.map((r: string) => BigInt(r))
+      const recentRewards = feeHistory.reward?.slice(-10) || [];
+      const allRewards = recentRewards.flat().map((reward: any) => 
+        Array.isArray(reward) ? reward.map((r: string) => BigInt(r)) : [BigInt(reward)]
       ).flat();
       
       // 计算不同百分位数的费用
@@ -150,8 +246,8 @@ export class GasEstimationService {
       // 计算 50% 和 90% 百分位数
       const p50Index = Math.floor(count * 0.5);
       const p90Index = Math.floor(count * 0.9);
-      const p50Reward = sortedRewards[p50Index];
-      const p90Reward = sortedRewards[p90Index];
+      const p50Reward = sortedRewards[p50Index] || 0n;
+      const p90Reward = sortedRewards[p90Index] || 0n;
       
       // 根据网络状况选择策略
       const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
@@ -164,7 +260,7 @@ export class GasEstimationService {
       } else if (networkCongestion === 'medium') {
         // 中等拥堵时使用 70% 百分位数
         const p70Index = Math.floor(count * 0.7);
-        priorityFee = sortedRewards[p70Index];
+        priorityFee = sortedRewards[p70Index] || 0n;
       } else {
         // 低拥堵时使用 50% 百分位数
         priorityFee = p50Reward;
@@ -183,8 +279,8 @@ export class GasEstimationService {
       console.warn('无法获取费用历史，使用默认值:', error);
       // 备用方案：使用当前区块数据
       const [block, gasPrice] = await Promise.all([
-        this.publicClient.getBlock({ blockTag: 'latest' }),
-        this.publicClient.getGasPrice()
+        publicClient.getBlock({ blockTag: 'latest' }),
+        publicClient.getGasPrice()
       ]);
       const baseFeePerGas = block.baseFeePerGas || 0n;
       const priorityFee = parseUnits('2', 9); // 默认 2 Gwei
@@ -273,9 +369,11 @@ export class GasEstimationService {
   /**
    * 获取指定地址的 nonce
    */
-  async getNonce(address: string): Promise<number> {
+  async getNonce(address: string, chain: SupportedChain = 'mainnet'): Promise<number> {
+    const publicClient = this.getPublicClient(chain);
+    
     try {
-      const nonce = await this.publicClient.getTransactionCount({
+      const nonce = await publicClient.getTransactionCount({
         address: address as `0x${string}`,
         blockTag: 'pending' // 使用 pending 状态获取最新的 nonce
       });
@@ -290,24 +388,27 @@ export class GasEstimationService {
   /**
    * 获取当前网络状态信息
    */
-  async getNetworkInfo(): Promise<{
+  async getNetworkInfo(chain: SupportedChain = 'mainnet'): Promise<{
     chainId: number;
     blockNumber: bigint;
     baseFeePerGas: bigint;
     gasPrice: bigint;
     networkCongestion: 'low' | 'medium' | 'high';
   }> {
+    const publicClient = this.getPublicClient(chain);
+    const config = this.chainConfigs.get(chain);
+    
     try {
       const [block, gasPrice] = await Promise.all([
-        this.publicClient.getBlock({ blockTag: 'latest' }),
-        this.publicClient.getGasPrice()
+        publicClient.getBlock({ blockTag: 'latest' }),
+        publicClient.getGasPrice()
       ]);
 
       const baseFeePerGas = block.baseFeePerGas || 0n;
       const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
 
       return {
-        chainId: this.publicClient.chain.id,
+        chainId: config?.chainId || 1,
         blockNumber: block.number,
         baseFeePerGas,
         gasPrice,

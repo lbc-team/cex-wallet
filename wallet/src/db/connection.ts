@@ -486,6 +486,174 @@ export class DatabaseConnection {
     );
     return result || null;
   }
+
+  // ========== 内部钱包相关方法 ==========
+
+  // 创建内部钱包
+  async createInternalWallet(params: {
+    address: string;
+    device?: string;
+    path?: string;
+    chainType: string;
+    chainId: number;
+    walletType: 'hot' | 'multisig' | 'cold' | 'vault';
+    nonce?: number;
+  }): Promise<number> {
+    const result = await this.run(`
+      INSERT INTO internal_wallets (
+        address, device, path, chain_type, chain_id, 
+        wallet_type, nonce, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      params.address,
+      params.device || null,
+      params.path || null,
+      params.chainType,
+      params.chainId,
+      params.walletType,
+      params.nonce || 0
+    ]);
+    return result.lastID;
+  }
+
+  // 创建热钱包（通过签名机）
+  async createHotWallet(params: {
+    chainType: 'evm' | 'btc' | 'solana';
+    chainId: number;
+    initialNonce?: number;
+  }): Promise<{
+    walletId: number;
+    address: string;
+    device: string;
+    path: string;
+  }> {
+    // 这个方法需要配合 SignerService 使用
+    throw new Error('createHotWallet 方法需要配合 SignerService 使用');
+  }
+
+  // 获取内部钱包信息
+  async getInternalWallet(address: string, chainId: number): Promise<{
+    id: number;
+    address: string;
+    device: string | null;
+    path: string | null;
+    chain_type: string;
+    chain_id: number;
+    wallet_type: string;
+    nonce: number;
+    is_active: number;
+    created_at: string;
+    updated_at: string;
+  } | null> {
+    const result = await this.queryOne(
+      'SELECT * FROM internal_wallets WHERE address = ? AND chain_id = ?',
+      [address, chainId]
+    );
+    return result || null;
+  }
+
+  // 获取可用的内部钱包列表
+  async getAvailableInternalWallets(chainId: number, chainType?: string, walletType?: string): Promise<{
+    id: number;
+    address: string;
+    device: string | null;
+    path: string | null;
+    chain_type: string;
+    chain_id: number;
+    wallet_type: string;
+    nonce: number;
+    is_active: number;
+    created_at: string;
+    updated_at: string;
+  }[]> {
+    let sql = 'SELECT * FROM internal_wallets WHERE chain_id = ? AND is_active = 1';
+    const params: any[] = [chainId];
+    
+    if (chainType) {
+      sql += ' AND chain_type = ?';
+      params.push(chainType);
+    }
+    
+    if (walletType) {
+      sql += ' AND wallet_type = ?';
+      params.push(walletType);
+    }
+    
+    sql += ' ORDER BY nonce ASC';
+    
+    return await this.query(sql, params);
+  }
+
+  // 原子性更新 nonce
+  async atomicIncrementNonce(address: string, chainId: number, expectedNonce: number): Promise<{
+    success: boolean;
+    newNonce: number;
+  }> {
+    try {
+      const result = await this.run(`
+        UPDATE internal_wallets 
+        SET nonce = nonce + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE address = ? AND chain_id = ? AND nonce = ?
+      `, [address, chainId, expectedNonce]);
+      
+      if (result.changes === 0) {
+        return {
+          success: false,
+          newNonce: expectedNonce
+        };
+      }
+      
+      return {
+        success: true,
+        newNonce: expectedNonce + 1
+      };
+    } catch (error) {
+      console.error('原子性更新 nonce 失败:', error);
+      return {
+        success: false,
+        newNonce: expectedNonce
+      };
+    }
+  }
+
+  // 获取当前 nonce
+  async getCurrentNonce(address: string, chainId: number): Promise<number> {
+    const result = await this.queryOne(
+      'SELECT nonce FROM internal_wallets WHERE address = ? AND chain_id = ?',
+      [address, chainId]
+    );
+    return result?.nonce || 0;
+  }
+
+  // 同步 nonce 从链上
+  async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
+    try {
+      await this.run(`
+        UPDATE internal_wallets 
+        SET nonce = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE address = ? AND chain_id = ?
+      `, [chainNonce, address, chainId]);
+      return true;
+    } catch (error) {
+      console.error('同步 nonce 失败:', error);
+      return false;
+    }
+  }
+
+  // 激活/停用内部钱包
+  async setInternalWalletActive(address: string, chainId: number, isActive: boolean): Promise<boolean> {
+    try {
+      await this.run(`
+        UPDATE internal_wallets 
+        SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE address = ? AND chain_id = ?
+      `, [isActive ? 1 : 0, address, chainId]);
+      return true;
+    } catch (error) {
+      console.error('设置内部钱包状态失败:', error);
+      return false;
+    }
+  }
 }
 
 // 单例数据库连接实例

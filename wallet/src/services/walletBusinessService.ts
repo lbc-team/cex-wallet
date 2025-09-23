@@ -3,6 +3,7 @@ import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
 import { GasEstimationService } from './gasEstimationService';
+import { HotWalletService } from './hotWalletService';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
@@ -10,12 +11,34 @@ export class WalletBusinessService {
   private signerService: SignerService;
   private balanceService: BalanceService;
   private gasEstimationService: GasEstimationService;
+  private hotWalletService: HotWalletService;
 
   constructor(dbService: DatabaseService) {
     this.dbService = dbService;
     this.signerService = new SignerService();
     this.balanceService = new BalanceService(dbService);
     this.gasEstimationService = new GasEstimationService();
+    this.hotWalletService = new HotWalletService(dbService.getConnection());
+  }
+
+  /**
+   * 根据链 ID 获取链类型
+   */
+  private getChainTypeFromChainId(chainId: number): 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost' {
+    switch (chainId) {
+      case 1:
+        return 'mainnet';
+      case 11155111:
+        return 'sepolia';
+      case 56:
+        return 'bsc';
+      case 97:
+        return 'bscTestnet';
+      case 1337:
+        return 'localhost';
+      default:
+        return 'mainnet'; // 默认使用主网
+    }
   }
 
   /**
@@ -294,34 +317,54 @@ export class WalletBusinessService {
         };
       }
 
-      // 7. 获取 nonce 和自动估算 gas 费用
+      // 7. 选择热钱包并获取 nonce
+      let hotWallet;
       let nonce: number;
       let gasEstimation;
       try {
-        // 获取 nonce
-        nonce = await this.gasEstimationService.getNonce(wallet.address);
+        // 选择最优热钱包
+        hotWallet = await this.hotWalletService.selectOptimalHotWallet(
+          params.chainId, 
+          params.chainType,
+          'hot'  // 默认选择热钱包
+        );
         
-        // 估算 gas 费用
+        if (!hotWallet) {
+          return {
+            success: false,
+            error: '没有可用的热钱包'
+          };
+        }
+
+        // 获取热钱包的 nonce
+        nonce = await this.hotWalletService.getNextNonce(
+          hotWallet.address, 
+          params.chainId
+        );
+        
+        // 估算 gas 费用（使用热钱包地址）
         if (tokenInfo.is_native) {
           // ETH 转账
           gasEstimation = await this.gasEstimationService.estimateEthTransfer({
-            from: wallet.address,
+            from: hotWallet.address,
             to: params.to,
-            amount: requestedAmountBigInt.toString()
+            amount: requestedAmountBigInt.toString(),
+            chain: this.getChainTypeFromChainId(params.chainId)
           });
         } else {
           // ERC20 转账
           gasEstimation = await this.gasEstimationService.estimateErc20Transfer({
-            from: wallet.address,
+            from: hotWallet.address,
             to: params.to,
             tokenAddress: tokenInfo.token_address!,
-            amount: requestedAmountBigInt.toString()
+            amount: requestedAmountBigInt.toString(),
+            chain: this.getChainTypeFromChainId(params.chainId)
           });
         }
       } catch (error) {
         return {
           success: false,
-          error: `获取 nonce 或 Gas 费用估算失败: ${error instanceof Error ? error.message : '未知错误'}`
+          error: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
         };
       }
 
@@ -339,7 +382,7 @@ export class WalletBusinessService {
         chainType: 'evm' | 'btc' | 'solana';
         type: 2; // 使用 EIP-1559
       } = {
-        address: wallet.address,
+        address: hotWallet.address, // 使用热钱包地址
         to: params.to,
         amount: requestedAmountBigInt.toString(),
         gas: gasEstimation.gasLimit,

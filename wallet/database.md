@@ -44,6 +44,23 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
+### 内部钱包表 (internal_wallets) - 内部使用
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键，自增 |
+| address | TEXT | 钱包地址，唯一 |
+| device | TEXT | 来自哪个签名机设备地址 |
+| path | TEXT | 推导路径 |
+| chain_type | TEXT | 地址类型：evm、btc、solana |
+| chain_id | INTEGER | 链ID，如 1(以太坊主网)、56(BSC) |
+| wallet_type | TEXT | 钱包类型：hot(热钱包)、multisig(多签钱包)、cold(冷钱包)、vault(金库钱包) |
+| nonce | INTEGER | 当前 nonce 值，用于交易排序 |
+| is_active | INTEGER | 是否激活：0-未激活，1-激活 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+**注意**: 内部钱包表仅供内部使用，不对外提供 API 接口。管理通过 `src/scripts/internalWalletManager.ts` 脚本进行。
+
 
 ### 区块表 (blocks)
 区块和交易表，需要为每个链创建一个对应的表：
