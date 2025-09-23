@@ -110,7 +110,7 @@ export class CreditModel {
     this.db = database;
   }
 
-  // 创建新的Credit记录（幂等性保证）
+  // 创建 Credit记录（幂等性保证）
   async create(creditData: CreateCreditRequest): Promise<Credit> {
     const {
       user_id, address, token_id, token_symbol, amount,

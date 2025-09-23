@@ -2,7 +2,9 @@
 import { mnemonicToSeedSync } from '@scure/bip39';
 import { HDKey } from '@scure/bip32';
 import { privateKeyToAccount } from 'viem/accounts';
-import { Wallet, CreateWalletResponse, DerivationPath } from '../types/wallet';
+import { createWalletClient, parseEther, parseUnits, encodeAbiParameters, keccak256, serializeTransaction } from 'viem';
+import { mainnet } from 'viem/chains';
+import { Wallet, CreateWalletResponse, DerivationPath, SignTransactionRequest, SignTransactionResponse } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
 
 export class AddressService {
@@ -285,5 +287,223 @@ export class AddressService {
     }
   }
 
+  /**
+   * 签名交易
+   */
+  async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
+    try {
+      // 1. 验证请求参数
+      if (!request.address || !request.to || !request.amount) {
+        return {
+          success: false,
+          error: '缺少必需参数: address, to, amount'
+        };
+      }
+
+      // 2. 查找地址对应的路径信息
+      const addressInfo = await this.db.findAddressByAddress(request.address);
+      if (!addressInfo) {
+        return {
+          success: false,
+          error: `地址 ${request.address} 未找到，请确保地址是通过此系统生成的`
+        };
+      }
+
+      // 3. 重新生成私钥（基于路径）
+      const mnemonic = this.getMnemonicFromEnv();
+      const pathParts = addressInfo.path.split('/');
+      const index = pathParts[pathParts.length - 1];
+      const accountData = this.createEvmAccountWithPrivateKey(mnemonic, index);
+
+      if (accountData.address.toLowerCase() !== request.address.toLowerCase()) {
+        return {
+          success: false,
+          error: '地址验证失败，密码可能不正确'
+        };
+      }
+
+      // 4. 创建账户对象
+      const account = privateKeyToAccount(accountData.privateKey);
+
+      // 5. 使用传入的 nonce（现在 nonce 是必需参数）
+      const nonce = request.nonce;
+
+      // 7. 确定交易类型（EIP-1559 或 Legacy）
+      const isEip1559 = request.type !== 0 && (request.maxFeePerGas || request.maxPriorityFeePerGas);
+      
+      let signedTransaction: string;
+      let transactionHash: string;
+
+      // 8. 根据链类型构建基础交易参数
+      let baseTransaction: any;
+      
+      if (request.chainType === 'evm') {
+        // EVM 链交易
+        baseTransaction = {
+          to: request.tokenAddress ? (request.tokenAddress as `0x${string}`) : (request.to as `0x${string}`),
+          value: request.tokenAddress ? 0n : BigInt(request.amount),
+          gas: request.gas ? BigInt(request.gas) : (request.tokenAddress ? 100000n : 21000n), // ERC20需要更多gas
+          nonce,
+          chainId: request.chainId // 使用传入的链ID
+        };
+      } else if (request.chainType === 'btc') {
+        // Bitcoin 交易（暂时返回错误，需要实现 BTC 签名逻辑）
+        return {
+          success: false,
+          error: 'Bitcoin 链签名功能尚未实现'
+        };
+      } else if (request.chainType === 'solana') {
+        // Solana 交易（暂时返回错误，需要实现 Solana 签名逻辑）
+        return {
+          success: false,
+          error: 'Solana 链签名功能尚未实现'
+        };
+      } else {
+        return {
+          success: false,
+          error: `不支持的链类型: ${request.chainType}`
+        };
+      }
+
+      // 9. 添加交易数据（如果是ERC20，仅对EVM链）
+      if (request.chainType === 'evm' && request.tokenAddress) {
+        (baseTransaction as any).data = this.encodeERC20Transfer(request.to, request.amount);
+      }
+
+      let transaction: any;
+
+      // 10. 构建最终交易（仅对EVM链）
+      if (request.chainType === 'evm') {
+        if (isEip1559) {
+          // EIP-1559 交易
+          const maxPriorityFee = request.maxPriorityFeePerGas 
+            ? BigInt(request.maxPriorityFeePerGas) 
+            : this.getDefaultPriorityFee();
+
+          const maxFeePerGas = request.maxFeePerGas 
+            ? BigInt(request.maxFeePerGas)
+            : this.getDefaultMaxFeePerGas(); // 使用默认值，不联网获取
+
+          transaction = {
+            ...baseTransaction,
+            type: 2 as const, // EIP-1559
+            maxFeePerGas,
+            maxPriorityFeePerGas: maxPriorityFee
+          };
+        } else {
+          // Legacy 交易
+          const gasPrice = request.gasPrice 
+            ? BigInt(request.gasPrice) 
+            : this.getDefaultGasPrice(); // 使用默认值，不联网获取
+
+          transaction = {
+            ...baseTransaction,
+            type: 0 as const, // Legacy
+            gasPrice
+          };
+        }
+      }
+
+      // 10. 签名交易
+      signedTransaction = await account.signTransaction(transaction);
+      transactionHash = this.getTransactionHash(signedTransaction);
+
+      return {
+        success: true,
+        data: {
+          signedTransaction,
+          transactionHash
+        }
+      };
+
+    } catch (error) {
+      console.error('交易签名失败:', error);
+      return {
+        success: false,
+        error: `交易签名失败: ${error instanceof Error ? error.message : '未知错误'}`
+      };
+    }
+  }
+
+  /**
+   * 创建EVM账户并包含私钥（仅用于签名）
+   */
+  private createEvmAccountWithPrivateKey(mnemonic: string, index: string): { address: string; privateKey: `0x${string}` } {
+    const fullPath = `m/44'/60'/0'/0/${index}`;
+    
+    // 使用密码生成种子
+    const seed = mnemonicToSeedSync(mnemonic, this.password);
+    
+    // 从种子创建 HD 密钥
+    const hdKey = HDKey.fromMasterSeed(seed);
+    
+    // 派生到指定路径
+    const derivedKey = hdKey.derive(fullPath);
+    
+    if (!derivedKey.privateKey) {
+      throw new Error('无法派生私钥');
+    }
+    
+    // 从私钥创建账户（转换为十六进制字符串）
+    const privateKeyHex = `0x${Buffer.from(derivedKey.privateKey).toString('hex')}` as `0x${string}`;
+    const account = privateKeyToAccount(privateKeyHex);
+    
+    return {
+      address: account.address,
+      privateKey: privateKeyHex
+    };
+  }
+
+  /**
+   * 编码 ERC20 transfer 方法调用
+   */
+  private encodeERC20Transfer(to: string, amount: string): `0x${string}` {
+    // ERC20 transfer 方法签名: transfer(address,uint256)
+    const methodId = '0xa9059cbb'; // keccak256('transfer(address,uint256)').slice(0, 8)
+    
+    const encodedParams = encodeAbiParameters(
+      [
+        { type: 'address' },
+        { type: 'uint256' }
+      ],
+      [to as `0x${string}`, BigInt(amount)]
+    );
+    
+    return `${methodId}${encodedParams.slice(2)}` as `0x${string}`;
+  }
+
+  /**
+   * 计算交易哈希
+   */
+  private getTransactionHash(signedTransaction: string): string {
+    // 对于已签名的交易，我们可以使用 keccak256 计算哈希
+    return keccak256(signedTransaction as `0x${string}`);
+  }
+
+  /**
+   * 获取默认优先费用（矿工小费）
+   */
+  private getDefaultPriorityFee(): bigint {
+    // 默认设置为 2 Gwei 的优先费用
+    // 在实际应用中，可以根据网络拥堵情况动态调整
+    return parseUnits('2', 9); // 2 Gwei = 2 * 10^9 wei
+  }
+
+  /**
+   * 获取默认最大费用（EIP-1559）
+   */
+  private getDefaultMaxFeePerGas(): bigint {
+    // 默认设置为 30 Gwei 的最大费用
+    // 包含基础费用和优先费用
+    return parseUnits('30', 9); // 30 Gwei = 30 * 10^9 wei
+  }
+
+  /**
+   * 获取默认 Gas 价格（Legacy 交易）
+   */
+  private getDefaultGasPrice(): bigint {
+    // 默认设置为 25 Gwei 的 gas 价格
+    return parseUnits('25', 9); // 25 Gwei = 25 * 10^9 wei
+  }
 
 }

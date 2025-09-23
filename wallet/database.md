@@ -121,28 +121,7 @@ node dist/scripts/createTables.js
 
 用户做现货交易、或者内部转账时，同样用 credits 表跟踪
 
-### 余额聚合视图
-
-#### v_user_balances（按地址分组的用户余额）
-```sql
-SELECT 
-  user_id, address, token_id, token_symbol, decimals,
-  available_balance, frozen_balance, total_balance,
-  available_balance_formatted, frozen_balance_formatted, total_balance_formatted
-FROM credits c JOIN tokens t ON c.token_id = t.id
-GROUP BY user_id, address, token_id
-```
-
-#### v_user_token_totals（用户代币总余额）
-```sql
-SELECT 
-  user_id, token_id, token_symbol,
-  total_available_balance, total_frozen_balance, total_balance,
-  total_available_formatted, total_frozen_formatted, total_balance_formatted,
-  address_count
-FROM credits c JOIN tokens t ON c.token_id = t.id
-GROUP BY user_id, token_id
-```
+### 余额聚合视图用户代币总余额 （[v_user_token_totals](./src/db/connection.ts)）
 
 
 ### 余额缓存表 (user_balance_cache)

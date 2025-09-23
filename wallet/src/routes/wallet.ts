@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { DatabaseService } from '../db';
 import { WalletBusinessService } from '../services/walletBusinessService';
+import { GasEstimationService } from '../services/gasEstimationService';
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -12,6 +13,7 @@ interface ApiResponse<T = any> {
 export function walletRoutes(dbService: DatabaseService): Router {
   const router = Router();
   const walletBusinessService = new WalletBusinessService(dbService);
+  const gasEstimationService = new GasEstimationService();
 
   // 获取用户的钱包地址
   router.get('/user/:id/address', async (req: Request<{ id: string }, ApiResponse>, res: Response) => {
@@ -142,6 +144,124 @@ export function walletRoutes(dbService: DatabaseService): Router {
         const errorResponse: ApiResponse = { error: result.error || '未知错误' };
         res.status(500).json(errorResponse);
       }
+    }
+  });
+
+  // 用户提现
+  router.post('/user/withdraw', async (req: Request, res: Response) => {
+    const { 
+      userId, 
+      to, 
+      amount, 
+      tokenSymbol,
+      chainId,
+      chainType
+    } = req.body;
+    
+    // 参数验证
+    if (!userId || !to || !amount || !tokenSymbol || !chainId || !chainType) {
+      const errorResponse: ApiResponse = { error: '缺少必需参数: userId, to, amount, tokenSymbol, chainId, chainType' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证用户ID格式
+    const userIdNum = parseInt(userId, 10);
+    if (isNaN(userIdNum)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证地址格式
+    if (!to.match(/^0x[a-fA-F0-9]{40}$/)) {
+      const errorResponse: ApiResponse = { error: '无效的目标地址格式' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证金额格式
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      const errorResponse: ApiResponse = { error: '无效的提现金额' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证链类型
+    if (!['evm', 'btc', 'solana'].includes(chainType)) {
+      const errorResponse: ApiResponse = { error: '不支持的链类型，支持的类型: evm, btc, solana' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证链ID格式
+    const chainIdNum = parseInt(chainId, 10);
+    if (isNaN(chainIdNum) || chainIdNum <= 0) {
+      const errorResponse: ApiResponse = { error: '无效的链ID格式' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 调用业务逻辑服务（Gas 费用将自动估算）
+    const result = await walletBusinessService.withdrawFunds({
+      userId: userIdNum,
+      to: to,
+      amount: amount,
+      tokenSymbol: tokenSymbol.toUpperCase(),
+      chainId: chainIdNum,
+      chainType: chainType as 'evm' | 'btc' | 'solana'
+    });
+    
+    if (result.success) {
+      const successResponse: ApiResponse = { 
+        message: '提现签名成功',
+        data: result.data
+      };
+      res.json(successResponse);
+    } else {
+      const errorResponse: ApiResponse = { error: result.error || '提现失败' };
+      
+      // 根据错误类型设置不同的状态码
+      if (result.error?.includes('余额不足')) {
+        res.status(400).json(errorResponse);
+      } else if (result.error?.includes('钱包不存在')) {
+        res.status(404).json(errorResponse);
+      } else if (result.error?.includes('Signer 模块不可用')) {
+        res.status(503).json(errorResponse);
+      } else if (result.error?.includes('不支持的代币')) {
+        res.status(400).json(errorResponse);
+      } else {
+        res.status(500).json(errorResponse);
+      }
+    }
+  });
+
+  // 获取网络状态和 Gas 信息
+  router.get('/network/status', async (req: Request, res: Response) => {
+    try {
+      const networkInfo = await gasEstimationService.getNetworkInfo();
+      
+      const response: ApiResponse = {
+        message: '获取网络状态成功',
+        data: {
+          chainId: networkInfo.chainId,
+          blockNumber: networkInfo.blockNumber.toString(),
+          baseFeePerGas: networkInfo.baseFeePerGas.toString(),
+          gasPrice: networkInfo.gasPrice.toString(),
+          networkCongestion: networkInfo.networkCongestion,
+          // 转换为 Gwei 显示
+          baseFeeGwei: (Number(networkInfo.baseFeePerGas) / 1e9).toFixed(2),
+          gasPriceGwei: (Number(networkInfo.gasPrice) / 1e9).toFixed(2)
+        }
+      };
+      
+      res.json(response);
+    } catch (error) {
+      const errorResponse: ApiResponse = { 
+        error: error instanceof Error ? error.message : '获取网络状态失败' 
+      };
+      res.status(500).json(errorResponse);
     }
   });
 

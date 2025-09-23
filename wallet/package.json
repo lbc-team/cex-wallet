@@ -20,7 +20,8 @@
     "axios": "^1.12.2",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "viem": "^2.37.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

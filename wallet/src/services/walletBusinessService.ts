@@ -2,17 +2,20 @@ import { DatabaseService } from '../db';
 import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
+import { GasEstimationService } from './gasEstimationService';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
   private dbService: DatabaseService;
   private signerService: SignerService;
   private balanceService: BalanceService;
+  private gasEstimationService: GasEstimationService;
 
   constructor(dbService: DatabaseService) {
     this.dbService = dbService;
     this.signerService = new SignerService();
     this.balanceService = new BalanceService(dbService);
+    this.gasEstimationService = new GasEstimationService();
   }
 
   /**
@@ -101,7 +104,7 @@ export class WalletBusinessService {
 
 
   /**
-   * 获取用户余额总和（所有链的总和）- 使用新的Credits系统
+   * 获取用户余额总和（所有链的总和）- 使用 Credits 
    */
   async getUserTotalBalance(userId: number): Promise<{
     success: boolean;
@@ -208,6 +211,197 @@ export class WalletBusinessService {
       return {
         success: false,
         error: error instanceof Error ? error.message : '获取代币余额失败'
+      };
+    }
+  }
+
+  /**
+   * 用户提现
+   */
+  async withdrawFunds(params: {
+    userId: number;
+    to: string;                // 提现目标地址
+    amount: string;            // 提现金额（格式化后的金额，如 "1.5"）
+    tokenSymbol: string;       // 代币符号，如 "ETH", "USDT"
+    chainId: number;           // 链ID
+    chainType: 'evm' | 'btc' | 'solana'; // 链类型
+  }): Promise<{
+    success: boolean;
+    data?: {
+      signedTransaction: string;
+      transactionHash: string;
+      withdrawAmount: string;
+      gasEstimation: {
+        gasLimit: string;
+        maxFeePerGas: string;
+        maxPriorityFeePerGas: string;
+        estimatedFee: string; // 预估的总费用（ETH）
+        networkCongestion: 'low' | 'medium' | 'high';
+      };
+    };
+    error?: string;
+  }> {
+    try {
+      // 1. 验证参数
+      if (!params.to || !params.amount || !params.tokenSymbol) {
+        return {
+          success: false,
+          error: '缺少必需参数: to, amount, tokenSymbol'
+        };
+      }
+
+      // 2. 获取用户钱包地址
+      const wallet = await this.dbService.wallets.findByUserId(params.userId);
+      if (!wallet) {
+        return {
+          success: false,
+          error: '用户钱包不存在'
+        };
+      }
+
+      // 3. 查找代币信息
+      const tokenInfo = await this.dbService.getConnection().findTokenBySymbol(params.tokenSymbol, params.chainId);
+      if (!tokenInfo) {
+        return {
+          success: false,
+          error: `不支持的代币: ${params.tokenSymbol}`
+        };
+      }
+
+      // 4. 将用户输入的金额转换为最小单位
+      const requestedAmountBigInt = BigInt(Math.floor(parseFloat(params.amount) * Math.pow(10, tokenInfo.decimals)));
+      
+      // 5. 检查用户余额是否充足
+      const balanceCheck = await this.balanceService.checkSufficientBalance(
+        params.userId,
+        tokenInfo.id,
+        requestedAmountBigInt.toString()
+      );
+
+      if (!balanceCheck.sufficient) {
+        return {
+          success: false,
+          error: `余额不足。可用余额: ${(BigInt(balanceCheck.availableBalance) / BigInt(Math.pow(10, tokenInfo.decimals))).toString()} ${params.tokenSymbol}`
+        };
+      }
+
+      // 6. 检查 signer 模块是否可用
+      const isSignerHealthy = await this.signerService.checkHealth();
+      if (!isSignerHealthy) {
+        return {
+          success: false,
+          error: 'Signer 模块不可用，请稍后再试'
+        };
+      }
+
+      // 7. 获取 nonce 和自动估算 gas 费用
+      let nonce: number;
+      let gasEstimation;
+      try {
+        // 获取 nonce
+        nonce = await this.gasEstimationService.getNonce(wallet.address);
+        
+        // 估算 gas 费用
+        if (tokenInfo.is_native) {
+          // ETH 转账
+          gasEstimation = await this.gasEstimationService.estimateEthTransfer({
+            from: wallet.address,
+            to: params.to,
+            amount: requestedAmountBigInt.toString()
+          });
+        } else {
+          // ERC20 转账
+          gasEstimation = await this.gasEstimationService.estimateErc20Transfer({
+            from: wallet.address,
+            to: params.to,
+            tokenAddress: tokenInfo.token_address!,
+            amount: requestedAmountBigInt.toString()
+          });
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: `获取 nonce 或 Gas 费用估算失败: ${error instanceof Error ? error.message : '未知错误'}`
+        };
+      }
+
+      // 8. 构建签名请求（使用自动估算的 gas 参数和获取的 nonce）
+      const signRequest: {
+        address: string;
+        to: string;
+        amount: string;
+        tokenAddress?: string;
+        gas: string;
+        maxFeePerGas: string;
+        maxPriorityFeePerGas: string;
+        nonce: number;
+        chainId: number;
+        chainType: 'evm' | 'btc' | 'solana';
+        type: 2; // 使用 EIP-1559
+      } = {
+        address: wallet.address,
+        to: params.to,
+        amount: requestedAmountBigInt.toString(),
+        gas: gasEstimation.gasLimit,
+        maxFeePerGas: gasEstimation.maxFeePerGas,
+        maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
+        nonce: nonce,
+        chainId: params.chainId,
+        chainType: params.chainType,
+        type: 2
+      };
+
+      // 只有非原生代币才设置 tokenAddress
+      if (!tokenInfo.is_native && tokenInfo.token_address) {
+        signRequest.tokenAddress = tokenInfo.token_address;
+      }
+
+      // 9. 请求 Signer 签名交易
+      const signResult = await this.signerService.signTransaction(signRequest);
+
+      // 10. 计算预估的总 gas 费用（以 ETH 为单位）
+      const estimatedFeeWei = BigInt(gasEstimation.gasLimit) * BigInt(gasEstimation.maxFeePerGas);
+      const estimatedFeeEth = (Number(estimatedFeeWei) / Math.pow(10, 18)).toFixed(6);
+
+      // 11. 创建提现记录（先记录为 pending 状态）
+      const withdrawId = `withdraw_${Date.now()}_${params.userId}`;
+      await this.balanceService.createWithdrawCredit({
+        userId: params.userId,
+        address: wallet.address,
+        tokenId: tokenInfo.id,
+        tokenSymbol: params.tokenSymbol,
+        amount: requestedAmountBigInt.toString(),
+        txHash: signResult.transactionHash,
+        blockNumber: 0, // 暂时设为0，广播后更新
+        status: 'pending',
+        metadata: {
+          to: params.to,
+          request_amount: params.amount,
+          withdraw_id: withdrawId,
+          gas_estimation: gasEstimation
+        }
+      });
+
+      return {
+        success: true,
+        data: {
+          signedTransaction: signResult.signedTransaction,
+          transactionHash: signResult.transactionHash,
+          withdrawAmount: params.amount,
+          gasEstimation: {
+            gasLimit: gasEstimation.gasLimit,
+            maxFeePerGas: gasEstimation.maxFeePerGas,
+            maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
+            estimatedFee: estimatedFeeEth,
+            networkCongestion: gasEstimation.networkCongestion
+          }
+        }
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '提现失败'
       };
     }
   }

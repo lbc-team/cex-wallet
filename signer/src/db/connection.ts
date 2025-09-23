@@ -124,6 +124,30 @@ export class DatabaseConnection {
     });
   }
 
+  /**
+   * 通过地址查找地址信息
+   */
+  findAddressByAddress(address: string): Promise<{ address: string; path: string; index: number; chainType: string } | null> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT address, path, index_value, chain_type FROM generatedAddresses WHERE address = ?',
+        [address],
+        (err, row: any) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(row ? { 
+              address: row.address, 
+              path: row.path, 
+              index: row.index_value,
+              chainType: row.chain_type
+            } : null);
+          }
+        }
+      );
+    });
+  }
+
 
 
   /**

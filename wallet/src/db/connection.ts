@@ -450,6 +450,42 @@ export class DatabaseConnection {
       });
     });
   }
+
+  // 通过代币符号查找代币信息
+  async findTokenBySymbol(symbol: string, chainId: number): Promise<{
+    id: number;
+    chain_type: string;
+    chain_id: number;
+    token_address: string | null;
+    token_symbol: string;
+    token_name: string | null;
+    decimals: number;
+    is_native: boolean;
+  } | null> {
+    const result = await this.queryOne(
+      'SELECT * FROM tokens WHERE token_symbol = ? AND chain_id = ? AND status = 1 LIMIT 1',
+      [symbol, chainId]
+    );
+    return result || null;
+  }
+
+  // 通过代币地址查找代币信息
+  async findTokenByAddress(address: string): Promise<{
+    id: number;
+    chain_type: string;
+    chain_id: number;
+    token_address: string | null;
+    token_symbol: string;
+    token_name: string | null;
+    decimals: number;
+    is_native: boolean;
+  } | null> {
+    const result = await this.queryOne(
+      'SELECT * FROM tokens WHERE token_address = ? AND status = 1 LIMIT 1',
+      [address]
+    );
+    return result || null;
+  }
 }
 
 // 单例数据库连接实例
