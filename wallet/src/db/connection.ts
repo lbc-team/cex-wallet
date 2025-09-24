@@ -128,6 +128,7 @@ export class DatabaseConnection {
           decimals INTEGER DEFAULT 18,
           is_native BOOLEAN DEFAULT 0,
           collect_amount TEXT DEFAULT '0',
+          withdraw_fee TEXT DEFAULT '0',
           status INTEGER DEFAULT 1,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -176,6 +177,50 @@ export class DatabaseConnection {
         )
       `);
 
+      // 创建内部钱包表（热钱包、多签钱包、冷钱包、金库钱包）
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS internal_wallets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          address TEXT NOT NULL,
+          device TEXT,
+          path TEXT,
+          chain_type TEXT NOT NULL DEFAULT 'evm',
+          chain_id INTEGER NOT NULL,
+          wallet_type TEXT NOT NULL DEFAULT 'hot',
+          nonce INTEGER DEFAULT 0,
+          is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(address, chain_id)
+        )
+      `);
+
+      // 创建提现记录表
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS withdraws (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          to_address TEXT NOT NULL,
+          token_symbol TEXT NOT NULL,
+          token_address TEXT,
+          amount TEXT NOT NULL,
+          fee TEXT NOT NULL DEFAULT '0',
+          chain_id INTEGER NOT NULL,
+          chain_type TEXT NOT NULL,
+          from_address TEXT,
+          tx_hash TEXT,
+          gas_price TEXT,
+          max_fee_per_gas TEXT,
+          max_priority_fee_per_gas TEXT,
+          gas_used TEXT,
+          nonce INTEGER,
+          status TEXT NOT NULL DEFAULT 'user_withdraw_request',
+          error_message TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `);
 
       // 创建索引
       const indexes = [
@@ -200,7 +245,20 @@ export class DatabaseConnection {
         `CREATE INDEX IF NOT EXISTS idx_tokens_chain_symbol ON tokens(chain_type, chain_id, token_symbol)`,
         `CREATE INDEX IF NOT EXISTS idx_tokens_chain_address ON tokens(chain_type, chain_id, token_address)`,
         `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`,
+        
+        // Internal wallets 表索引
+        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_address ON internal_wallets(address)`,
+        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_chain ON internal_wallets(chain_id, chain_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_type ON internal_wallets(wallet_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_active ON internal_wallets(is_active)`,
+        
+        // Withdraws 表索引
+        `CREATE INDEX IF NOT EXISTS idx_withdraws_user_id ON withdraws(user_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_withdraws_status ON withdraws(status)`,
+        `CREATE INDEX IF NOT EXISTS idx_withdraws_chain ON withdraws(chain_id, chain_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_withdraws_tx_hash ON withdraws(tx_hash)`,
+        `CREATE INDEX IF NOT EXISTS idx_withdraws_created_at ON withdraws(created_at)`
       ];
 
       for (const indexSql of indexes) {
