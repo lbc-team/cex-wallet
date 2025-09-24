@@ -164,6 +164,8 @@ user_withdraw_request → signing → pending → processing → confirmed
 | business_type | TEXT | 业务类型：blockchain/spot_trade/internal_transfer/admin_adjust等 |
 | reference_id | TEXT | 关联业务ID（如txHash_eventIndex、withdraw_id等） |
 | reference_type | TEXT | 关联业务类型（如blockchain_tx、withdraw等） |
+| chain_id | INTEGER | 链ID，可为空（支持历史数据） |
+| chain_type | TEXT | 链类型，可为空（支持历史数据） |
 | status | TEXT | 状态：pending/confirmed/finalized/failed |
 | block_number | INTEGER | 区块号（链上交易才有） |
 | tx_hash | TEXT | 交易哈希（链上交易才有） |

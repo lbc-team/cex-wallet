@@ -227,8 +227,8 @@ export class TransactionAnalyzer {
         amount: deposit.amount.toString(),
         txHash: deposit.txHash,
         blockNumber: deposit.blockNumber,
-        chainId: tokenInfo.chainId || 1,
-        chainType: tokenInfo.chainType || 'evm',
+        chainId: tokenInfo.chainId,
+        chainType: tokenInfo.chainType,
         eventIndex: deposit.logIndex, // 使用真实的事件索引
         status: 'confirmed', // 初始状态为confirmed
         metadata: {
