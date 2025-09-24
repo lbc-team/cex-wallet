@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../db/connection';
+import { SignerService } from './signerService';
 
 /**
  * 热钱包管理服务
@@ -6,11 +7,12 @@ import { DatabaseConnection } from '../db/connection';
  */
 export class HotWalletService {
   private db: DatabaseConnection;
+  private signerService: SignerService;
   private nonceCache = new Map<string, number>();
-  private maxRetries = 3;
 
   constructor(db: DatabaseConnection) {
     this.db = db;
+    this.signerService = new SignerService();
   }
 
   /**
@@ -93,8 +95,38 @@ export class HotWalletService {
     device: string;
     path: string;
   }> {
-    // 这个方法需要配合 SignerService 使用
-    throw new Error('createHotWallet 方法需要配合 SignerService 使用');
+    try {
+      // 1. 通过 SignerService 创建钱包
+      const signerResult = await this.signerService.createWallet(params.chainType);
+
+      if (!signerResult) {
+        throw new Error('签名机创建钱包失败: 返回结果为空');
+      }
+
+      const { address, device, path } = signerResult;
+
+      // 2. 保存到 internal_wallets 表
+      const walletId = await this.db.createInternalWallet({
+        address,
+        device,
+        path,
+        chainType: params.chainType,
+        chainId: params.chainId,
+        walletType: 'hot',
+        nonce: params.initialNonce || 0
+      });
+
+      return {
+        walletId,
+        address,
+        device,
+        path
+      };
+
+    } catch (error) {
+      console.error('创建热钱包失败:', error);
+      throw new Error(`创建热钱包失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
   }
 
   /**

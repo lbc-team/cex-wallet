@@ -123,15 +123,36 @@ export class GasEstimationService {
   }
 
   /**
+   * 根据链 ID 获取链类型
+   */
+  getChainTypeFromChainId(chainId: number): SupportedChain {
+    switch (chainId) {
+      case 1:
+        return 'mainnet';
+      case 11155111:
+        return 'sepolia';
+      case 56:
+        return 'bsc';
+      case 97:
+        return 'bscTestnet';
+      case 1337:
+      case 31337:
+        return 'localhost';
+      default:
+        return 'mainnet'; // 默认使用主网
+    }
+  }
+
+  /**
    * 估算 ETH 转账的 gas 费用
    */
   async estimateEthTransfer(params: {
     from: string;
     to: string;
     amount: string; // wei 单位
-    chain?: SupportedChain;
+    chainId: number;
   }): Promise<GasEstimation> {
-    const chain = params.chain || 'mainnet';
+    const chain = this.getChainTypeFromChainId(params.chainId);
     const publicClient = this.getPublicClient(chain);
     
     try {
@@ -172,9 +193,9 @@ export class GasEstimationService {
     to: string;
     tokenAddress: string;
     amount: string; // 最小单位
-    chain?: SupportedChain;
+    chainId: number;
   }): Promise<GasEstimation> {
-    const chain = params.chain || 'mainnet';
+    const chain = this.getChainTypeFromChainId(params.chainId);
     const publicClient = this.getPublicClient(chain);
     
     try {
@@ -369,7 +390,8 @@ export class GasEstimationService {
   /**
    * 获取指定地址的 nonce
    */
-  async getNonce(address: string, chain: SupportedChain = 'mainnet'): Promise<number> {
+  async getNonce(address: string, chainId: number): Promise<number> {
+    const chain = this.getChainTypeFromChainId(chainId);
     const publicClient = this.getPublicClient(chain);
     
     try {
@@ -388,13 +410,14 @@ export class GasEstimationService {
   /**
    * 获取当前网络状态信息
    */
-  async getNetworkInfo(chain: SupportedChain = 'mainnet'): Promise<{
+  async getNetworkInfo(chainId: number): Promise<{
     chainId: number;
     blockNumber: bigint;
     baseFeePerGas: bigint;
     gasPrice: bigint;
     networkCongestion: 'low' | 'medium' | 'high';
   }> {
+    const chain = this.getChainTypeFromChainId(chainId);
     const publicClient = this.getPublicClient(chain);
     const config = this.chainConfigs.get(chain);
     

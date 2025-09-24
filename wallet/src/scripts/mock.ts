@@ -1,4 +1,5 @@
 import { getDatabase } from '../db/connection';
+import { HotWalletService } from '../services/hotWalletService';
 
 // 简单的日志函数
 const logger = {
@@ -12,6 +13,28 @@ async function insertMockData() {
     const db = getDatabase();
     await db.connect();
 
+    // 创建热钱包服务
+    const hotWalletService = new HotWalletService(db);
+    
+    // 创建一个热钱包（本地测试网络）
+    logger.info('创建热钱包...');
+    try {
+      const hotWallet = await hotWalletService.createHotWallet({
+        chainType: 'evm',
+        chainId: 31337,
+        initialNonce: 0
+      });
+      
+      logger.info('热钱包创建成功:', {
+        walletId: hotWallet.walletId,
+        address: hotWallet.address,
+        device: hotWallet.device,
+        path: hotWallet.path
+      });
+    } catch (error) {
+      logger.error('创建热钱包失败:', error);
+    }
+    
     // 插入用户
     // 插入10条模拟用户数据，匹配wallets表中的user_id
     for (let i = 0; i < 10; i++) {

@@ -21,25 +21,6 @@ export class WalletBusinessService {
     this.hotWalletService = new HotWalletService(dbService.getConnection());
   }
 
-  /**
-   * 根据链 ID 获取链类型
-   */
-  private getChainTypeFromChainId(chainId: number): 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost' {
-    switch (chainId) {
-      case 1:
-        return 'mainnet';
-      case 11155111:
-        return 'sepolia';
-      case 56:
-        return 'bsc';
-      case 97:
-        return 'bscTestnet';
-      case 1337:
-        return 'localhost';
-      default:
-        return 'mainnet'; // 默认使用主网
-    }
-  }
 
   /**
    * 获取用户钱包地址
@@ -349,7 +330,7 @@ export class WalletBusinessService {
             from: hotWallet.address,
             to: params.to,
             amount: requestedAmountBigInt.toString(),
-            chain: this.getChainTypeFromChainId(params.chainId)
+            chainId: params.chainId
           });
         } else {
           // ERC20 转账
@@ -358,7 +339,7 @@ export class WalletBusinessService {
             to: params.to,
             tokenAddress: tokenInfo.token_address!,
             amount: requestedAmountBigInt.toString(),
-            chain: this.getChainTypeFromChainId(params.chainId)
+            chainId: params.chainId
           });
         }
       } catch (error) {
