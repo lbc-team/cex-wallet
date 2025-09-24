@@ -654,6 +654,167 @@ export class DatabaseConnection {
       return false;
     }
   }
+
+  // ==================== 提现相关方法 ====================
+
+  /**
+   * 创建提现记录
+   */
+  async createWithdraw(record: {
+    userId: number;
+    toAddress: string;
+    tokenSymbol: string;
+    tokenAddress?: string;
+    amount: string;
+    fee: string;
+    chainId: number;
+    chainType: string;
+    status?: string;
+  }): Promise<number> {
+    const result = await this.run(`
+      INSERT INTO withdraws (
+        user_id, to_address, token_symbol, token_address,
+        amount, fee, chain_id, chain_type, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      record.userId, record.toAddress, record.tokenSymbol, 
+      record.tokenAddress, record.amount, record.fee, 
+      record.chainId, record.chainType, record.status || 'user_withdraw_request'
+    ]);
+    
+    return result.lastID;
+  }
+
+  /**
+   * 更新提现状态
+   */
+  async updateWithdrawStatus(
+    id: number, 
+    status: string, 
+    data?: {
+      fromAddress?: string;
+      txHash?: string;
+      nonce?: number;
+      gasUsed?: string;
+      gasPrice?: string;
+      maxFeePerGas?: string;
+      maxPriorityFeePerGas?: string;
+      errorMessage?: string;
+    }
+  ): Promise<void> {
+    const updates: string[] = ['status = ?', 'updated_at = CURRENT_TIMESTAMP'];
+    const params: any[] = [status];
+    
+    if (data?.fromAddress) {
+      updates.push('from_address = ?');
+      params.push(data.fromAddress);
+    }
+    if (data?.txHash) {
+      updates.push('tx_hash = ?');
+      params.push(data.txHash);
+    }
+    if (data?.nonce) {
+      updates.push('nonce = ?');
+      params.push(data.nonce);
+    }
+    if (data?.gasUsed) {
+      updates.push('gas_used = ?');
+      params.push(data.gasUsed);
+    }
+    if (data?.gasPrice) {
+      updates.push('gas_price = ?');
+      params.push(data.gasPrice);
+    }
+    if (data?.maxFeePerGas) {
+      updates.push('max_fee_per_gas = ?');
+      params.push(data.maxFeePerGas);
+    }
+    if (data?.maxPriorityFeePerGas) {
+      updates.push('max_priority_fee_per_gas = ?');
+      params.push(data.maxPriorityFeePerGas);
+    }
+    if (data?.errorMessage) {
+      updates.push('error_message = ?');
+      params.push(data.errorMessage);
+    }
+    
+    params.push(id);
+    
+    await this.run(`
+      UPDATE withdraws 
+      SET ${updates.join(', ')}
+      WHERE id = ?
+    `, params);
+  }
+
+  /**
+   * 查询用户的提现记录
+   */
+  async getUserWithdraws(userId: number, status?: string): Promise<any[]> {
+    let sql = 'SELECT * FROM withdraws WHERE user_id = ?';
+    const params: any[] = [userId];
+    
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+    
+    sql += ' ORDER BY created_at DESC';
+    return await this.query(sql, params);
+  }
+
+  /**
+   * 查询待处理的提现
+   */
+  async getPendingWithdraws(): Promise<any[]> {
+    return await this.query(
+      'SELECT * FROM withdraws WHERE status IN (?, ?, ?) ORDER BY created_at ASC',
+      ['user_withdraw_request', 'signing', 'pending']
+    );
+  }
+
+  /**
+   * 根据提现ID查询提现记录
+   */
+  async getWithdrawById(id: number): Promise<any | null> {
+    return await this.queryOne('SELECT * FROM withdraws WHERE id = ?', [id]);
+  }
+
+  /**
+   * 根据提现ID查询关联的credit记录
+   */
+  async getCreditsByWithdrawId(withdrawId: number): Promise<any[]> {
+    return await this.query(
+      'SELECT * FROM credits WHERE reference_id = ? AND reference_type LIKE ?',
+      [withdrawId, 'withdraw%']
+    );
+  }
+
+  /**
+   * 创建 credit 记录
+   */
+  async createCredit(record: {
+    user_id: number;
+    token_symbol: string;
+    token_address: string;
+    amount: string;
+    chain_id: number;
+    chain_type: string;
+    reference_id: number;
+    reference_type: string;
+  }): Promise<number> {
+    const result = await this.run(`
+      INSERT INTO credits (
+        user_id, token_symbol, token_address, amount, chain_id, chain_type,
+        reference_id, reference_type, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      record.user_id, record.token_symbol, record.token_address, record.amount,
+      record.chain_id, record.chain_type, record.reference_id, record.reference_type
+    ]);
+    
+    return result.lastID;
+  }
 }
 
 // 单例数据库连接实例

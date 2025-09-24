@@ -91,6 +91,7 @@ async function createTables() {
         decimals INTEGER DEFAULT 18,
         is_native BOOLEAN DEFAULT 0,
         collect_amount TEXT DEFAULT '0',
+        withdraw_fee TEXT DEFAULT '0',
         status INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -132,6 +133,33 @@ async function createTables() {
       )
     `);
 
+    // 创建提现表
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS withdraws (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        from_address TEXT,
+        to_address TEXT NOT NULL,
+        token_symbol TEXT NOT NULL,
+        token_address TEXT,
+        amount TEXT NOT NULL,
+        fee TEXT DEFAULT '0',
+        chain_id INTEGER NOT NULL,
+        chain_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'user_withdraw_request',
+        tx_hash TEXT,
+        nonce INTEGER,
+        gas_used TEXT,
+        gas_price TEXT,
+        max_fee_per_gas TEXT,
+        max_priority_fee_per_gas TEXT,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
 
     // 创建索引
     const indexes = [
@@ -151,6 +179,11 @@ async function createTables() {
       `CREATE INDEX IF NOT EXISTS idx_internal_wallets_chain ON internal_wallets(chain_type, chain_id)`,
       `CREATE INDEX IF NOT EXISTS idx_internal_wallets_type ON internal_wallets(wallet_type)`,
       `CREATE INDEX IF NOT EXISTS idx_internal_wallets_active ON internal_wallets(is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_user_id ON withdraws(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_status ON withdraws(status)`,
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_created_at ON withdraws(created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_user_status ON withdraws(user_id, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_chain_id ON withdraws(chain_id)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_balances_unique ON balances(user_id, chain_type, token_id, address)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`
     ];

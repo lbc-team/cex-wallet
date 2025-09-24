@@ -235,16 +235,20 @@ export class WalletBusinessService {
       signedTransaction: string;
       transactionHash: string;
       withdrawAmount: string;
+      actualAmount: string;    // 实际转账金额（扣除费用后）
+      fee: string;             // 提现费用
+      withdrawId: number;      // 提现记录ID
       gasEstimation: {
         gasLimit: string;
         maxFeePerGas: string;
         maxPriorityFeePerGas: string;
-        estimatedFee: string; // 预估的总费用（ETH）
         networkCongestion: 'low' | 'medium' | 'high';
       };
     };
     error?: string;
   }> {
+    let withdrawId: number | undefined;
+    
     try {
       // 1. 验证参数
       if (!params.to || !params.amount || !params.tokenSymbol) {
@@ -275,7 +279,11 @@ export class WalletBusinessService {
       // 4. 将用户输入的金额转换为最小单位
       const requestedAmountBigInt = BigInt(Math.floor(parseFloat(params.amount) * Math.pow(10, tokenInfo.decimals)));
       
-      // 5. 检查用户余额是否充足
+      // 5. 获取提现费用并计算实际转账金额
+      const withdrawFee = (tokenInfo as any).withdraw_fee || '0';
+      const actualAmount = requestedAmountBigInt - BigInt(withdrawFee);
+      
+      // 6. 检查用户余额是否充足（包含费用）
       const balanceCheck = await this.balanceService.checkSufficientBalance(
         params.userId,
         tokenInfo.id,
@@ -289,7 +297,7 @@ export class WalletBusinessService {
         };
       }
 
-      // 6. 检查 signer 模块是否可用
+      // 7. 检查 signer 模块是否可用
       const isSignerHealthy = await this.signerService.checkHealth();
       if (!isSignerHealthy) {
         return {
@@ -298,7 +306,32 @@ export class WalletBusinessService {
         };
       }
 
-      // 7. 选择热钱包并获取 nonce
+      // 8. 创建提现记录（状态：user_withdraw_request）
+      const withdrawId = await this.dbService.getConnection().createWithdraw({
+        userId: params.userId,
+        toAddress: params.to,
+        tokenSymbol: params.tokenSymbol,
+        tokenAddress: tokenInfo.token_address || '',
+        amount: requestedAmountBigInt.toString(),
+        fee: withdrawFee,
+        chainId: params.chainId,
+        chainType: params.chainType,
+        status: 'user_withdraw_request'
+      });
+
+      // 9. 创建 credit 流水记录（扣除余额）
+      await this.dbService.getConnection().createCredit({
+        user_id: params.userId,
+        token_symbol: params.tokenSymbol,
+        token_address: tokenInfo.token_address || '',
+        amount: `-${requestedAmountBigInt.toString()}`,
+        chain_id: params.chainId,
+        chain_type: params.chainType,
+        reference_id: withdrawId,
+        reference_type: 'withdraw'
+      });
+
+      // 10. 选择热钱包并获取 nonce
       let hotWallet;
       let nonce: number;
       let gasEstimation;
@@ -323,13 +356,19 @@ export class WalletBusinessService {
           params.chainId
         );
         
-        // 估算 gas 费用（使用热钱包地址）
+        // 更新提现状态为 signing（填充 from 地址等信息）
+        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'signing', {
+          fromAddress: hotWallet.address,
+          nonce: nonce
+        });
+
+        // 估算 gas 费用（使用实际转账金额）
         if (tokenInfo.is_native) {
           // ETH 转账
           gasEstimation = await this.gasEstimationService.estimateEthTransfer({
             from: hotWallet.address,
             to: params.to,
-            amount: requestedAmountBigInt.toString(),
+            amount: actualAmount.toString(),
             chainId: params.chainId
           });
         } else {
@@ -338,11 +377,16 @@ export class WalletBusinessService {
             from: hotWallet.address,
             to: params.to,
             tokenAddress: tokenInfo.token_address!,
-            amount: requestedAmountBigInt.toString(),
+            amount: actualAmount.toString(),
             chainId: params.chainId
           });
         }
       } catch (error) {
+        // 更新提现状态为失败
+        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
+          errorMessage: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
+        });
+        
         return {
           success: false,
           error: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
@@ -365,7 +409,7 @@ export class WalletBusinessService {
       } = {
         address: hotWallet.address, // 使用热钱包地址
         to: params.to,
-        amount: requestedAmountBigInt.toString(),
+        amount: actualAmount.toString(),
         gas: gasEstimation.gasLimit,
         maxFeePerGas: gasEstimation.maxFeePerGas,
         maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
@@ -380,30 +424,27 @@ export class WalletBusinessService {
         signRequest.tokenAddress = tokenInfo.token_address;
       }
 
-      // 9. 请求 Signer 签名交易
+      // 11. 请求 Signer 签名交易
       const signResult = await this.signerService.signTransaction(signRequest);
 
-      // 10. 计算预估的总 gas 费用（以 ETH 为单位）
-      const estimatedFeeWei = BigInt(gasEstimation.gasLimit) * BigInt(gasEstimation.maxFeePerGas);
-      const estimatedFeeEth = (Number(estimatedFeeWei) / Math.pow(10, 18)).toFixed(6);
+      if (!(signResult as any).success) {
+        // 更新提现状态为失败
+        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
+          errorMessage: `签名失败: ${(signResult as any).error}`
+        });
+        
+        return {
+          success: false,
+          error: `签名失败: ${(signResult as any).error}`
+        };
+      }
 
-      // 11. 创建提现记录（先记录为 pending 状态）
-      const withdrawId = `withdraw_${Date.now()}_${params.userId}`;
-      await this.balanceService.createWithdrawCredit({
-        userId: params.userId,
-        address: wallet.address,
-        tokenId: tokenInfo.id,
-        tokenSymbol: params.tokenSymbol,
-        amount: requestedAmountBigInt.toString(),
+      // 12. 更新提现状态为 pending
+      await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'pending', {
         txHash: signResult.transactionHash,
-        blockNumber: 0, // 暂时设为0，广播后更新
-        status: 'pending',
-        metadata: {
-          to: params.to,
-          request_amount: params.amount,
-          withdraw_id: withdrawId,
-          gas_estimation: gasEstimation
-        }
+        gasPrice: gasEstimation.gasPrice,
+        maxFeePerGas: gasEstimation.maxFeePerGas,
+        maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas
       });
 
       return {
@@ -412,17 +453,30 @@ export class WalletBusinessService {
           signedTransaction: signResult.signedTransaction,
           transactionHash: signResult.transactionHash,
           withdrawAmount: params.amount,
+          actualAmount: actualAmount.toString(),
+          fee: withdrawFee,
+          withdrawId: withdrawId,
           gasEstimation: {
             gasLimit: gasEstimation.gasLimit,
             maxFeePerGas: gasEstimation.maxFeePerGas,
             maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
-            estimatedFee: estimatedFeeEth,
             networkCongestion: gasEstimation.networkCongestion
           }
         }
       };
 
     } catch (error) {
+      // 如果有 withdrawId，更新提现状态为失败
+      if (withdrawId !== undefined) {
+        try {
+          await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
+            errorMessage: error instanceof Error ? error.message : '提现失败'
+          });
+        } catch (updateError) {
+          console.error('更新提现状态失败:', updateError);
+        }
+      }
+      
       return {
         success: false,
         error: error instanceof Error ? error.message : '提现失败'

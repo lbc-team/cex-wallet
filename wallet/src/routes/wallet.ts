@@ -237,10 +237,164 @@ export function walletRoutes(dbService: DatabaseService): Router {
     }
   });
 
+  // 获取用户提现记录
+  router.get('/user/:id/withdraws', async (req: Request<{ id: string }>, res: Response) => {
+    const userId = parseInt(req.params.id, 10);
+    const status = req.query.status as string;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = parseInt(req.query.offset as string) || 0;
+    
+    if (isNaN(userId)) {
+      const errorResponse: ApiResponse = { error: '无效的用户ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    try {
+      const withdraws = await dbService.getConnection().getUserWithdraws(userId, status);
+      
+      // 分页处理
+      const total = withdraws.length;
+      const paginatedWithdraws = withdraws.slice(offset, offset + limit);
+      
+      const response: ApiResponse = {
+        message: '获取用户提现记录成功',
+        data: {
+          withdraws: paginatedWithdraws,
+          pagination: {
+            total,
+            limit,
+            offset,
+            hasMore: offset + limit < total
+          }
+        }
+      };
+      
+      res.json(response);
+    } catch (error) {
+      const errorResponse: ApiResponse = { 
+        error: error instanceof Error ? error.message : '获取提现记录失败' 
+      };
+      res.status(500).json(errorResponse);
+    }
+  });
+
+  // 获取特定提现记录详情
+  router.get('/withdraws/:withdrawId', async (req: Request<{ withdrawId: string }>, res: Response) => {
+    const withdrawId = parseInt(req.params.withdrawId, 10);
+    
+    if (isNaN(withdrawId)) {
+      const errorResponse: ApiResponse = { error: '无效的提现ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    try {
+      const withdraw = await dbService.getConnection().getWithdrawById(withdrawId);
+      
+      if (!withdraw) {
+        const errorResponse: ApiResponse = { error: '提现记录不存在' };
+        res.status(404).json(errorResponse);
+        return;
+      }
+
+      // 获取关联的 credit 记录
+      const credits = await dbService.getConnection().getCreditsByWithdrawId(withdrawId);
+      
+      const response: ApiResponse = {
+        message: '获取提现记录详情成功',
+        data: {
+          withdraw,
+          credits
+        }
+      };
+      
+      res.json(response);
+    } catch (error) {
+      const errorResponse: ApiResponse = { 
+        error: error instanceof Error ? error.message : '获取提现记录详情失败' 
+      };
+      res.status(500).json(errorResponse);
+    }
+  });
+
+  // 获取待处理的提现（管理员接口）
+  router.get('/withdraws/pending', async (req: Request, res: Response) => {
+    try {
+      const pendingWithdraws = await dbService.getConnection().getPendingWithdraws();
+      
+      const response: ApiResponse = {
+        message: '获取待处理提现成功',
+        data: {
+          withdraws: pendingWithdraws,
+          count: pendingWithdraws.length
+        }
+      };
+      
+      res.json(response);
+    } catch (error) {
+      const errorResponse: ApiResponse = { 
+        error: error instanceof Error ? error.message : '获取待处理提现失败' 
+      };
+      res.status(500).json(errorResponse);
+    }
+  });
+
+  // 更新提现状态（管理员接口）
+  router.put('/withdraws/:withdrawId/status', async (req: Request<{ withdrawId: string }>, res: Response) => {
+    const withdrawId = parseInt(req.params.withdrawId, 10);
+    const { status, txHash, gasUsed, errorMessage } = req.body;
+    
+    if (isNaN(withdrawId)) {
+      const errorResponse: ApiResponse = { error: '无效的提现ID' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    if (!status) {
+      const errorResponse: ApiResponse = { error: '状态是必需的' };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    // 验证状态值
+    const validStatuses = ['user_withdraw_request', 'signing', 'pending', 'processing', 'confirmed', 'failed'];
+    if (!validStatuses.includes(status)) {
+      const errorResponse: ApiResponse = { 
+        error: `无效的状态值，支持的状态: ${validStatuses.join(', ')}` 
+      };
+      res.status(400).json(errorResponse);
+      return;
+    }
+
+    try {
+      await dbService.getConnection().updateWithdrawStatus(withdrawId, status, {
+        txHash,
+        gasUsed,
+        errorMessage
+      });
+      
+      const response: ApiResponse = {
+        message: '更新提现状态成功',
+        data: {
+          withdrawId,
+          status
+        }
+      };
+      
+      res.json(response);
+    } catch (error) {
+      const errorResponse: ApiResponse = { 
+        error: error instanceof Error ? error.message : '更新提现状态失败' 
+      };
+      res.status(500).json(errorResponse);
+    }
+  });
+
   // 获取网络状态和 Gas 信息
   router.get('/network/status', async (req: Request, res: Response) => {
     try {
-      const networkInfo = await gasEstimationService.getNetworkInfo();
+      const networkInfo = await gasEstimationService.getNetworkInfo(1); // 默认使用主网
       
       const response: ApiResponse = {
         message: '获取网络状态成功',
