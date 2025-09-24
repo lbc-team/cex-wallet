@@ -327,7 +327,11 @@ export class WalletBusinessService {
         chain_id: params.chainId,
         chain_type: params.chainType,
         reference_id: withdrawId,
-        reference_type: 'withdraw'
+        reference_type: 'withdraw',
+        address: params.to,
+        credit_type: 'withdraw',
+        business_type: 'withdraw',
+        status: 'pending'
       });
 
       // 10. 选择热钱包并获取 nonce

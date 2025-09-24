@@ -64,6 +64,8 @@ export class CreditDAO {
     amount: string;
     txHash: string;
     blockNumber: number;
+    chainId?: number;
+    chainType?: string;
     eventIndex?: number; // 添加事件索引参数
     status?: 'pending' | 'confirmed' | 'finalized';
     metadata?: any;
@@ -73,9 +75,9 @@ export class CreditDAO {
         `INSERT INTO credits (
           user_id, address, token_id, token_symbol, amount,
           credit_type, business_type, reference_id, reference_type,
-          status, block_number, tx_hash, event_index, metadata,
+          chain_id, chain_type, status, block_number, tx_hash, event_index, metadata,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           params.userId,
           params.address,
@@ -86,6 +88,8 @@ export class CreditDAO {
           BusinessType.BLOCKCHAIN,
           EventIndexHelper.generateCreditReferenceId(params.txHash, params.eventIndex || 0),
           'blockchain_tx',
+          params.chainId || null,
+          params.chainType || null,
           params.status || 'confirmed',
           params.blockNumber,
           params.txHash,

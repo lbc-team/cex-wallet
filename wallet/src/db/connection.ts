@@ -148,6 +148,8 @@ export class DatabaseConnection {
           business_type TEXT NOT NULL,
           reference_id TEXT NOT NULL,
           reference_type TEXT NOT NULL,
+          chain_id INTEGER NOT NULL,
+          chain_type TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending',
           block_number INTEGER,
           tx_hash TEXT,
@@ -859,15 +861,22 @@ export class DatabaseConnection {
     chain_type: string;
     reference_id: number;
     reference_type: string;
+    address?: string;
+    credit_type?: string;
+    business_type?: string;
+    status?: string;
   }): Promise<number> {
     const result = await this.run(`
       INSERT INTO credits (
         user_id, token_id, token_symbol, amount, chain_id, chain_type,
-        reference_id, reference_type, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        reference_id, reference_type, address, credit_type, business_type, status,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
       record.user_id, record.token_id, record.token_symbol, record.amount,
-      record.chain_id, record.chain_type, record.reference_id, record.reference_type
+      record.chain_id, record.chain_type, record.reference_id, record.reference_type,
+      record.address || '', record.credit_type || 'withdraw', record.business_type || 'withdraw',
+      record.status || 'pending'
     ]);
     
     return result.lastID;
