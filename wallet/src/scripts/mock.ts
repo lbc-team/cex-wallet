@@ -54,11 +54,21 @@ async function insertMockData() {
 
     logger.info('开始插入多链代币和余额示例数据...');
 
-    //使用 http://localhost:3000/api/user/1/address?chain_type=evm 请求，来插入 10 个钱包地址
+    // 使用 HTTP 请求来创建钱包地址
+    logger.info('通过 API 创建钱包地址...');
     for (let i = 0; i < 10; i++) {
+      try {
         const response = await fetch(`http://localhost:3000/api/user/${i}/address?chain_type=evm`);
         const data = await response.json();
-        console.log(data);
+        
+        if ((data as any).message && (data as any).data) {
+          logger.info(`用户 ${i} 钱包创建成功:`, (data as any).data);
+        } else {
+          logger.warn(`用户 ${i} 钱包创建失败:`, data);
+        }
+      } catch (error) {
+        logger.error(`用户 ${i} 钱包创建请求失败:`, error);
+      }
     }
 
 

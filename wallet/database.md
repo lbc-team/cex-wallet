@@ -121,8 +121,7 @@ node dist/scripts/createTables.js
 | user_id | INTEGER | 用户ID，外键关联 users 表 |
 | from_address | TEXT | 热钱包地址（可为空，签名时填充） |
 | to_address | TEXT | 提现目标地址 |
-| token_symbol | TEXT | 代币符号 |
-| token_address | TEXT | 代币合约地址（原生代币为空） |
+| token_id | INTEGER | 代币ID，外键关联 tokens 表 |
 | amount | TEXT | 用户请求的提现金额，最小单位存储 |
 | fee | TEXT | 提现手续费，最小单位存储，默认 '0' |
 | chain_id | INTEGER | 链ID |

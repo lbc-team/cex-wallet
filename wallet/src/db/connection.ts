@@ -201,8 +201,7 @@ export class DatabaseConnection {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
           to_address TEXT NOT NULL,
-          token_symbol TEXT NOT NULL,
-          token_address TEXT,
+          token_id INTEGER NOT NULL,
           amount TEXT NOT NULL,
           fee TEXT NOT NULL DEFAULT '0',
           chain_id INTEGER NOT NULL,
@@ -218,7 +217,8 @@ export class DatabaseConnection {
           error_message TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (user_id) REFERENCES users(id)
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (token_id) REFERENCES tokens(id)
         )
       `);
 
@@ -721,8 +721,7 @@ export class DatabaseConnection {
   async createWithdraw(record: {
     userId: number;
     toAddress: string;
-    tokenSymbol: string;
-    tokenAddress?: string;
+    tokenId: number;
     amount: string;
     fee: string;
     chainId: number;
@@ -731,13 +730,13 @@ export class DatabaseConnection {
   }): Promise<number> {
     const result = await this.run(`
       INSERT INTO withdraws (
-        user_id, to_address, token_symbol, token_address,
+        user_id, to_address, token_id,
         amount, fee, chain_id, chain_type, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
-      record.userId, record.toAddress, record.tokenSymbol, 
-      record.tokenAddress, record.amount, record.fee, 
-      record.chainId, record.chainType, record.status || 'user_withdraw_request'
+      record.userId, record.toAddress, record.tokenId,
+      record.amount, record.fee, record.chainId, record.chainType, 
+      record.status || 'user_withdraw_request'
     ]);
     
     return result.lastID;
@@ -853,8 +852,8 @@ export class DatabaseConnection {
    */
   async createCredit(record: {
     user_id: number;
+    token_id: number;
     token_symbol: string;
-    token_address: string;
     amount: string;
     chain_id: number;
     chain_type: string;
@@ -863,11 +862,11 @@ export class DatabaseConnection {
   }): Promise<number> {
     const result = await this.run(`
       INSERT INTO credits (
-        user_id, token_symbol, token_address, amount, chain_id, chain_type,
+        user_id, token_id, token_symbol, amount, chain_id, chain_type,
         reference_id, reference_type, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
-      record.user_id, record.token_symbol, record.token_address, record.amount,
+      record.user_id, record.token_id, record.token_symbol, record.amount,
       record.chain_id, record.chain_type, record.reference_id, record.reference_type
     ]);
     

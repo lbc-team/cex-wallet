@@ -310,8 +310,7 @@ export class WalletBusinessService {
       const withdrawId = await this.dbService.getConnection().createWithdraw({
         userId: params.userId,
         toAddress: params.to,
-        tokenSymbol: params.tokenSymbol,
-        tokenAddress: tokenInfo.token_address || '',
+        tokenId: tokenInfo.id,
         amount: requestedAmountBigInt.toString(),
         fee: withdrawFee,
         chainId: params.chainId,
@@ -322,8 +321,8 @@ export class WalletBusinessService {
       // 9. 创建 credit 流水记录（扣除余额）
       await this.dbService.getConnection().createCredit({
         user_id: params.userId,
+        token_id: tokenInfo.id,
         token_symbol: params.tokenSymbol,
-        token_address: tokenInfo.token_address || '',
         amount: `-${requestedAmountBigInt.toString()}`,
         chain_id: params.chainId,
         chain_type: params.chainType,
