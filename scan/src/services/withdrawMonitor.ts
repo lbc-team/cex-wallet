@@ -2,8 +2,7 @@ import { Database } from '../db/connection';
 import logger from '../utils/logger';
 import config from '../config';
 import { viemClient } from '../utils/viemClient';
-import { createPublicClient, http, type Hash, type TransactionReceipt } from 'viem';
-import { mainnet, sepolia } from 'viem/chains';
+import { type Hash, type TransactionReceipt } from 'viem';
 
 /**
  * 提现交易监控服务
@@ -214,17 +213,19 @@ export class WithdrawMonitor {
     } = withdraw;
     
     try {
-      // 获取对应链的公共客户端
-      const publicClient = this.getPublicClient(chain_id);
-      if (!publicClient) {
-        logger.error('不支持的链ID', { chainId: chain_id, withdrawId: id });
+      // 检查链ID是否匹配
+      const currentChainId = await viemClient.getChainId();
+      if (currentChainId !== chain_id) {
+        logger.error('链ID不匹配', { 
+          expected: chain_id, 
+          actual: currentChainId, 
+          withdrawId: id 
+        });
         return;
       }
 
       // 获取交易收据
-      const receipt = await publicClient.getTransactionReceipt({
-        hash: tx_hash as Hash
-      });
+      const receipt = await viemClient.getTransactionReceipt(tx_hash);
 
       if (!receipt) {
         logger.debug('交易收据未找到', { txHash: tx_hash, withdrawId: id });
@@ -327,17 +328,19 @@ export class WithdrawMonitor {
     } = withdraw;
     
     try {
-      // 获取对应链的公共客户端
-      const publicClient = this.getPublicClient(chain_id);
-      if (!publicClient) {
-        logger.error('不支持的链ID', { chainId: chain_id, withdrawId: id });
+      // 检查链ID是否匹配
+      const currentChainId = await viemClient.getChainId();
+      if (currentChainId !== chain_id) {
+        logger.error('链ID不匹配', { 
+          expected: chain_id, 
+          actual: currentChainId, 
+          withdrawId: id 
+        });
         return;
       }
 
       // 获取交易收据
-      const receipt = await publicClient.getTransactionReceipt({
-        hash: tx_hash as Hash
-      });
+      const receipt = await viemClient.getTransactionReceipt(tx_hash);
 
       if (!receipt) {
         logger.warn('无法获取交易收据', { txHash: tx_hash, withdrawId: id });
@@ -371,8 +374,8 @@ export class WithdrawMonitor {
 
       // 如果网络终结性不可用，回退到确认块数检查
       if (!isFinalized) {
-        const latestBlockNumber = await publicClient.getBlockNumber();
-        const confirmationBlocks = Number(latestBlockNumber) - transactionBlock;
+        const latestBlockNumber = await viemClient.getLatestBlockNumber();
+        const confirmationBlocks = latestBlockNumber - transactionBlock;
         isFinalized = confirmationBlocks >= config.confirmationBlocks;
         finalizationMethod = 'confirmation_blocks';
         
@@ -380,7 +383,7 @@ export class WithdrawMonitor {
           withdrawId: id,
           txHash: tx_hash,
           transactionBlock,
-          latestBlock: Number(latestBlockNumber),
+          latestBlock: latestBlockNumber,
           confirmationBlocks,
           requiredBlocks: config.confirmationBlocks,
           isFinalized
@@ -535,31 +538,6 @@ export class WithdrawMonitor {
   }
 
 
-  /**
-   * 根据链ID获取公共客户端
-   */
-  private getPublicClient(chainId: number) {
-    try {
-      switch (chainId) {
-        case 1:
-          return createPublicClient({
-            chain: mainnet,
-            transport: http()
-          });
-        case 11155111:
-          return createPublicClient({
-            chain: sepolia,
-            transport: http()
-          });
-        default:
-          logger.warn('不支持的链ID', { chainId });
-          return null;
-      }
-    } catch (error) {
-      logger.error('创建公共客户端失败', { chainId, error });
-      return null;
-    }
-  }
 
   /**
    * 获取监控状态

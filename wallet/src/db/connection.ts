@@ -291,7 +291,10 @@ export class DatabaseConnection {
           c.token_symbol,
           t.decimals,
           SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND c.status IN ('confirmed', 'finalized') 
+            WHEN c.credit_type NOT IN ('freeze') AND (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) as available_balance,
@@ -301,12 +304,18 @@ export class DatabaseConnection {
             ELSE 0 
           END) as frozen_balance,
           SUM(CASE 
-            WHEN c.status IN ('confirmed', 'finalized') 
+            WHEN (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) as total_balance,
           PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND c.status IN ('confirmed', 'finalized') 
+            WHEN c.credit_type NOT IN ('freeze') AND (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) / POWER(10, t.decimals)) as available_balance_formatted,
@@ -316,7 +325,10 @@ export class DatabaseConnection {
             ELSE 0 
           END) / POWER(10, t.decimals)) as frozen_balance_formatted,
           PRINTF('%.6f', SUM(CASE 
-            WHEN c.status IN ('confirmed', 'finalized') 
+            WHEN (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) / POWER(10, t.decimals)) as total_balance_formatted,
@@ -336,7 +348,10 @@ export class DatabaseConnection {
           c.token_symbol,
           t.decimals,
           SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND c.status IN ('confirmed', 'finalized') 
+            WHEN c.credit_type NOT IN ('freeze') AND (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) as total_available_balance,
@@ -346,12 +361,18 @@ export class DatabaseConnection {
             ELSE 0 
           END) as total_frozen_balance,
           SUM(CASE 
-            WHEN c.status IN ('confirmed', 'finalized') 
+            WHEN (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) as total_balance,
           PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND c.status IN ('confirmed', 'finalized') 
+            WHEN c.credit_type NOT IN ('freeze') AND (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) / POWER(10, t.decimals)) as total_available_formatted,
@@ -361,7 +382,10 @@ export class DatabaseConnection {
             ELSE 0 
           END) / POWER(10, t.decimals)) as total_frozen_formatted,
           PRINTF('%.6f', SUM(CASE 
-            WHEN c.status IN ('confirmed', 'finalized') 
+            WHEN (
+              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
+              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
+            )
             THEN CAST(c.amount AS REAL) 
             ELSE 0 
           END) / POWER(10, t.decimals)) as total_balance_formatted,
