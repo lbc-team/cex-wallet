@@ -1,17 +1,21 @@
 import { Database } from '../db/connection';
 import logger from '../utils/logger';
+import config from '../config';
+import { viemClient } from '../utils/viemClient';
 import { createPublicClient, http, type Hash, type TransactionReceipt } from 'viem';
 import { mainnet, sepolia } from 'viem/chains';
 
 /**
  * 提现交易监控服务
- * 负责监控 pending 状态的提现交易，并在交易确认后更新相关数据库记录
+ * 负责监控提现交易的状态变化：pending -> confirmed -> finalized
+ * - pending: 等待区块链确认
+ * - confirmed: 交易已确认，但未达到最终确认块数
+ * - finalized: 交易已获得足够确认，不可回滚
  */
 export class WithdrawMonitor {
   private database: Database;
   private isRunning: boolean = false;
   private monitorInterval: NodeJS.Timeout | null = null;
-  private readonly MONITOR_INTERVAL_MS = 30000; // 30秒检查一次
   private readonly MAX_RETRY_COUNT = 10; // 最大重试次数
   
   constructor(database: Database) {
@@ -32,19 +36,19 @@ export class WithdrawMonitor {
       this.isRunning = true;
       
       // 立即执行一次监控
-      await this.monitorPendingWithdraws();
+      await this.monitorWithdraws();
       
       // 设置定时器，定期监控
       this.monitorInterval = setInterval(async () => {
         try {
-          await this.monitorPendingWithdraws();
+          await this.monitorWithdraws();
         } catch (error) {
           logger.error('定期提现监控失败', { error });
         }
-      }, this.MONITOR_INTERVAL_MS);
+      }, config.scanInterval * 1000); // 将秒转换为毫秒
       
       logger.info('提现监控服务启动成功', {
-        monitorInterval: this.MONITOR_INTERVAL_MS,
+        monitorInterval: config.scanInterval * 1000,
         maxRetryCount: this.MAX_RETRY_COUNT
       });
     } catch (error) {
@@ -74,7 +78,22 @@ export class WithdrawMonitor {
   }
 
   /**
-   * 监控待确认的提现交易
+   * 监控提现交易状态（pending -> confirmed -> finalized）
+   */
+  private async monitorWithdraws(): Promise<void> {
+    try {
+      // 同时处理 pending 和 confirmed 状态的提现
+      await Promise.all([
+        this.monitorPendingWithdraws(),
+        this.monitorConfirmedWithdraws()
+      ]);
+    } catch (error) {
+      logger.error('监控提现交易失败', { error });
+    }
+  }
+
+  /**
+   * 监控待确认的提现交易（pending -> confirmed/failed）
    */
   private async monitorPendingWithdraws(): Promise<void> {
     try {
@@ -125,6 +144,62 @@ export class WithdrawMonitor {
       
     } catch (error) {
       logger.error('监控待确认提现交易失败', { error });
+    }
+  }
+
+  /**
+   * 监控已确认的提现交易（confirmed -> finalized）
+   */
+  private async monitorConfirmedWithdraws(): Promise<void> {
+    try {
+      // 查询所有 confirmed 状态的提现记录
+      const confirmedWithdraws = await this.database.all(`
+        SELECT 
+          w.id,
+          w.user_id,
+          w.token_id,
+          w.amount,
+          w.fee,
+          w.tx_hash,
+          w.chain_id,
+          w.chain_type,
+          w.from_address,
+          w.to_address,
+          w.created_at,
+          w.updated_at,
+          t.token_symbol,
+          t.token_address,
+          t.decimals,
+          t.is_native
+        FROM withdraws w
+        LEFT JOIN tokens t ON w.token_id = t.id
+        WHERE w.status = 'confirmed' 
+        AND w.tx_hash IS NOT NULL
+        ORDER BY w.updated_at ASC
+      `);
+
+      if (confirmedWithdraws.length === 0) {
+        logger.debug('没有待最终确认的提现交易');
+        return;
+      }
+
+      logger.info(`发现 ${confirmedWithdraws.length} 条待最终确认的提现交易`);
+
+      // 并发处理多个交易的最终确认检查
+      const promises = confirmedWithdraws.map(withdraw => 
+        this.checkFinalizationStatus(withdraw).catch(error => {
+          logger.error('检查最终确认状态失败', {
+            withdrawId: withdraw.id,
+            txHash: withdraw.tx_hash,
+            error
+          });
+        })
+      );
+
+      await Promise.all(promises);
+      
+    } catch (error) {
+      logger.error('监控待最终确认提现交易失败', { error });
     }
   }
 
@@ -243,6 +318,111 @@ export class WithdrawMonitor {
   }
 
   /**
+   * 检查已确认交易是否可以最终确认（confirmed -> finalized）
+   */
+  private async checkFinalizationStatus(withdraw: any): Promise<void> {
+    const { 
+      id, tx_hash, chain_id, user_id, token_id, amount, 
+      token_symbol, from_address, to_address 
+    } = withdraw;
+    
+    try {
+      // 获取对应链的公共客户端
+      const publicClient = this.getPublicClient(chain_id);
+      if (!publicClient) {
+        logger.error('不支持的链ID', { chainId: chain_id, withdrawId: id });
+        return;
+      }
+
+      // 获取交易收据
+      const receipt = await publicClient.getTransactionReceipt({
+        hash: tx_hash as Hash
+      });
+
+      if (!receipt) {
+        logger.warn('无法获取交易收据', { txHash: tx_hash, withdrawId: id });
+        return;
+      }
+
+      const transactionBlock = Number(receipt.blockNumber);
+      let isFinalized = false;
+      let finalizationMethod = '';
+
+      // 优先使用网络终结性检查（如果支持）
+      if (config.useNetworkFinality) {
+        try {
+          const finalizedBlock = await viemClient.getFinalizedBlock();
+          if (finalizedBlock) {
+            isFinalized = transactionBlock <= Number(finalizedBlock.number);
+            finalizationMethod = 'network_finality';
+            
+            logger.debug('使用网络终结性检查', {
+              withdrawId: id,
+              txHash: tx_hash,
+              transactionBlock,
+              finalizedBlock: Number(finalizedBlock.number),
+              isFinalized
+            });
+          }
+        } catch (error) {
+          logger.debug('网络终结性检查失败，回退到确认块数检查', { error });
+        }
+      }
+
+      // 如果网络终结性不可用，回退到确认块数检查
+      if (!isFinalized) {
+        const latestBlockNumber = await publicClient.getBlockNumber();
+        const confirmationBlocks = Number(latestBlockNumber) - transactionBlock;
+        isFinalized = confirmationBlocks >= config.confirmationBlocks;
+        finalizationMethod = 'confirmation_blocks';
+        
+        logger.debug('使用确认块数检查', {
+          withdrawId: id,
+          txHash: tx_hash,
+          transactionBlock,
+          latestBlock: Number(latestBlockNumber),
+          confirmationBlocks,
+          requiredBlocks: config.confirmationBlocks,
+          isFinalized
+        });
+      }
+
+      if (isFinalized) {
+        // 更新提现状态为最终确认
+        await this.updateWithdrawToFinalized(id, {
+          finalizationMethod,
+          finalizedAt: new Date().toISOString()
+        });
+
+        // 更新 credits 表状态为最终确认
+        await this.updateCreditStatus(id, 'finalized', transactionBlock, tx_hash);
+
+        logger.info('提现交易已最终确认', {
+          withdrawId: id,
+          txHash: tx_hash,
+          userId: user_id,
+          amount: amount,
+          tokenSymbol: token_symbol,
+          finalizationMethod
+        });
+      } else {
+        logger.debug('交易尚未达到最终确认条件', {
+          withdrawId: id,
+          txHash: tx_hash,
+          finalizationMethod
+        });
+      }
+
+    } catch (error: any) {
+      logger.error('检查最终确认状态时发生错误', {
+        withdrawId: id,
+        txHash: tx_hash,
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * 更新提现记录为确认状态
    */
   private async updateWithdrawToConfirmed(withdrawId: number, updateData: {
@@ -280,11 +460,28 @@ export class WithdrawMonitor {
   }
 
   /**
+   * 更新提现记录为最终确认状态
+   */
+  private async updateWithdrawToFinalized(withdrawId: number, updateData: {
+    finalizationMethod: string;
+    finalizedAt: string;
+  }): Promise<void> {
+    await this.database.run(`
+      UPDATE withdraws 
+      SET 
+        status = 'finalized',
+        finalized_at = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [updateData.finalizedAt, withdrawId]);
+  }
+
+  /**
    * 更新 credits 表状态
    */
   private async updateCreditStatus(
     withdrawId: number, 
-    status: 'confirmed' | 'failed',
+    status: 'confirmed' | 'failed' | 'finalized',
     blockNumber?: number,
     txHash?: string
   ): Promise<void> {
@@ -374,7 +571,7 @@ export class WithdrawMonitor {
   } {
     return {
       isRunning: this.isRunning,
-      monitorInterval: this.MONITOR_INTERVAL_MS,
+      monitorInterval: config.scanInterval * 1000,
       maxRetryCount: this.MAX_RETRY_COUNT
     };
   }
