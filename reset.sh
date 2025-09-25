@@ -1,3 +1,7 @@
+#!/bin/bash
+
+echo "Resetting wallet, scan, and signer databases..."
+
 pkill -f "wallet.*ts-node" && pkill -f "scan.*ts-node" && pkill -f "signer.*ts-node"
 rm -rf wallet/wallet.db
 rm -rf wallet/wallet.db-shm

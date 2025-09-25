@@ -1,0 +1,1 @@
+echo "12345678" | npm run dev

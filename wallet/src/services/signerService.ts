@@ -130,6 +130,9 @@ export class SignerService {
    * 请求 Signer 模块签名交易
    */
   async signTransaction(request: SignTransactionRequest): Promise<SignTransactionData> {
+    console.log('📥 SignerService: 请求参数:', JSON.stringify(request, null, 2));
+    console.log('🌐 SignerService: 请求URL:', `${this.signerBaseUrl}/api/signer/sign-transaction`);
+    
     try {
       const response: AxiosResponse<SignerApiResponse<SignTransactionData>> = await axios.post(
         `${this.signerBaseUrl}/api/signer/sign-transaction`,
@@ -142,24 +145,41 @@ export class SignerService {
         }
       );
 
+      console.log('📋 SignerService: 响应状态:', response.status);
+      console.log('📄 SignerService: 响应数据:', JSON.stringify(response.data, null, 2));
+
       if (!response.data.success) {
-        throw new Error(response.data.error || '签名交易失败');
+        const errorMsg = response.data.error || '签名交易失败';
+        console.error('❌ SignerService: 签名失败:', errorMsg);
+        throw new Error(errorMsg);
       }
 
       if (!response.data.data) {
         throw new Error('Signer 模块返回的数据为空');
       }
 
+      console.log('✅ SignerService: 签名成功');
       return response.data.data;
     } catch (error) {
+      console.error('❌ SignerService: 请求异常:');
+      console.error('📍 错误详情:', error);
+      
       if (axios.isAxiosError(error)) {
+        console.error('🌐 Axios错误类型');
         if (error.response) {
+          console.error('📨 响应错误:');
+          console.error('   状态码:', error.response.status);
+          console.error('   响应数据:', error.response.data);
           throw new Error(`Signer 模块错误: ${error.response.data?.error || error.message}`);
         } else if (error.request) {
+          console.error('📡 请求错误: 无法连接到 Signer 模块');
           throw new Error('无法连接到 Signer 模块');
         }
       }
-      throw new Error(`签名交易失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error('❌ 最终错误:', errorMessage);
+      throw new Error(`签名交易失败: ${errorMessage}`);
     }
   }
 }

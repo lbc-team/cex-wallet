@@ -1,16 +1,5 @@
-import { createPublicClient, http, parseUnits } from 'viem';
-import { mainnet, sepolia, bsc, bscTestnet, localhost } from 'viem/chains';
-
-// 支持的链类型
-export type SupportedChain = 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost';
-
-// 链配置接口
-export interface ChainConfig {
-  chain: any;
-  rpcUrl: string;
-  name: string;
-  chainId: number;
-}
+import { parseUnits } from 'viem';
+import { chainConfigManager, SupportedChain, ChainConfig } from '../utils/chains';
 
 // Gas 费用估算结果接口
 export interface GasEstimation {
@@ -35,111 +24,42 @@ export interface GasEstimation {
  * 支持多个网络的 gas 费用估算
  */
 export class GasEstimationService {
-  private publicClients: Map<SupportedChain, any> = new Map();
-  private chainConfigs: Map<SupportedChain, ChainConfig> = new Map();
-
   constructor() {
-    this.initializeChainConfigs();
+    // 不再需要初始化，使用统一的链配置管理器
   }
 
-  /**
-   * 初始化链配置
-   */
-  private initializeChainConfigs(): void {
-    // 以太坊主网
-    this.chainConfigs.set('mainnet', {
-      chain: mainnet,
-      rpcUrl: process.env.ETH_RPC_URL || 'https://eth.llamarpc.com',
-      name: 'Ethereum Mainnet',
-      chainId: 1
-    });
-
-    // 以太坊测试网 (Sepolia)
-    this.chainConfigs.set('sepolia', {
-      chain: sepolia,
-      rpcUrl: process.env.SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
-      name: 'Ethereum Sepolia',
-      chainId: 11155111
-    });
-
-    // BSC 主网
-    this.chainConfigs.set('bsc', {
-      chain: bsc,
-      rpcUrl: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org',
-      name: 'BSC Mainnet',
-      chainId: 56
-    });
-
-    // BSC 测试网
-    this.chainConfigs.set('bscTestnet', {
-      chain: bscTestnet,
-      rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545',
-      name: 'BSC Testnet',
-      chainId: 97
-    });
-
-    // 本地开发网络
-    this.chainConfigs.set('localhost', {
-      chain: localhost,
-      rpcUrl: process.env.LOCALHOST_RPC_URL || 'http://localhost:8545',
-      name: 'Localhost',
-      chainId: 31337
-    });
-  }
 
   /**
    * 获取指定链的客户端
    */
   private getPublicClient(chain: SupportedChain): any {
-    if (!this.publicClients.has(chain)) {
-      const config = this.chainConfigs.get(chain);
-      if (!config) {
-        throw new Error(`Unsupported chain: ${chain}`);
-      }
-
-      const client = createPublicClient({
-        chain: config.chain,
-        transport: http(config.rpcUrl)
-      });
-
-      this.publicClients.set(chain, client);
-    }
-
-    return this.publicClients.get(chain);
+    return chainConfigManager.getPublicClient(chain);
   }
 
   /**
    * 获取支持的链列表
    */
   getSupportedChains(): SupportedChain[] {
-    return Array.from(this.chainConfigs.keys());
+    return chainConfigManager.getSupportedChains();
   }
 
   /**
    * 获取链配置信息
    */
   getChainConfig(chain: SupportedChain): ChainConfig | undefined {
-    return this.chainConfigs.get(chain);
+    return chainConfigManager.getChainConfig(chain);
   }
 
   /**
    * 根据链 ID 获取链类型
    */
   getChainTypeFromChainId(chainId: number): SupportedChain {
-    switch (chainId) {
-      case 1:
-        return 'mainnet';
-      case 11155111:
-        return 'sepolia';
-      case 56:
-        return 'bsc';
-      case 97:
-        return 'bscTestnet';
-      case 1337:
-      case 31337:
-        return 'localhost';
-      default:
-        return 'mainnet'; // 默认使用主网
+    try {
+      return chainConfigManager.getChainByChainId(chainId);
+    } catch (error) {
+      // 如果不支持的chainId，默认返回主网
+      console.warn(`Unsupported chainId: ${chainId}, defaulting to mainnet`);
+      return 'mainnet';
     }
   }
 
@@ -419,7 +339,7 @@ export class GasEstimationService {
   }> {
     const chain = this.getChainTypeFromChainId(chainId);
     const publicClient = this.getPublicClient(chain);
-    const config = this.chainConfigs.get(chain);
+    const config = chainConfigManager.getChainConfig(chain);
     
     try {
       const [block, gasPrice] = await Promise.all([

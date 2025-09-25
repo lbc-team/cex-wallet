@@ -291,21 +291,27 @@ export class AddressService {
    * 签名交易
    */
   async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
+    console.log('📥 签名参数:', JSON.stringify(request, null, 2));
+    
     try {
       // 1. 验证请求参数
       if (!request.address || !request.to || !request.amount) {
+        const error = '缺少必需参数: address, to, amount';
+        console.error('❌ 参数验证失败:', error);
         return {
           success: false,
-          error: '缺少必需参数: address, to, amount'
+          error
         };
       }
 
       // 2. 查找地址对应的路径信息
       const addressInfo = await this.db.findAddressByAddress(request.address);
       if (!addressInfo) {
+        const error = `地址 ${request.address} 未找到，请确保地址是通过此系统生成的`;
+        console.error('❌ 地址查找失败:', error);
         return {
           success: false,
-          error: `地址 ${request.address} 未找到，请确保地址是通过此系统生成的`
+          error
         };
       }
 
@@ -313,23 +319,33 @@ export class AddressService {
       const mnemonic = this.getMnemonicFromEnv();
       const pathParts = addressInfo.path.split('/');
       const index = pathParts[pathParts.length - 1];
+      console.log('📍 派生路径:', addressInfo.path);
+      
       const accountData = this.createEvmAccountWithPrivateKey(mnemonic, index);
+      console.log('✅ 账户数据生成完成，地址:', accountData.address);
 
       if (accountData.address.toLowerCase() !== request.address.toLowerCase()) {
+        const error = '地址验证失败，密码可能不正确';
+        console.error('❌ 地址验证失败:');
+        console.error('   生成的地址:', accountData.address);
+        console.error('   请求的地址:', request.address);
         return {
           success: false,
-          error: '地址验证失败，密码可能不正确'
+          error
         };
       }
 
       // 4. 创建账户对象
       const account = privateKeyToAccount(accountData.privateKey);
+      console.log('✅ 签名账户地址:', account.address);
 
       // 5. 使用传入的 nonce（现在 nonce 是必需参数）
       const nonce = request.nonce;
+      console.log('🔢 使用nonce:', nonce);
 
       // 7. 确定交易类型（EIP-1559 或 Legacy）
-      const isEip1559 = request.type !== 0 && (request.maxFeePerGas || request.maxPriorityFeePerGas);
+      const isEip1559 = request.type === 2;
+      console.log('💡 交易类型:', isEip1559 ? 'EIP-1559' : 'Legacy', '(type=' + request.type + ')');
       
       let signedTransaction: string;
       let transactionHash: string;
@@ -338,6 +354,10 @@ export class AddressService {
       let baseTransaction: any;
       
       if (request.chainType === 'evm') {
+        console.log('💰 处理EVM链交易 :', request.chainId, '代币地址:', request.tokenAddress || '原生代币');
+        console.log('💵 转账金额:', request.amount);
+        console.log('⛽ Gas限制:', request.gas);
+        
         // EVM 链交易
         baseTransaction = {
           to: request.tokenAddress ? (request.tokenAddress as `0x${string}`) : (request.to as `0x${string}`),
@@ -346,19 +366,21 @@ export class AddressService {
           nonce,
           chainId: request.chainId // 使用传入的链ID
         };
+        
       } else if (request.chainType === 'btc') {
-        // Bitcoin 交易（暂时返回错误，需要实现 BTC 签名逻辑）
+        console.error('❌ Bitcoin 链签名功能尚未实现');
         return {
           success: false,
           error: 'Bitcoin 链签名功能尚未实现'
         };
       } else if (request.chainType === 'solana') {
-        // Solana 交易（暂时返回错误，需要实现 Solana 签名逻辑）
+        console.error('❌ Solana 链签名功能尚未实现');
         return {
           success: false,
           error: 'Solana 链签名功能尚未实现'
         };
       } else {
+        console.error('❌ 不支持的链类型:', request.chainType);
         return {
           success: false,
           error: `不支持的链类型: ${request.chainType}`
@@ -367,7 +389,9 @@ export class AddressService {
 
       // 9. 添加交易数据（如果是ERC20，仅对EVM链）
       if (request.chainType === 'evm' && request.tokenAddress) {
-        (baseTransaction as any).data = this.encodeERC20Transfer(request.to, request.amount);
+        const encodedData = this.encodeERC20Transfer(request.to, request.amount);
+        (baseTransaction as any).data = encodedData;
+        console.log('✅ ERC20数据编码完成:', encodedData);
       }
 
       let transaction: any;
@@ -375,6 +399,7 @@ export class AddressService {
       // 10. 构建最终交易（仅对EVM链）
       if (request.chainType === 'evm') {
         if (isEip1559) {
+          console.log('🚀 构建EIP-1559交易');
           // EIP-1559 交易
           const maxPriorityFee = request.maxPriorityFeePerGas 
             ? BigInt(request.maxPriorityFeePerGas) 
@@ -384,29 +409,41 @@ export class AddressService {
             ? BigInt(request.maxFeePerGas)
             : this.getDefaultMaxFeePerGas(); // 使用默认值，不联网获取
 
+          console.log('💰 最大费用:', maxFeePerGas.toString());
+          console.log('🎯 优先费用:', maxPriorityFee.toString());
+
           transaction = {
             ...baseTransaction,
-            type: 2 as const, // EIP-1559
+            type: 'eip1559' as const,
             maxFeePerGas,
             maxPriorityFeePerGas: maxPriorityFee
           };
+          console.log('✅ EIP-1559交易构建完成');
         } else {
+          console.log('🏁 构建Legacy交易');
           // Legacy 交易
           const gasPrice = request.gasPrice 
             ? BigInt(request.gasPrice) 
             : this.getDefaultGasPrice(); // 使用默认值，不联网获取
 
+          console.log('💰 Gas价格:', gasPrice.toString());
+
           transaction = {
             ...baseTransaction,
-            type: 0 as const, // Legacy
             gasPrice
           };
+          console.log('✅ Legacy交易构建完成');
         }
+        console.log('📝 最终交易对象:', JSON.stringify(transaction, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2));
       }
 
       // 10. 签名交易
+      console.log('📝 开始签名交易...');
       signedTransaction = await account.signTransaction(transaction);
+      console.log('📄 已签名交易 (前64字符):', signedTransaction.substring(0, 64) + '...');
+      
       transactionHash = this.getTransactionHash(signedTransaction);
+      console.log('🔑 交易哈希:', transactionHash);
 
       return {
         success: true,
@@ -417,7 +454,12 @@ export class AddressService {
       };
 
     } catch (error) {
-      console.error('交易签名失败:', error);
+      console.error('❌ 交易签名失败:');
+      console.error('📍 错误详情:', error);
+      console.error('📋 错误类型:', typeof error);
+      console.error('📝 错误消息:', error instanceof Error ? error.message : String(error));
+      console.error('📚 错误堆栈:', error instanceof Error ? error.stack : 'No stack trace');
+      
       return {
         success: false,
         error: `交易签名失败: ${error instanceof Error ? error.message : '未知错误'}`

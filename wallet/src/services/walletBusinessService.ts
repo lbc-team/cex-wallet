@@ -4,6 +4,7 @@ import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
 import { GasEstimationService } from './gasEstimationService';
 import { HotWalletService } from './hotWalletService';
+import { chainConfigManager, SupportedChain } from '../utils/chains';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
@@ -21,6 +22,20 @@ export class WalletBusinessService {
     this.hotWalletService = new HotWalletService(dbService.getConnection());
   }
 
+
+  /**
+   * 获取指定链的公共客户端
+   */
+  private getPublicClient(chain: SupportedChain): any {
+    return chainConfigManager.getPublicClient(chain);
+  }
+
+  /**
+   * 根据chainId获取对应的链类型
+   */
+  private getChainByChainId(chainId: number): SupportedChain {
+    return chainConfigManager.getChainByChainId(chainId);
+  }
 
   /**
    * 获取用户钱包地址
@@ -428,23 +443,63 @@ export class WalletBusinessService {
       }
 
       // 11. 请求 Signer 签名交易
-      const signResult = await this.signerService.signTransaction(signRequest);
-
-      if (!(signResult as any).success) {
+      console.log('🔐 WalletBusinessService: 准备调用Signer签名');
+      console.log('📤 发送给Signer的请求参数:', JSON.stringify(signRequest, null, 2));
+      
+      let signResult;
+      try {
+        signResult = await this.signerService.signTransaction(signRequest);
+        console.log('✅ 签名成功，交易哈希:', signResult.transactionHash);
+      } catch (error) {
+        console.error('❌ WalletBusinessService: 捕获到签名异常:');
+        console.error('📍 异常详情:', error);
+        console.error('📋 异常类型:', typeof error);
+        console.error('📝 异常构造函数:', error?.constructor?.name);
+        
+        const errorMessage = error instanceof Error ? error.message : (error ? String(error) : '签名失败 - 未知错误');
+        console.error('📄 处理后的错误消息:', errorMessage);
+        
         // 更新提现状态为失败
         await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
-          errorMessage: `签名失败: ${(signResult as any).error}`
+          errorMessage: `签名失败: ${errorMessage}`
         });
         
         return {
           success: false,
-          error: `签名失败: ${(signResult as any).error}`
+          error: `签名失败: ${errorMessage}`
         };
       }
 
-      // 12. 更新提现状态为 pending
+      // 12. 发送交易到区块链网络
+      let txHash: string;
+      try {
+        // 根据chainId确定链类型
+        const chain = this.getChainByChainId(params.chainId);
+        const publicClient = this.getPublicClient(chain);
+        
+        // 发送已签名的交易
+        txHash = await publicClient.sendRawTransaction({
+          serializedTransaction: signResult.signedTransaction as `0x${string}`
+        });
+        
+        console.log(`交易已发送到网络，交易哈希: ${txHash}`);
+      } catch (error) {
+        console.error('发送交易失败:', error);
+        
+        // 更新提现状态为失败
+        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
+          errorMessage: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
+        });
+        
+        return {
+          success: false,
+          error: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+
+      // 13. 更新提现状态为 pending，使用实际的交易哈希
       await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'pending', {
-        txHash: signResult.transactionHash,
+        txHash: txHash, // 使用发送交易后返回的真实哈希
         gasPrice: gasEstimation.gasPrice,
         maxFeePerGas: gasEstimation.maxFeePerGas,
         maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas
@@ -454,7 +509,7 @@ export class WalletBusinessService {
         success: true,
         data: {
           signedTransaction: signResult.signedTransaction,
-          transactionHash: signResult.transactionHash,
+          transactionHash: txHash, // 使用实际发送的交易哈希
           withdrawAmount: params.amount,
           actualAmount: actualAmount.toString(),
           fee: withdrawFee,
