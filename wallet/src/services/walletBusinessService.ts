@@ -2,9 +2,10 @@ import { DatabaseService } from '../db';
 import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
-import { GasEstimationService } from './gasEstimationService';
+import { GasEstimationService } from '../utils/gasEstimation';
 import { HotWalletService } from './hotWalletService';
 import { chainConfigManager, SupportedChain } from '../utils/chains';
+import { type TransactionReceipt } from 'viem';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
@@ -333,21 +334,7 @@ export class WalletBusinessService {
         status: 'user_withdraw_request'
       });
 
-      // 9. 创建 credit 流水记录（扣除余额）
-      await this.dbService.getConnection().createCredit({
-        user_id: params.userId,
-        token_id: tokenInfo.id,
-        token_symbol: params.tokenSymbol,
-        amount: `-${requestedAmountBigInt.toString()}`,
-        chain_id: params.chainId,
-        chain_type: params.chainType,
-        reference_id: withdrawId,
-        reference_type: 'withdraw',
-        address: params.to,
-        credit_type: 'withdraw',
-        business_type: 'withdraw',
-        status: 'pending'
-      });
+
 
       // 10. 选择热钱包并获取 nonce
       let hotWallet;
@@ -369,7 +356,7 @@ export class WalletBusinessService {
         }
 
         // 获取热钱包的 nonce
-        nonce = await this.hotWalletService.getNextNonce(
+        nonce = await this.hotWalletService.getCurrentNonce(
           hotWallet.address, 
           params.chainId
         );
@@ -453,8 +440,6 @@ export class WalletBusinessService {
       } catch (error) {
         console.error('❌ WalletBusinessService: 捕获到签名异常:');
         console.error('📍 异常详情:', error);
-        console.error('📋 异常类型:', typeof error);
-        console.error('📝 异常构造函数:', error?.constructor?.name);
         
         const errorMessage = error instanceof Error ? error.message : (error ? String(error) : '签名失败 - 未知错误');
         console.error('📄 处理后的错误消息:', errorMessage);
@@ -483,6 +468,17 @@ export class WalletBusinessService {
         });
         
         console.log(`交易已发送到网络，交易哈希: ${txHash}`);
+        
+        // 标记nonce已使用
+        await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, nonce);
+      
+        // 测试交易是否成功
+        // const receipt: TransactionReceipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+        // console.log('交易状态:', receipt.status === 'success' ? '成功' : '失败')
+        // console.log('区块号:', receipt.blockNumber)
+        // console.log('Gas 使用量:', receipt.gasUsed.toString())
+      
+      
       } catch (error) {
         console.error('发送交易失败:', error);
         
@@ -503,6 +499,22 @@ export class WalletBusinessService {
         gasPrice: gasEstimation.gasPrice,
         maxFeePerGas: gasEstimation.maxFeePerGas,
         maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas
+      });
+
+      // 14. 创建 credit 流水记录（扣除余额）
+      await this.dbService.getConnection().createCredit({
+        user_id: params.userId,
+        token_id: tokenInfo.id,
+        token_symbol: params.tokenSymbol,
+        amount: `-${requestedAmountBigInt.toString()}`,
+        chain_id: params.chainId,
+        chain_type: params.chainType,
+        reference_id: withdrawId,
+        reference_type: 'withdraw',
+        address: params.to,
+        credit_type: 'withdraw',
+        business_type: 'withdraw',
+        status: 'pending'
       });
 
       return {

@@ -123,7 +123,7 @@ node dist/scripts/createTables.js
 | to_address | TEXT | 提现目标地址 |
 | token_id | INTEGER | 代币ID，外键关联 tokens 表 |
 | amount | TEXT | 用户请求的提现金额，最小单位存储 |
-| fee | TEXT | 提现手续费，最小单位存储，默认 '0' |
+| fee | TEXT | 交易所收取、提现手续费，最小单位存储，默认 '0' |
 | chain_id | INTEGER | 链ID |
 | chain_type | TEXT | 链类型：evm/btc/solana |
 | status | TEXT | 提现状态：user_withdraw_request/signing/pending/processing/confirmed/failed |

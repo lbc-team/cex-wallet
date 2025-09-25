@@ -10,7 +10,8 @@
     "prebuild": "npm run clean",
     "test": "ts-node tests/run-tests.ts",
     "test:wallet": "ts-node tests/wallet.test.ts",
-    "mock": "ts-node src/scripts/mock.ts"
+    "mock": "ts-node src/scripts/mock.ts",
+    "test:withdraw": "ts-node src/scripts/requestWithdraw.ts"
   },
   "keywords": [],
   "author": "",

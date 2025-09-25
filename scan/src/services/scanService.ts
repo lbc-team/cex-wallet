@@ -24,6 +24,9 @@ export interface ScanServiceStatus {
 export class ScanService {
   private isRunning: boolean = false;
 
+  constructor() {
+  }
+
   /**
    * 启动扫描服务
    */
@@ -242,6 +245,7 @@ export class ScanService {
       throw error;
     }
   }
+
 }
 
 export const scanService = new ScanService();

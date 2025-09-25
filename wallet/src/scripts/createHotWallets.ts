@@ -1,6 +1,7 @@
 import { getDatabase } from '../db/connection';
 import { HotWalletService } from '../services/hotWalletService';
 
+
 // 简单的日志函数
 const logger = {
   info: (message: string, data?: any) => console.log(`[INFO] ${message}`, data || ''),

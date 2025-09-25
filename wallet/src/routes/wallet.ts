@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { DatabaseService } from '../db';
 import { WalletBusinessService } from '../services/walletBusinessService';
-import { GasEstimationService } from '../services/gasEstimationService';
+import { chainConfigManager } from '../utils/chains';
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -13,7 +13,6 @@ interface ApiResponse<T = any> {
 export function walletRoutes(dbService: DatabaseService): Router {
   const router = Router();
   const walletBusinessService = new WalletBusinessService(dbService);
-  const gasEstimationService = new GasEstimationService();
 
   // 获取用户的钱包地址
   router.get('/user/:id/address', async (req: Request<{ id: string }, ApiResponse>, res: Response) => {
@@ -394,7 +393,7 @@ export function walletRoutes(dbService: DatabaseService): Router {
   // 获取网络状态和 Gas 信息
   router.get('/network/status', async (req: Request, res: Response) => {
     try {
-      const networkInfo = await gasEstimationService.getNetworkInfo(1); // 默认使用主网
+      const networkInfo = await chainConfigManager.getNetworkInfo(1); // 默认使用主网
       
       const response: ApiResponse = {
         message: '获取网络状态成功',

@@ -8,7 +8,6 @@ import { SignerService } from './signerService';
 export class HotWalletService {
   private db: DatabaseConnection;
   private signerService: SignerService;
-  private nonceCache = new Map<string, number>();
 
   constructor(db: DatabaseConnection) {
     this.db = db;
@@ -16,25 +15,49 @@ export class HotWalletService {
   }
 
   /**
-   * 获取下一个 nonce（原子操作）
+   * 获取当前 nonce（不递增）
    */
-  async getNextNonce(address: string, chainId: number): Promise<number> {
-    const key = `${chainId}:${address}`;
-    
+  async getCurrentNonce(address: string, chainId: number): Promise<number> {
     // 1. 从数据库获取当前 nonce
     const currentNonce = await this.db.getCurrentNonce(address, chainId);
-    
-    // 2. 原子性更新 nonce
-    const result = await this.db.atomicIncrementNonce(address, chainId, currentNonce);
-    
-    if (!result.success) {
-      throw new Error(`Nonce conflict for wallet ${address} on chain ${chainId}`);
+    console.log('从数据库获取nonce:', currentNonce);
+    // 2. 如果数据库中没有记录（nonce为-1且地址不存在），从链上获取并保存
+    if (currentNonce === -1) {
+      try {
+        const { chainConfigManager } = await import('../utils/chains');
+        const chainNonce = await chainConfigManager.getNonce(address, chainId);
+        
+        console.log('从链上获取nonce:', chainNonce);
+        // 保存链上的nonce到数据库
+        await this.syncNonceFromChain(address, chainId, chainNonce);
+        return chainNonce;
+      } catch (error) {
+        console.error('从链上获取nonce失败，使用默认值0:', error);
+        return 0;
+      }
     }
     
-    // 3. 更新缓存
-    this.nonceCache.set(key, result.newNonce);
-    
-    return result.newNonce;
+    // 3. 返回数据库中的nonce（不递增）
+    return currentNonce;
+  }
+
+  /**
+   * 标记nonce已使用（在交易发出后调用）
+   */
+  async markNonceUsed(address: string, chainId: number, usedNonce: number): Promise<void> {
+    try {
+      // 原子性更新nonce为已使用的nonce + 1
+      const result = await this.db.atomicIncrementNonce(address, chainId, usedNonce);
+      
+      if (!result.success) {
+        throw new Error(`Failed to mark nonce ${usedNonce} as used for wallet ${address} on chain ${chainId}`);
+      }
+      
+      console.log(`✅ Nonce ${usedNonce} 已标记为已使用，下一个nonce: ${result.newNonce}`);
+    } catch (error) {
+      console.error('标记nonce已使用失败:', error);
+      throw error;
+    }
   }
 
 
@@ -140,15 +163,7 @@ export class HotWalletService {
    * 同步 nonce 从链上
    */
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
-    const success = await this.db.syncNonceFromChain(address, chainId, chainNonce);
-    
-    if (success) {
-      // 更新缓存
-      const key = `${chainId}:${address}`;
-      this.nonceCache.set(key, chainNonce);
-    }
-    
-    return success;
+    return await this.db.syncNonceFromChain(address, chainId, chainNonce);
   }
 
 
@@ -181,39 +196,6 @@ export class HotWalletService {
     return await this.db.query(sql, params);
   }
 
-  /**
-   * 批量同步 nonce
-   */
-  async batchSyncNonces(chainNonces: Array<{
-    address: string;
-    chainId: number;
-    chainNonce: number;
-  }>): Promise<{
-    success: number;
-    failed: number;
-    errors: string[];
-  }> {
-    let success = 0;
-    let failed = 0;
-    const errors: string[] = [];
-
-    for (const { address, chainId, chainNonce } of chainNonces) {
-      try {
-        const result = await this.syncNonceFromChain(address, chainId, chainNonce);
-        if (result) {
-          success++;
-        } else {
-          failed++;
-          errors.push(`Failed to sync nonce for ${address} on chain ${chainId}`);
-        }
-      } catch (error) {
-        failed++;
-        errors.push(`Error syncing nonce for ${address}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-
-    return { success, failed, errors };
-  }
 
   /**
    * 延迟函数
@@ -222,20 +204,4 @@ export class HotWalletService {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  /**
-   * 清理缓存
-   */
-  clearCache(): void {
-    this.nonceCache.clear();
-  }
-
-  /**
-   * 获取缓存状态
-   */
-  getCacheStatus(): { size: number; keys: string[] } {
-    return {
-      size: this.nonceCache.size,
-      keys: Array.from(this.nonceCache.keys())
-    };
-  }
 }

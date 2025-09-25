@@ -1,4 +1,4 @@
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, parseUnits } from 'viem';
 import { mainnet, sepolia, bsc, bscTestnet, localhost } from 'viem/chains';
 
 // 支持的链类型
@@ -149,6 +149,75 @@ export class ChainConfigManager {
    */
   public clearPublicClientCache(): void {
     this.publicClients.clear();
+  }
+
+  /**
+   * 获取指定地址的 nonce
+   */
+  async getNonce(address: string, chainId: number): Promise<number> {
+    const chain = this.getChainByChainId(chainId);
+    const publicClient = this.getPublicClient(chain);
+    
+    try {
+      const nonce = await publicClient.getTransactionCount({
+        address: address as `0x${string}`,
+        blockTag: 'pending' // 使用 pending 状态获取最新的 nonce
+      });
+      
+      return nonce;
+    } catch (error) {
+      console.error('获取 nonce 失败:', error);
+      throw new Error(`无法获取地址 ${address} 的 nonce`);
+    }
+  }
+
+  /**
+   * 获取当前网络状态信息
+   */
+  async getNetworkInfo(chainId: number): Promise<{
+    chainId: number;
+    blockNumber: bigint;
+    baseFeePerGas: bigint;
+    gasPrice: bigint;
+    networkCongestion: 'low' | 'medium' | 'high';
+  }> {
+    const chain = this.getChainByChainId(chainId);
+    const publicClient = this.getPublicClient(chain);
+    const config = this.getChainConfig(chain);
+    
+    try {
+      const [block, gasPrice] = await Promise.all([
+        publicClient.getBlock({ blockTag: 'latest' }),
+        publicClient.getGasPrice()
+      ]);
+
+      const baseFeePerGas = block.baseFeePerGas || 0n;
+      const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
+
+      return {
+        chainId: config?.chainId || 1,
+        blockNumber: block.number,
+        baseFeePerGas,
+        gasPrice,
+        networkCongestion
+      };
+    } catch (error) {
+      console.error('获取网络信息失败:', error);
+      throw new Error('无法获取网络信息');
+    }
+  }
+
+  /**
+   * 评估网络拥堵程度
+   */
+  private assessNetworkCongestion(baseFeePerGas: bigint): 'low' | 'medium' | 'high' {
+    if (baseFeePerGas > parseUnits('10', 9)) {
+      return 'high';
+    } else if (baseFeePerGas > parseUnits('5', 9)) {
+      return 'medium';
+    } else {
+      return 'low';
+    }
   }
 }
 

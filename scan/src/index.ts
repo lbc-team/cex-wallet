@@ -1,6 +1,11 @@
 import { scanService } from './services/scanService';
+import WithdrawMonitor from './services/withdrawMonitor';
+import { database } from './db/connection';
 import logger from './utils/logger';
 import config from './config';
+
+// 创建提现监控器实例
+const withdrawMonitor = new WithdrawMonitor(database);
 
 /**
  * 初始化应用
@@ -22,8 +27,12 @@ async function initializeApp(): Promise<void> {
     if (process.env.AUTO_START !== 'false') {
       logger.info('自动启动扫描服务...');
       await scanService.start();
+      
+      // 启动提现监控器
+      logger.info('启动提现监控器...');
+      await withdrawMonitor.start();
     } else {
-      logger.info('自动启动已禁用，需要手动启动扫描服务');
+      logger.info('自动启动已禁用，需要手动启动扫描服务和提现监控器');
     }
 
     logger.info('CEX钱包扫描器启动完成');
@@ -36,6 +45,11 @@ async function initializeApp(): Promise<void> {
         // 停止扫描服务
         await scanService.stop();
         logger.info('扫描服务已停止');
+        
+        // 停止提现监控器
+        await withdrawMonitor.stop();
+        logger.info('提现监控器已停止');
+        
         process.exit(0);
       } catch (error) {
         logger.error('关闭过程中出错', { error });
@@ -86,4 +100,4 @@ if (require.main === module) {
   });
 }
 
-export { scanService };
+export { scanService, withdrawMonitor };

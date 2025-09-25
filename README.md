@@ -24,7 +24,8 @@
 2. 启动 wallet 服务（自动创建数据库表）
 3. 启动 signer 服务（为使用生成一些地址， 配置 .env 的助记词）
 4. 执行 wallet 模块下的 mock.ts 填充一些测试数据。
-5. 执行 scan 服务， 扫描存款入账
+5. 执行 scan 服务 ， 扫描存款入账
+6. 执行 wallet 模块下的 requestWithdraw.ts 测试提款
 
 
 ## 贡献指南
