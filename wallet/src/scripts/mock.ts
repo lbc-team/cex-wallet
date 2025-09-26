@@ -77,20 +77,20 @@ async function insertMockData() {
 
     // 本地测试网络 (chain_id: 31337) - Anvil/Hardhat/Localhost
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, status) 
-      VALUES ('eth', 31337, '0x0000000000000000000000000000000000000000', 'ETH', 'ETH', 18, 1, 100000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
+      VALUES ('eth', 31337, '0x0000000000000000000000000000000000000000', 'ETH', 'ETH', 18, 1, 100000000000000, 100000000000000, 1)
     `);
     
     // 测试代币1: OPS
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount,status) 
-      VALUES ('eth', 31337, '0x5FbDB2315678afecb367f032d93F642f64180aa3', 'OPS', 'OPS', 18, 0, 1000000000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
+      VALUES ('eth', 31337, '0x5FbDB2315678afecb367f032d93F642f64180aa3', 'OPS', 'OPS', 18, 0, 10000000000000000000, 2000000000000000000, 1)
     `);
     
     // 测试代币2: USDT
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, status) 
-      VALUES ('eth', 31337, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', 'USDT', 'MockU', 18, 0, 10000000000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
+      VALUES ('eth', 31337, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', 'USDT', 'MockU', 18, 0, 10000000000000000000, 500000000000000000, 1)
     `);
 
     logger.info('代币配置插入完成');

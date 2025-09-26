@@ -135,7 +135,6 @@ class WithdrawTester {
     console.log('=== 模拟用户提现测试 ===');
     console.log('用户ID:', CONFIG.USER_ID);
     console.log('提现地址:', CONFIG.TO_ADDRESS);
-    console.log('提现金额:', CONFIG.AMOUNT, CONFIG.TOKEN_SYMBOL);
     console.log('链ID:', CONFIG.CHAIN_ID);
     console.log('链类型:', CONFIG.CHAIN_TYPE);
     console.log('');
@@ -148,12 +147,14 @@ class WithdrawTester {
 
     console.log('');
 
-    // 2. 发送提现请求
+    // 2. 测试 ETH 提现
+    console.log('--- 测试 ETH 提现 ---');
+    console.log('提现金额:', CONFIG.AMOUNT, 'ETH');
     const withdrawRequest: WithdrawRequest = {
       userId: CONFIG.USER_ID,
       to: CONFIG.TO_ADDRESS,
       amount: CONFIG.AMOUNT,
-      tokenSymbol: CONFIG.TOKEN_SYMBOL,
+      tokenSymbol: 'ETH',
       chainId: CONFIG.CHAIN_ID,
       chainType: CONFIG.CHAIN_TYPE
     };
@@ -162,6 +163,22 @@ class WithdrawTester {
 
     // 3. 显示结果
     this.displayResult(response);
+
+    // 4. 测试 OPS 提现
+    console.log('\n--- 测试 OPS 提现 ---');
+    const opsAmount = '3'; // 示例：3 OPS（当前模拟 withdraw_fee 为 2 OPS）
+    console.log('提现金额:', opsAmount, 'OPS');
+    const withdrawRequestOps: WithdrawRequest = {
+      userId: CONFIG.USER_ID,
+      to: CONFIG.TO_ADDRESS,
+      amount: opsAmount,
+      tokenSymbol: 'OPS',
+      chainId: CONFIG.CHAIN_ID,
+      chainType: CONFIG.CHAIN_TYPE
+    };
+
+    const responseOps = await this.requestWithdraw(withdrawRequestOps);
+    this.displayResult(responseOps);
 
     console.log('\n=== 测试完成 ===');
   }

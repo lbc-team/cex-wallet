@@ -62,47 +62,64 @@ export class HotWalletService {
 
 
   /**
-   * 选择最优热钱包
+   * 获取所有可用的热钱包（按nonce排序）
    */
-  async selectOptimalHotWallet(
+  async getAllAvailableHotWallets(
     chainId: number, 
-    chainType: string, 
-    walletType: 'hot' | 'multisig' | 'cold' | 'vault' = 'hot',
-    amount?: string
+    chainType: string
   ): Promise<{
     address: string;
     nonce: number;
     device?: string;
-  } | null> {
+  }[]> {
     // 1. 获取可用的内部钱包列表
-    const availableWallets = await this.db.getAvailableInternalWallets(chainId, chainType, walletType);
+    const availableWallets = await this.db.getAvailableInternalWallets(chainId, chainType, 'hot');
     
     if (availableWallets.length === 0) {
-      throw new Error(`No available ${walletType} wallets for chain ${chainId}`);
+      return [];
     }
 
-    // 2. 选择策略：优先选择 nonce 最低的钱包
+    // 2. 按 nonce 排序（优先选择 nonce 最低的钱包）
     const sortedWallets = availableWallets.sort((a, b) => a.nonce - b.nonce);
-    const selectedWallet = sortedWallets[0];
 
-    if (!selectedWallet) {
-      throw new Error(`No available ${walletType} wallets for chain ${chainId}`);
-    }
+    // 3. 转换为标准格式
+    return sortedWallets.map(wallet => {
+      const result: {
+        address: string;
+        nonce: number;
+        device?: string;
+      } = {
+        address: wallet.address,
+        nonce: wallet.nonce
+      };
+      
+      if (wallet.device) {
+        result.device = wallet.device;
+      }
+      
+      return result;
+    });
+  }
 
-    const result: {
-      address: string;
-      nonce: number;
-      device?: string;
-    } = {
-      address: selectedWallet.address,
-      nonce: selectedWallet.nonce
-    };
-    
-    if (selectedWallet.device) {
-      result.device = selectedWallet.device;
+  /**
+   * TODO: 获取热钱包余额
+   */
+  async getWalletBalance(address: string, chainId: number): Promise<string> {
+    try {
+      // 这里应该调用 RPC 获取链上余额
+      // 暂时返回一个模拟值，实际实现需要调用以太坊 RPC
+      const response = await fetch(`http://localhost:3000/api/wallet/balance?address=${address}&chainId=${chainId}`);
+      const data = await response.json() as any;
+      
+      if (data.success && data.data) {
+        return data.data.balance || '0';
+      }
+      
+      return '0';
+    } catch (error) {
+      console.error('获取钱包余额失败:', error);
+      return '0';
     }
-    
-    return result;
   }
 
   /**

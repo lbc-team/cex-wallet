@@ -341,49 +341,81 @@ export class WalletBusinessService {
       let nonce: number;
       let gasEstimation;
       try {
-        // 选择最优热钱包
-        hotWallet = await this.hotWalletService.selectOptimalHotWallet(
+        // 1. 获取所有可用的热钱包
+        const availableWallets = await this.hotWalletService.getAllAvailableHotWallets(
           params.chainId, 
-          params.chainType,
-          'hot'  // 默认选择热钱包
+          params.chainType
         );
         
-        if (!hotWallet) {
+        if (availableWallets.length === 0) {
           return {
             success: false,
             error: '没有可用的热钱包'
           };
         }
+        
+        let referenceGasEstimation;
+        if (tokenInfo.is_native) {
+          referenceGasEstimation = await this.gasEstimationService.estimateGas({
+            chainId: params.chainId,
+            gasLimit: 21000n // ETH 转账的标准 gas
+          });
+        } else {
+          referenceGasEstimation = await this.gasEstimationService.estimateGas({
+            chainId: params.chainId,
+            gasLimit: 60000n // ERC20 转账的配置 gas 限制
+          });
+        }
 
-        // 获取热钱包的 nonce
+        // 3. 计算所需总金额（提现金额 + gas费用）
+        const totalRequired = BigInt(actualAmount.toString()) + BigInt(referenceGasEstimation.gasLimit) * BigInt(referenceGasEstimation.maxFeePerGas);
+
+        // 4. 依次检查热钱包余额，找到第一个余额足够的钱包
+        let selectedWallet = null;
+        for (const wallet of availableWallets) {
+          const walletBalance = await this.hotWalletService.getWalletBalance(
+            wallet.address, 
+            params.chainId
+          );
+          
+          if (BigInt(walletBalance) >= totalRequired) {
+            selectedWallet = wallet;
+            break;
+          }
+        }
+
+        if (!selectedWallet) {
+          return {
+            success: false,
+            error: '所有热钱包余额都不足，无法完成提现'
+          };
+        }
+
+        // 5. 使用选中的钱包
+        hotWallet = selectedWallet;
+
+        // 6. 获取选中钱包的 nonce
         nonce = await this.hotWalletService.getCurrentNonce(
           hotWallet.address, 
           params.chainId
         );
         
-        // 更新提现状态为 signing（填充 from 地址等信息）
+        // 7. 更新提现状态为 signing（填充 from 地址等信息）
         await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'signing', {
           fromAddress: hotWallet.address,
           nonce: nonce
         });
 
-        // 估算 gas 费用（使用实际转账金额）
+        // 8. 使用选中钱包重新估算 gas 费用（确保准确性）
         if (tokenInfo.is_native) {
-          // ETH 转账
-          gasEstimation = await this.gasEstimationService.estimateEthTransfer({
-            from: hotWallet.address,
-            to: params.to,
-            amount: actualAmount.toString(),
-            chainId: params.chainId
+          gasEstimation = await this.gasEstimationService.estimateGas({
+            chainId: params.chainId,
+            gasLimit: 21000n // ETH 转账的标准 gas
           });
         } else {
-          // ERC20 转账
-          gasEstimation = await this.gasEstimationService.estimateErc20Transfer({
-            from: hotWallet.address,
-            to: params.to,
-            tokenAddress: tokenInfo.token_address!,
-            amount: actualAmount.toString(),
-            chainId: params.chainId
+          gasEstimation = await this.gasEstimationService.estimateGas({
+            chainId: params.chainId,
+            gasLimit: 60000n // ERC20 转账的配置 gas 限制
           });
         }
       } catch (error) {

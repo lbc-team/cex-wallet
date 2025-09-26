@@ -64,35 +64,29 @@ export class GasEstimationService {
   }
 
   /**
-   * 估算 ETH 转账的 gas 费用
+   * 通用 gas 估算方法
    */
-  async estimateEthTransfer(params: {
-    from: string;
-    to: string;
-    amount: string; // wei 单位
+  async estimateGas(params: {
     chainId: number;
+    gasLimit: bigint;
   }): Promise<GasEstimation> {
     const chain = this.getChainTypeFromChainId(params.chainId);
-    const publicClient = this.getPublicClient(chain);
     
     try {
       // 1. 从历史数据获取所有费用信息
       const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory(chain);
 
-      // 2. 使用配置的 gas 限制
-      const gasLimit = 21000n; // ETH 转账的标准 gas
-
-      // 3. 计算 EIP-1559 费用
+      // 2. 计算 EIP-1559 费用
       const maxFeePerGas = baseFeePerGas * 2n + priorityFee; // 2倍基础费用 + 优先费用
 
-      // 4. 判断网络拥堵程度
+      // 3. 判断网络拥堵程度
       const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
 
       return {
         maxFeePerGas: maxFeePerGas.toString(),
         maxPriorityFeePerGas: priorityFee.toString(),
         baseFeePerGas: baseFeePerGas.toString(),
-        gasLimit: gasLimit.toString(),
+        gasLimit: params.gasLimit.toString(),
         gasPrice: gasPrice.toString(),
         transactionType: 2, // 优先使用 EIP-1559
         networkCongestion
@@ -101,55 +95,10 @@ export class GasEstimationService {
     } catch (error) {
       console.error('Gas 估算失败:', error);
       // 返回保守的默认值
-      return this.getDefaultGasEstimation();
+      return this.getDefaultGasEstimation(params.gasLimit);
     }
   }
 
-  /**
-   * 估算 ERC20 转账的 gas 费用
-   */
-  async estimateErc20Transfer(params: {
-    from: string;
-    to: string;
-    tokenAddress: string;
-    amount: string; // 最小单位
-    chainId: number;
-  }): Promise<GasEstimation> {
-    const chain = this.getChainTypeFromChainId(params.chainId);
-    const publicClient = this.getPublicClient(chain);
-    
-    try {
-      // 1. 从历史数据获取所有费用信息
-      const [baseFeePerGas, gasPrice, priorityFee] = await this.getFeeDataFromHistory(chain);
-
-      // 2. 编码 ERC20 transfer 调用数据
-      const transferData = this.encodeERC20Transfer(params.to, params.amount);
-
-      // 3. 使用配置的 gas 限制
-      const gasLimit = 60000n; // ERC20 转账的配置 gas 限制
-
-      // 4. 计算 EIP-1559 费用
-      const maxFeePerGas = baseFeePerGas * 2n + priorityFee;
-
-      // 5. 判断网络拥堵程度
-      const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
-
-      return {
-        maxFeePerGas: maxFeePerGas.toString(),
-        maxPriorityFeePerGas: priorityFee.toString(),
-        baseFeePerGas: baseFeePerGas.toString(),
-        gasLimit: gasLimit.toString(),
-        gasPrice: gasPrice.toString(),
-        transactionType: 2,
-        networkCongestion
-      };
-
-    } catch (error) {
-      console.error('ERC20 Gas 估算失败:', error);
-      // 返回 ERC20 的默认值
-      return this.getDefaultErc20GasEstimation();
-    }
-  }
 
   /**
    * 从历史数据获取基础费用、gas 价格和优先费用
@@ -278,33 +227,19 @@ export class GasEstimationService {
   }
 
   /**
-   * 获取默认的 Gas 估算（ETH 转账）
+   * 获取默认的 Gas 估算
    */
-  private getDefaultGasEstimation(): GasEstimation {
+  private getDefaultGasEstimation(gasLimit: bigint): GasEstimation {
     return {
       maxFeePerGas: parseUnits('25', 9).toString(), // 25 Gwei
       maxPriorityFeePerGas: parseUnits('2', 9).toString(), // 2 Gwei
       baseFeePerGas: parseUnits('20', 9).toString(), // 20 Gwei
-      gasLimit: '21000',
+      gasLimit: gasLimit.toString(),
       gasPrice: parseUnits('25', 9).toString(), // 25 Gwei
       transactionType: 2,
       networkCongestion: 'medium'
     };
   }
 
-  /**
-   * 获取默认的 ERC20 Gas 估算
-   */
-  private getDefaultErc20GasEstimation(): GasEstimation {
-    return {
-      maxFeePerGas: parseUnits('30', 9).toString(), // 30 Gwei
-      maxPriorityFeePerGas: parseUnits('2', 9).toString(), // 2 Gwei
-      baseFeePerGas: parseUnits('25', 9).toString(), // 25 Gwei
-      gasLimit: '60000', // 配置的 ERC20 gas 限制
-      gasPrice: parseUnits('30', 9).toString(), // 30 Gwei
-      transactionType: 2,
-      networkCongestion: 'medium'
-    };
-  }
 
 }
