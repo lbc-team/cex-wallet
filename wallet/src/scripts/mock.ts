@@ -13,16 +13,46 @@ async function insertMockData() {
     const db = getDatabase();
     await db.connect();
 
-    // 创建热钱包服务
-    const hotWalletService = new HotWalletService(db);
-    
-    // 创建一个热钱包（本地测试网络）
+    // 1. 初始化系统用户
+    logger.info('初始化系统用户...');
+    const systemUsers = [
+      { username: 'hot_wallet1', email: 'hot_wallet1@internal', userType: 'sys_hot_wallet' },
+      { username: 'hot_wallet2', email: 'hot_wallet2@internal', userType: 'sys_hot_wallet' },
+      { username: 'multisig_wallet', email: 'multisig_wallets@internal', userType: 'sys_multisig' },
+    ];
+
+    for (const user of systemUsers) {
+      await db.run(`
+        INSERT OR IGNORE INTO users (username, email, user_type, status, created_at, updated_at)
+        VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [user.username, user.email, user.userType]);
+    }
+    logger.info('系统用户初始化完成');
+
+    // 2. 插入普通用户数据
+    logger.info('插入普通用户数据...');
+    for (let i = 1; i <= 10; i++) {
+      await db.run(`
+        INSERT OR REPLACE INTO users (username, email, phone, password_hash, user_type, status, kyc_status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        `test_user_${i}`,
+        `test${i}@test.com`,
+        `1234567890${i}`,
+        `hash_${i}_12345`,
+        'normal', // 普通用户类型
+        1, // active status
+        1  // verified kyc
+      ]);
+    }
+    logger.info('普通用户数据插入完成');
+
+    // 3. 创建热钱包
     logger.info('创建热钱包...');
+    const hotWalletService = new HotWalletService(db);
     try {
       const hotWallet = await hotWalletService.createHotWallet({
-        chainType: 'evm',
-        chainId: 31337,
-        initialNonce: 0
+        chainType: 'evm'
       });
       
       logger.info('热钱包创建成功:', {
@@ -34,47 +64,10 @@ async function insertMockData() {
     } catch (error) {
       logger.error('创建热钱包失败:', error);
     }
-    
-    // 插入用户
-    // 插入10条模拟用户数据，匹配wallets表中的user_id
-    for (let i = 0; i < 10; i++) {
-      await db.run(`
-        INSERT OR REPLACE INTO users (id, username, email, phone, password_hash, status, kyc_status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [
-        i,
-        `test_user_${i}`,
-        `test${i}@test.com`,
-        `1234567890${i}`,
-        `hash_${i}_12345`,
-        1, // active status
-        1  // verified kyc
-      ]);
-    }
 
-    logger.info('开始插入多链代币和余额示例数据...');
-
-    // 使用 HTTP 请求来创建钱包地址
-    logger.info('通过 API 创建钱包地址...');
-    for (let i = 0; i < 10; i++) {
-      try {
-        const response = await fetch(`http://localhost:3000/api/user/${i}/address?chain_type=evm`);
-        const data = await response.json();
-        
-        if ((data as any).message && (data as any).data) {
-          logger.info(`用户 ${i} 钱包创建成功:`, (data as any).data);
-        } else {
-          logger.warn(`用户 ${i} 钱包创建失败:`, data);
-        }
-      } catch (error) {
-        logger.error(`用户 ${i} 钱包创建请求失败:`, error);
-      }
-    }
-
-
-    // 插入多链代币配置
+    // 4. 插入代币配置
     logger.info('插入代币配置...');
-
+    
     // 本地测试网络 (chain_id: 31337) - Anvil/Hardhat/Localhost
     await db.run(`
       INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
@@ -95,9 +88,32 @@ async function insertMockData() {
 
     logger.info('代币配置插入完成');
 
-    // 显示插入的代币
+    // 5. 通过 API 创建用户钱包地址
+    logger.info('通过 API 创建用户钱包地址...');
+    for (let i = 1; i <= 10; i++) {
+      try {
+        const response = await fetch(`http://localhost:3000/api/user/${i}/address?chain_type=evm`);
+        const data = await response.json();
+        
+        if ((data as any).message && (data as any).data) {
+          logger.info(`用户 ${i} 钱包创建成功:`, (data as any).data);
+        } else {
+          logger.warn(`用户 ${i} 钱包创建失败:`, data);
+        }
+      } catch (error) {
+        logger.error(`用户 ${i} 钱包创建请求失败:`, error);
+      }
+    }
+
+    // 6. 显示插入的数据
     const tokens = await db.all(`SELECT * FROM tokens WHERE chain_id = 31337 ORDER BY token_symbol`);
     logger.info('本地测试网络代币:', { count: tokens.length, tokens });
+
+    const users = await db.all(`SELECT id, username, user_type FROM users ORDER BY id`);
+    logger.info('用户数据:', { count: users.length, users });
+
+    const wallets = await db.all(`SELECT id, user_id, address, wallet_type FROM wallets ORDER BY id`);
+    logger.info('钱包数据:', { count: wallets.length, wallets });
     
     process.exit(0);
 

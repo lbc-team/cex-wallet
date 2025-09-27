@@ -62,7 +62,7 @@ export class HotWalletService {
 
 
   /**
-   * 获取所有可用的热钱包（按nonce排序）
+   * 获取所有可用的热钱包（按 last_used_at 排序）
    */
   async getAllAvailableHotWallets(
     chainId: number, 
@@ -72,29 +72,35 @@ export class HotWalletService {
     nonce: number;
     device?: string;
   }[]> {
-    // 1. 获取可用的内部钱包列表
-    const availableWallets = await this.db.getAvailableInternalWallets(chainId, chainType, 'hot');
+    // 关联查询 wallets 和 wallet_nonces，按 last_used_at 排序， 确保优先选择最久未使用的热钱包，提升负载均衡。
+    const sql = `
+      SELECT 
+        w.address,
+        w.device,
+        COALESCE(wn.nonce, 0) as nonce,
+        wn.last_used_at
+      FROM wallets w
+      LEFT JOIN wallet_nonces wn ON w.id = wn.wallet_id AND wn.chain_id = ?
+      WHERE w.chain_type = ? AND w.wallet_type = 'hot' AND w.is_active = 1
+      ORDER BY 
+        CASE WHEN wn.last_used_at IS NULL THEN 0 ELSE 1 END,
+        wn.last_used_at ASC
+    `;
     
-    if (availableWallets.length === 0) {
-      return [];
-    }
-
-    // 2. 按 nonce 排序（优先选择 nonce 最低的钱包）
-    const sortedWallets = availableWallets.sort((a, b) => a.nonce - b.nonce);
-
-    // 3. 转换为标准格式
-    return sortedWallets.map(wallet => {
+    const results = await this.db.query(sql, [chainId, chainType]);
+    
+    return results.map((row: any) => {
       const result: {
         address: string;
         nonce: number;
         device?: string;
       } = {
-        address: wallet.address,
-        nonce: wallet.nonce
+        address: row.address,
+        nonce: row.nonce
       };
       
-      if (wallet.device) {
-        result.device = wallet.device;
+      if (row.device) {
+        result.device = row.device;
       }
       
       return result;
@@ -127,8 +133,6 @@ export class HotWalletService {
    */
   async createHotWallet(params: {
     chainType: 'evm' | 'btc' | 'solana';
-    chainId: number;
-    initialNonce?: number;
   }): Promise<{
     walletId: number;
     address: string;
@@ -136,7 +140,13 @@ export class HotWalletService {
     path: string;
   }> {
     try {
-      // 1. 通过 SignerService 创建钱包
+      // 1. 查找没有钱包地址的系统用户
+      const systemUserId = await this.db.getSystemUserIdWithoutWallet('sys_hot_wallet');
+      if (!systemUserId) {
+        throw new Error('没有可用的热钱包系统用户（所有系统用户都已分配钱包）');
+      }
+
+      // 2. 通过 SignerService 创建钱包
       const signerResult = await this.signerService.createWallet(params.chainType);
 
       if (!signerResult) {
@@ -145,15 +155,20 @@ export class HotWalletService {
 
       const { address, device, path } = signerResult;
 
-      // 2. 保存到 internal_wallets 表
-      const walletId = await this.db.createInternalWallet({
+      // 3. 检查钱包地址是否已存在（防止签名机返回重复地址）
+      const existingWallet = await this.db.getWallet(address);
+      if (existingWallet) {
+        throw new Error('签名机返回的地址已存在，请重试');
+      }
+
+      // 4. 保存到 wallets 表
+      const walletId = await this.db.createWallet({
+        userId: systemUserId,
         address,
         device,
         path,
         chainType: params.chainType,
-        chainId: params.chainId,
-        walletType: 'hot',
-        nonce: params.initialNonce || 0
+        walletType: 'hot'
       });
 
       return {
@@ -172,8 +187,8 @@ export class HotWalletService {
   /**
    * 获取热钱包信息
    */
-  async getHotWallet(address: string, chainId: number) {
-    return await this.db.getInternalWallet(address, chainId);
+  async getHotWallet(address: string) {
+    return await this.db.getWallet(address);
   }
 
   /**
@@ -182,37 +197,6 @@ export class HotWalletService {
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
     return await this.db.syncNonceFromChain(address, chainId, chainNonce);
   }
-
-
-  /**
-   * 获取所有热钱包状态
-   */
-  async getAllHotWalletsStatus(chainId?: number, walletType?: string): Promise<{
-    address: string;
-    chainId: number;
-    walletType: string;
-    nonce: number;
-    isActive: boolean;
-    lastUpdated: string;
-  }[]> {
-    let sql = 'SELECT address, chain_id, wallet_type, nonce, is_active, updated_at FROM internal_wallets';
-    const params: any[] = [];
-    
-    if (chainId) {
-      sql += ' WHERE chain_id = ?';
-      params.push(chainId);
-    }
-    
-    if (walletType) {
-      sql += chainId ? ' AND wallet_type = ?' : ' WHERE wallet_type = ?';
-      params.push(walletType);
-    }
-    
-    sql += ' ORDER BY chain_id, wallet_type, nonce';
-    
-    return await this.db.query(sql, params);
-  }
-
 
   /**
    * 延迟函数

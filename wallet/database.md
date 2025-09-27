@@ -28,36 +28,40 @@ node dist/scripts/createTables.js
 | email | TEXT | 邮箱地址，唯一 |
 | phone | TEXT | 手机号码 |
 | password_hash | TEXT | 密码哈希 |
+| user_type | TEXT | 用户类型：normal(普通用户)、sys_hot_wallet(热钱包)、sys_multisig(多签) |
 | status | INTEGER | 用户状态：0-正常，1-禁用，2-待审核 |
 | kyc_status | INTEGER | KYC状态：0-未认证，1-待审核，2-已认证，3-认证失败 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 | last_login_at | DATETIME | 最后登录时间 |
 
-### 钱包表 (wallets)
+**系统用户说明：**
+- `user_type = 'sys_hot_wallet'`: 热钱包系统用户
+- `user_type = 'sys_multisig'`: 多签钱包系统用户
+
+
+### 钱包表 (wallets) - 统一管理所有钱包
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键，自增 |
-| user_id | INTEGER | 用户ID，唯一，外键关联 users 表 |
+| user_id | INTEGER | 用户ID，外键关联 users 表 |
 | address | TEXT | 钱包地址，唯一 |
 | device | TEXT | 来自哪个签名机设备地址 |
 | path | TEXT | 推导路径 |
 | chain_type | TEXT | 地址类型：evm、btc、solana |
+| wallet_type | TEXT | 钱包类型：user(用户钱包)、hot(热钱包)、multisig(多签钱包)、cold(冷钱包)、vault(金库钱包) |
+| is_active | INTEGER | 是否激活：0-未激活，1-激活 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
-### 内部钱包表 (internal_wallets) -  管理热钱包、多签钱包等
+### 钱包 Nonce 表 (wallet_nonces) - 管理钱包的 nonce
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键，自增 |
-| address | TEXT | 钱包地址，唯一 |
-| device | TEXT | 来自哪个签名机设备地址 |
-| path | TEXT | 推导路径 |
-| chain_type | TEXT | 地址类型：evm、btc、solana |
-| chain_id | INTEGER | 链ID，如 1(以太坊主网)、56(BSC) |
-| wallet_type | TEXT | 钱包类型：hot(热钱包)、multisig(多签钱包)、cold(冷钱包)、vault(金库钱包) |
+| wallet_id | INTEGER | 关联 wallets.id |
+| chain_id | INTEGER | 链ID |
 | nonce | INTEGER | 当前 nonce 值，用于交易排序 |
-| is_active | INTEGER | 是否激活：0-未激活，1-激活 |
+| last_used_at | DATETIME | 最后使用时间 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 

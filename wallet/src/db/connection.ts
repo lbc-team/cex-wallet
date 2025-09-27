@@ -61,6 +61,7 @@ export class DatabaseConnection {
           email TEXT UNIQUE,
           phone TEXT,
           password_hash TEXT,
+          user_type TEXT DEFAULT 'normal',
           status INTEGER DEFAULT 0,
           kyc_status INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -69,15 +70,17 @@ export class DatabaseConnection {
         )
       `);
 
-      // 创建钱包表
+      // 创建钱包表 
       await this.run(`
         CREATE TABLE IF NOT EXISTS wallets (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id INTEGER NOT NULL,
-          address TEXT UNIQUE NOT NULL,
-          device TEXT,
-          path TEXT,
-          chain_type TEXT DEFAULT 'evm',
+          user_id INTEGER,                    -- 用户ID，系统钱包 
+          address TEXT UNIQUE NOT NULL,      -- 钱包地址，唯一
+          device TEXT,                       -- 来自哪个签名机设备地址
+          path TEXT,                         -- 推导路径
+          chain_type TEXT NOT NULL,         -- 地址类型：evm、btc、solana
+          wallet_type TEXT NOT NULL,         -- 钱包类型：user、hot、multisig、cold、vault
+          is_active INTEGER DEFAULT 1,      -- 是否激活：0-未激活，1-激活
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users(id)
@@ -179,21 +182,18 @@ export class DatabaseConnection {
         )
       `);
 
-      // 创建内部钱包表（热钱包、多签钱包、冷钱包、金库钱包）
+      // 创建钱包 nonce 管理表
       await this.run(`
-        CREATE TABLE IF NOT EXISTS internal_wallets (
+        CREATE TABLE IF NOT EXISTS wallet_nonces (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          address TEXT NOT NULL,
-          device TEXT,
-          path TEXT,
-          chain_type TEXT NOT NULL DEFAULT 'evm',
-          chain_id INTEGER NOT NULL,
-          wallet_type TEXT NOT NULL DEFAULT 'hot',
-          nonce INTEGER DEFAULT 0,
-          is_active INTEGER DEFAULT 1,
+          wallet_id INTEGER NOT NULL,        -- 关联 wallets.id
+          chain_id INTEGER NOT NULL,        -- 链ID
+          nonce INTEGER NOT NULL DEFAULT 0,  -- 当前 nonce 值
+          last_used_at DATETIME,            -- 最后使用时间
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(address, chain_id)
+          FOREIGN KEY (wallet_id) REFERENCES wallets(id),
+          UNIQUE(wallet_id, chain_id)       -- 每个钱包在每个链上只有一个nonce记录
         )
       `);
 
@@ -249,11 +249,16 @@ export class DatabaseConnection {
         `CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)`,
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`,
         
-        // Internal wallets 表索引
-        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_address ON internal_wallets(address)`,
-        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_chain ON internal_wallets(chain_id, chain_type)`,
-        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_type ON internal_wallets(wallet_type)`,
-        `CREATE INDEX IF NOT EXISTS idx_internal_wallets_active ON internal_wallets(is_active)`,
+        // Wallets 表索引 
+        `CREATE INDEX IF NOT EXISTS idx_wallets_chain ON wallets(chain_id, chain_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallets_type ON wallets(wallet_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallets_active ON wallets(is_active)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallets_user_type ON wallets(user_id, wallet_type)`,
+        
+        // Wallet nonces 表索引
+        `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_chain ON wallet_nonces(chain_id)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_last_used ON wallet_nonces(last_used_at)`,
         
         // Withdraws 表索引
         `CREATE INDEX IF NOT EXISTS idx_withdraws_user_id ON withdraws(user_id)`,
@@ -277,6 +282,7 @@ export class DatabaseConnection {
       throw error;
     }
   }
+
 
   // 创建余额聚合视图
   private async createBalanceViews(): Promise<void> {
@@ -571,87 +577,88 @@ export class DatabaseConnection {
     return result || null;
   }
 
-  // ========== 内部钱包相关方法 ==========
+  // 获取系统用户ID
+  async getSystemUserId(userType: 'sys_hot_wallet' | 'sys_multisig'): Promise<number | null> {
+    const result = await this.queryOne(
+      'SELECT id FROM users WHERE user_type = ? LIMIT 1',
+      [userType]
+    );
+    return result?.id || null;
+  }
 
-  // 创建内部钱包
-  async createInternalWallet(params: {
+  // 获取没有钱包地址的系统用户ID
+  async getSystemUserIdWithoutWallet(userType: 'sys_hot_wallet' | 'sys_multisig'): Promise<number | null> {
+    const result = await this.queryOne(`
+      SELECT u.id 
+      FROM users u
+      LEFT JOIN wallets w ON u.id = w.user_id
+      WHERE u.user_type = ? AND w.id IS NULL
+      LIMIT 1
+    `, [userType]);
+    return result?.id || null;
+  }
+
+  // ========== 钱包管理相关方法 ==========
+
+  // 创建钱包
+  async createWallet(params: {
+    userId: number | null;  // null 表示系统钱包
     address: string;
     device?: string;
     path?: string;
     chainType: string;
-    chainId: number;
-    walletType: 'hot' | 'multisig' | 'cold' | 'vault';
-    nonce?: number;
+    walletType: 'user' | 'hot' | 'multisig' | 'cold' | 'vault';
+    isActive?: boolean;
   }): Promise<number> {
     const result = await this.run(`
-      INSERT INTO internal_wallets (
-        address, device, path, chain_type, chain_id, 
-        wallet_type, nonce, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO wallets (
+        user_id, address, device, path, chain_type, 
+        wallet_type, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
+      params.userId,
       params.address,
       params.device || null,
       params.path || null,
       params.chainType,
-      params.chainId,
       params.walletType,
-      params.nonce || 0
+      params.isActive !== false ? 1 : 0
     ]);
     return result.lastID;
   }
 
-  // 创建热钱包（通过签名机）
-  async createHotWallet(params: {
-    chainType: 'evm' | 'btc' | 'solana';
-    chainId: number;
-    initialNonce?: number;
-  }): Promise<{
-    walletId: number;
-    address: string;
-    device: string;
-    path: string;
-  }> {
-    // 这个方法需要配合 SignerService 使用
-    throw new Error('createHotWallet 方法需要配合 SignerService 使用');
-  }
-
-  // 获取内部钱包信息
-  async getInternalWallet(address: string, chainId: number): Promise<{
+  // 获取钱包信息
+  async getWallet(address: string): Promise<{
     id: number;
+    user_id: number | null;
     address: string;
     device: string | null;
     path: string | null;
     chain_type: string;
-    chain_id: number;
     wallet_type: string;
-    nonce: number;
     is_active: number;
     created_at: string;
     updated_at: string;
   } | null> {
-    const result = await this.queryOne(
-      'SELECT * FROM internal_wallets WHERE address = ? AND chain_id = ?',
-      [address, chainId]
-    );
+    const result = await this.queryOne('SELECT * FROM wallets WHERE address = ?', [address]);
     return result || null;
   }
 
-  // 获取可用的内部钱包列表
-  async getAvailableInternalWallets(chainId: number, chainType?: string, walletType?: string): Promise<{
+  // 获取可用的钱包列表
+  async getAvailableWallets(chainType?: string, walletType?: string): Promise<{
     id: number;
+    user_id: number | null;
     address: string;
     device: string | null;
     path: string | null;
     chain_type: string;
-    chain_id: number;
     wallet_type: string;
-    nonce: number;
     is_active: number;
     created_at: string;
     updated_at: string;
   }[]> {
-    let sql = 'SELECT * FROM internal_wallets WHERE chain_id = ? AND is_active = 1';
-    const params: any[] = [chainId];
+    let sql = 'SELECT * FROM wallets WHERE is_active = 1';
+    const params: any[] = [];
     
     if (chainType) {
       sql += ' AND chain_type = ?';
@@ -663,9 +670,59 @@ export class DatabaseConnection {
       params.push(walletType);
     }
     
-    sql += ' ORDER BY nonce ASC';
+    sql += ' ORDER BY id ASC';
     
     return await this.query(sql, params);
+  }
+
+  // 激活/停用钱包
+  async setWalletActive(address: string, isActive: boolean): Promise<boolean> {
+    try {
+      await this.run(`
+        UPDATE wallets 
+        SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE address = ?
+      `, [isActive ? 1 : 0, address]);
+      return true;
+    } catch (error) {
+      console.error('设置钱包状态失败:', error);
+      return false;
+    }
+  }
+
+  // ========== Nonce 管理相关方法 ==========
+
+  // 创建或更新钱包 nonce
+  async createOrUpdateWalletNonce(params: {
+    walletId: number;
+    chainId: number;
+    nonce?: number;
+  }): Promise<void> {
+    await this.run(`
+      INSERT OR REPLACE INTO wallet_nonces (
+        wallet_id, chain_id, nonce, last_used_at, created_at, updated_at
+      ) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [params.walletId, params.chainId, params.nonce || 0]);
+  }
+
+  // 获取钱包 nonce
+  async getWalletNonce(walletId: number, chainId: number): Promise<number> {
+    const result = await this.queryOne(
+      'SELECT nonce FROM wallet_nonces WHERE wallet_id = ? AND chain_id = ?',
+      [walletId, chainId]
+    );
+    return result?.nonce || 0;
+  }
+
+  // 通过地址获取 nonce
+  async getCurrentNonce(address: string, chainId: number): Promise<number> {
+    const result = await this.queryOne(`
+      SELECT wn.nonce 
+      FROM wallet_nonces wn
+      JOIN wallets w ON wn.wallet_id = w.id
+      WHERE w.address = ? AND wn.chain_id = ?
+    `, [address, chainId]);
+    return result?.nonce || 0;
   }
 
   // 原子性更新 nonce
@@ -675,9 +732,10 @@ export class DatabaseConnection {
   }> {
     try {
       const result = await this.run(`
-        UPDATE internal_wallets 
-        SET nonce = nonce + 1, updated_at = CURRENT_TIMESTAMP
-        WHERE address = ? AND chain_id = ? AND nonce = ?
+        UPDATE wallet_nonces 
+        SET nonce = nonce + 1, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
+        AND chain_id = ? AND nonce = ?
       `, [address, chainId, expectedNonce]);
       
       if (result.changes === 0) {
@@ -700,41 +758,34 @@ export class DatabaseConnection {
     }
   }
 
-  // 获取当前 nonce
-  async getCurrentNonce(address: string, chainId: number): Promise<number> {
-    const result = await this.queryOne(
-      'SELECT nonce FROM internal_wallets WHERE address = ? AND chain_id = ?',
-      [address, chainId]
-    );
-    return result?.nonce || -1;
+  // 标记 nonce 已使用
+  async markNonceUsed(address: string, chainId: number, nonce: number): Promise<boolean> {
+    try {
+      await this.run(`
+        UPDATE wallet_nonces 
+        SET last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
+        AND chain_id = ? AND nonce = ?
+      `, [address, chainId, nonce]);
+      return true;
+    } catch (error) {
+      console.error('标记 nonce 已使用失败:', error);
+      return false;
+    }
   }
 
   // 同步 nonce 从链上
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
     try {
       await this.run(`
-        UPDATE internal_wallets 
+        UPDATE wallet_nonces 
         SET nonce = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE address = ? AND chain_id = ?
+        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
+        AND chain_id = ?
       `, [chainNonce, address, chainId]);
       return true;
     } catch (error) {
       console.error('同步 nonce 失败:', error);
-      return false;
-    }
-  }
-
-  // 激活/停用内部钱包
-  async setInternalWalletActive(address: string, chainId: number, isActive: boolean): Promise<boolean> {
-    try {
-      await this.run(`
-        UPDATE internal_wallets 
-        SET is_active = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE address = ? AND chain_id = ?
-      `, [isActive ? 1 : 0, address, chainId]);
-      return true;
-    } catch (error) {
-      console.error('设置内部钱包状态失败:', error);
       return false;
     }
   }
