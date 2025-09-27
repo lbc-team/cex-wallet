@@ -4,6 +4,7 @@ import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
 import { GasEstimationService } from '../utils/gasEstimation';
 import { HotWalletService } from './hotWalletService';
+import { normalizeBigIntString, isBigIntStringGreaterOrEqual } from '../utils/numberUtils';
 import { chainConfigManager, SupportedChain } from '../utils/chains';
 import { type TransactionReceipt } from 'viem';
 
@@ -24,6 +25,7 @@ export class WalletBusinessService {
   }
 
 
+
   /**
    * 选择合适的热钱包
    */
@@ -31,7 +33,7 @@ export class WalletBusinessService {
     chainId: number;
     chainType: string;
     requiredAmount: string;
-    tokenId?: number;
+    tokenId: number;
   }): Promise<{
     success: boolean;
     wallet?: {
@@ -60,14 +62,15 @@ export class WalletBusinessService {
       for (const wallet of availableWallets) {
         const walletBalance = await this.balanceService.getWalletBalance(
           wallet.address, 
-          params.chainId,
           params.tokenId
         );
 
         console.log('🔍 WalletBusinessService: 热钱包余额:', wallet.address, walletBalance);
         
-        // 检查热钱包是否有足够的提现金额
-        if (BigInt(walletBalance) >= BigInt(params.requiredAmount)) {
+        const normalizedBalance = normalizeBigIntString(walletBalance);
+        const normalizedRequiredAmount = normalizeBigIntString(params.requiredAmount);
+        
+        if (isBigIntStringGreaterOrEqual(normalizedBalance, normalizedRequiredAmount)) {
           // 获取钱包的 nonce 和用户ID
           const nonce = await this.hotWalletService.getCurrentNonce(
             wallet.address, 
@@ -150,6 +153,7 @@ export class WalletBusinessService {
           user_id: existingWallet.user_id,
           address: existingWallet.address,
           chain_type: existingWallet.chain_type,
+          wallet_type: existingWallet.wallet_type,
           path: existingWallet.path,
           created_at: existingWallet.created_at,
           updated_at: existingWallet.updated_at
@@ -200,6 +204,7 @@ export class WalletBusinessService {
         user_id: wallet.user_id,
         address: wallet.address,
         chain_type: wallet.chain_type,
+        wallet_type: wallet.wallet_type,
         path: wallet.path,
         created_at: wallet.created_at,
         updated_at: wallet.updated_at
@@ -378,6 +383,13 @@ export class WalletBusinessService {
         };
       }
 
+      if (wallet.wallet_type !== 'user') {
+        return {
+          success: false,
+          error: '只有用户钱包才能提现'
+        };
+      }
+
       // 3. 查找代币信息
       const tokenInfo = await this.dbService.getConnection().findTokenBySymbol(params.tokenSymbol, params.chainId);
       if (!tokenInfo) {
@@ -445,7 +457,7 @@ export class WalletBusinessService {
         const walletSelection = await this.selectHotWallet({
           chainId: params.chainId,
           chainType: params.chainType,
-          requiredAmount: actualAmount.toString(),
+          requiredAmount: normalizeBigIntString(actualAmount.toString()),
           tokenId: tokenInfo.id
         });
 

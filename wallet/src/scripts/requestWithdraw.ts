@@ -10,7 +10,7 @@ import axios from 'axios';
 // 配置参数
 const CONFIG = {
   WALLET_SERVICE_URL: 'http://localhost:3000',
-  USER_ID: 1,
+  USER_ID: 2,
   TO_ADDRESS: '0x1f35B7b2CaB4b3dFEA7AE56F40D6c7B531940f40', // 测试地址
   AMOUNT: '0.01',
   TOKEN_SYMBOL: 'ETH',
@@ -49,26 +49,7 @@ class WithdrawTester {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * 检查服务健康状态
-   */
-  async checkHealth(): Promise<boolean> {
-    try {
-      console.log('检查钱包服务状态...');
-      const response = await axios.get<HealthResponse>(`${this.baseUrl}/health`);
-      
-      if (response.status === 200) {
-        console.log('✅ 钱包服务运行正常');
-        return true;
-      } else {
-        console.log('❌ 钱包服务状态异常');
-        return false;
-      }
-    } catch (error) {
-      console.log('❌ 钱包服务未运行，请先启动服务: npm run dev');
-      return false;
-    }
-  }
+ 
 
   /**
    * 发送提现请求
@@ -139,11 +120,6 @@ class WithdrawTester {
     console.log('链类型:', CONFIG.CHAIN_TYPE);
     console.log('');
 
-    // 1. 检查服务健康状态
-    const isHealthy = await this.checkHealth();
-    if (!isHealthy) {
-      process.exit(1);
-    }
 
     console.log('');
 

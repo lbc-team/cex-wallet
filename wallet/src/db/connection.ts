@@ -250,7 +250,7 @@ export class DatabaseConnection {
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_unique ON tokens(chain_type, chain_id, token_address, token_symbol)`,
         
         // Wallets 表索引 
-        `CREATE INDEX IF NOT EXISTS idx_wallets_chain ON wallets(chain_id, chain_type)`,
+        `CREATE INDEX IF NOT EXISTS idx_wallets_chain_type ON wallets(chain_type)`,
         `CREATE INDEX IF NOT EXISTS idx_wallets_type ON wallets(wallet_type)`,
         `CREATE INDEX IF NOT EXISTS idx_wallets_active ON wallets(is_active)`,
         `CREATE INDEX IF NOT EXISTS idx_wallets_user_type ON wallets(user_id, wallet_type)`,
@@ -722,7 +722,7 @@ export class DatabaseConnection {
       JOIN wallets w ON wn.wallet_id = w.id
       WHERE w.address = ? AND wn.chain_id = ?
     `, [address, chainId]);
-    return result?.nonce || 0;
+    return result?.nonce || -1;
   }
 
   // 原子性更新 nonce
@@ -777,12 +777,23 @@ export class DatabaseConnection {
   // 同步 nonce 从链上
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
     try {
-      await this.run(`
+      // 先尝试更新，如果记录不存在则插入
+      const updateResult = await this.run(`
         UPDATE wallet_nonces 
         SET nonce = ?, updated_at = CURRENT_TIMESTAMP
         WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
         AND chain_id = ?
       `, [chainNonce, address, chainId]);
+      
+      // 如果没有更新任何记录，则插入新记录
+      if (updateResult.changes === 0) {
+        await this.run(`
+          INSERT INTO wallet_nonces (wallet_id, chain_id, nonce, created_at, updated_at)
+          SELECT id, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          FROM wallets WHERE address = ?
+        `, [chainId, chainNonce, address]);
+      }
+      
       return true;
     } catch (error) {
       console.error('同步 nonce 失败:', error);

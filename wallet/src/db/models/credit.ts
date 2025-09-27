@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../connection';
+import { normalizeValue } from '../../utils/numberUtils';
 
 // Credit类型枚举
 export enum CreditType {
@@ -324,6 +325,9 @@ export class CreditModel {
 
   // 获取指定地址的余额（用于热钱包余额查询）
   async getUserBalancesByAddress(address: string, tokenId?: number): Promise<UserBalance[]> {
+    // 标准化地址格式（转换为小写）
+    const normalizedAddress = address.toLowerCase();
+    
     let sql = `
       SELECT 
         c.user_id,
@@ -348,10 +352,10 @@ export class CreditModel {
         END) as total_balance
       FROM credits c
       JOIN tokens t ON c.token_id = t.id
-      WHERE c.address = ?
+      WHERE LOWER(c.address) = ?
     `;
 
-    const params: any[] = [address];
+    const params: any[] = [normalizedAddress];
 
     if (tokenId) {
       sql += ' AND c.token_id = ?';
@@ -377,15 +381,17 @@ export class CreditModel {
 
     return rows.map(row => {
       const divisor = Math.pow(10, row.decimals);
+      
+      
       return {
         user_id: row.user_id,
         address: row.address,
         token_id: row.token_id,
         token_symbol: row.token_symbol,
         decimals: row.decimals,
-        available_balance: row.available_balance.toString(),
-        frozen_balance: row.frozen_balance.toString(),
-        total_balance: row.total_balance.toString(),
+        available_balance: normalizeValue(row.available_balance),
+        frozen_balance: normalizeValue(row.frozen_balance),
+        total_balance: normalizeValue(row.total_balance),
         available_balance_formatted: (row.available_balance / divisor).toFixed(6),
         frozen_balance_formatted: (row.frozen_balance / divisor).toFixed(6),
         total_balance_formatted: (row.total_balance / divisor).toFixed(6)

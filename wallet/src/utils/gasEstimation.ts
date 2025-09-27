@@ -1,5 +1,6 @@
 import { parseUnits } from 'viem';
 import { chainConfigManager, SupportedChain, ChainConfig } from '../utils/chains';
+import { normalizeBigIntString } from './numberUtils';
 
 // Gas 费用估算结果接口
 export interface GasEstimation {
@@ -212,6 +213,7 @@ export class GasEstimationService {
     }
   }
 
+
   /**
    * 编码 ERC20 transfer 方法调用
    */
@@ -221,7 +223,8 @@ export class GasEstimationService {
     
     // 简化的参数编码（正式环境建议使用 viem 的 encodeAbiParameters）
     const addressPadded = to.slice(2).padStart(64, '0');
-    const amountHex = BigInt(amount).toString(16).padStart(64, '0');
+    const normalizedAmount = normalizeBigIntString(amount);
+    const amountHex = BigInt(normalizedAmount).toString(16).padStart(64, '0');
     
     return `${methodId}${addressPadded}${amountHex}` as `0x${string}`;
   }

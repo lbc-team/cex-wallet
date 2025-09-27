@@ -8,6 +8,8 @@ export interface Wallet {
   device?: string;
   path?: string;
   chain_type: 'evm' | 'btc' | 'solana';
+  wallet_type?: 'user' | 'hot' | 'multisig' | 'cold' | 'vault';
+  is_active?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -39,8 +41,8 @@ export class WalletModel {
     const { user_id, address, device, path, chain_type } = walletData;
     
     const result = await this.db.run(
-      'INSERT INTO wallets (user_id, address, device, path, chain_type) VALUES (?, ?, ?, ?, ?)',
-      [user_id, address, device, path, chain_type]
+      'INSERT INTO wallets (user_id, address, device, path, chain_type, wallet_type, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [user_id, address, device, path, chain_type, 'user', 1]
     );
 
     const newWallet = await this.findById(result.lastID);

@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../db/connection';
+import { normalizeBigIntString } from '../utils/numberUtils';
 
 /**
  * 余额缓存服务 - 管理user_balance_cache表，优化高频查询性能
@@ -282,12 +283,14 @@ export class BalanceCacheService {
     }
   }
 
+
   /**
    * 格式化余额（简化版本）
    */
   private formatBalance(balance: string, decimals: number = 18): string {
     try {
-      const value = BigInt(balance);
+      const normalizedBalance = normalizeBigIntString(balance);
+      const value = BigInt(normalizedBalance);
       const divisor = BigInt(10 ** decimals);
       const integerPart = value / divisor;
       const fractionalPart = value % divisor;

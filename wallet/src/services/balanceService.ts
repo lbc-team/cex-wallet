@@ -8,6 +8,7 @@ import {
   Credit
 } from '../db/models/credit';
 import { BalanceCacheService } from './balanceCacheService';
+import { normalizeBigIntString } from '../utils/numberUtils';
 
 /**
  * 余额服务 - 基于Credits流水表的余额管理
@@ -362,7 +363,9 @@ export class BalanceService {
     }
 
     const totalAvailable = balances.reduce((sum, balance) => {
-      return sum + BigInt(balance.available_balance);
+      // 标准化数值，避免科学计数法
+      const normalizedBalance = normalizeBigIntString(balance.available_balance);
+      return sum + BigInt(normalizedBalance);
     }, BigInt(0));
 
     const required = BigInt(requiredAmount);
@@ -424,7 +427,8 @@ export class BalanceService {
     // 检查每个credit的完整性
     for (const credit of credits) {
       try {
-        const amount = BigInt(credit.amount);
+        const normalizedAmount = normalizeBigIntString(credit.amount);
+        const amount = BigInt(normalizedAmount);
         totalAmount += amount;
 
         // 检查冻结/解冻配对
@@ -452,10 +456,11 @@ export class BalanceService {
     };
   }
 
+
   /**
    * 获取热钱包余额（从 Credits 表获取）
    */
-  async getWalletBalance(address: string, chainId: number, tokenId: number): Promise<string> {
+  async getWalletBalance(address: string, tokenId: number): Promise<string> {
     try {
       // 从 Credits 表获取指定地址的余额
       const balances = await this.creditModel.getUserBalancesByAddress(address, tokenId);
@@ -465,7 +470,7 @@ export class BalanceService {
       }
 
       const tokenBalance = balances.find(b => b.token_id === tokenId);
-      return tokenBalance ? tokenBalance.available_balance : '0';
+      return tokenBalance ? normalizeBigIntString(tokenBalance.available_balance) : '0';
       
     } catch (error) {
       console.error('获取钱包余额失败:', error);

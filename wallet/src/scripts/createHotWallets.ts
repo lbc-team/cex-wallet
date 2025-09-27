@@ -68,8 +68,7 @@ async function listHotWallets(chainId?: number): Promise<void> {
   const db = getDatabase();
   
   try {
-    const wallets = await db.getAvailableInternalWallets(
-      chainId || 1, 
+    const wallets = await db.getAvailableWallets(
       'evm', 
       'hot'
     );
