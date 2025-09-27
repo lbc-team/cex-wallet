@@ -15,8 +15,13 @@ export function normalizeBigIntString(value: string): string {
     if (isNaN(num)) {
       return '0';
     }
-    // 使用 toFixed(0) 确保返回整数格式
-    return num.toFixed(0);
+    // 使用 toLocaleString 确保返回完整数字格式
+    // 设置 minimumFractionDigits 和 maximumFractionDigits 为 0 确保整数格式
+    return num.toLocaleString('fullwide', { 
+      useGrouping: false,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    });
   }
   return value;
 }

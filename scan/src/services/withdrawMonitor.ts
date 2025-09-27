@@ -254,7 +254,7 @@ export class WithdrawMonitor {
         });
 
         // 更新 credits 表状态
-        await this.updateCreditStatus(id, 'confirmed', blockNumber, tx_hash);
+        await this.updateCreditStatus(id, 'confirmed', blockNumber);
 
         // 创建 transactions 表记录（用于 scan 服务的统一管理）
         await this.createTransactionRecord({
@@ -286,7 +286,7 @@ export class WithdrawMonitor {
         });
 
         // 更新对应的 credit 记录状态为失败（这样在计算余额时会被排除）
-        await this.updateCreditStatus(id, 'failed', blockNumber, tx_hash);
+        await this.updateCreditStatus(id, 'failed', blockNumber);
 
         logger.warn('提现交易执行失败，已恢复用户余额', {
           withdrawId: id,
@@ -398,7 +398,7 @@ export class WithdrawMonitor {
         });
 
         // 更新 credits 表状态为最终确认
-        await this.updateCreditStatus(id, 'finalized', transactionBlock, tx_hash);
+        await this.updateCreditStatus(id, 'finalized', transactionBlock);
 
         logger.info('提现交易已最终确认', {
           withdrawId: id,
@@ -486,17 +486,15 @@ export class WithdrawMonitor {
     withdrawId: number, 
     status: 'confirmed' | 'failed' | 'finalized',
     blockNumber?: number,
-    txHash?: string
   ): Promise<void> {
     await this.database.run(`
       UPDATE credits 
       SET 
         status = ?,
         block_number = ?,
-        tx_hash = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE reference_id = ? AND reference_type = 'withdraw'
-    `, [status, blockNumber || null, txHash || null, withdrawId.toString()]);
+    `, [status, blockNumber || null, withdrawId.toString()]);
   }
 
   /**
