@@ -241,7 +241,7 @@ export class DatabaseConnection {
         `CREATE INDEX IF NOT EXISTS idx_credits_block_number ON credits(block_number)`,
         `CREATE INDEX IF NOT EXISTS idx_credits_status ON credits(status)`,
         `CREATE INDEX IF NOT EXISTS idx_credits_type ON credits(credit_type)`,
-        `CREATE UNIQUE INDEX IF NOT EXISTS idx_credits_unique ON credits(reference_id, reference_type, event_index)`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_credits_unique ON credits(user_id, reference_id, reference_type, event_index)`,
         
         `CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)`,
         `CREATE INDEX IF NOT EXISTS idx_tokens_chain_symbol ON tokens(chain_type, chain_id, token_symbol)`,

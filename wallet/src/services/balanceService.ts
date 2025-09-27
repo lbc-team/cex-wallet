@@ -451,4 +451,25 @@ export class BalanceService {
       calculatedBalance: totalAmount.toString()
     };
   }
+
+  /**
+   * 获取热钱包余额（从 Credits 表获取）
+   */
+  async getWalletBalance(address: string, chainId: number, tokenId: number): Promise<string> {
+    try {
+      // 从 Credits 表获取指定地址的余额
+      const balances = await this.creditModel.getUserBalancesByAddress(address, tokenId);
+      
+      if (balances.length === 0) {
+        return '0';
+      }
+
+      const tokenBalance = balances.find(b => b.token_id === tokenId);
+      return tokenBalance ? tokenBalance.available_balance : '0';
+      
+    } catch (error) {
+      console.error('获取钱包余额失败:', error);
+      return '0';
+    }
+  }
 }

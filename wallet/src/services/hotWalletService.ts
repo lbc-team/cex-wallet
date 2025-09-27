@@ -2,8 +2,7 @@ import { DatabaseConnection } from '../db/connection';
 import { SignerService } from './signerService';
 
 /**
- * 热钱包管理服务
- * 负责从 internal_wallets 表中获取和管理热钱包，支持高并发提现场景下的 nonce 管理
+ * 热钱包管理服务，支持高并发提现场景下的 nonce 管理
  */
 export class HotWalletService {
   private db: DatabaseConnection;
@@ -107,26 +106,6 @@ export class HotWalletService {
     });
   }
 
-  /**
-   * TODO: 获取热钱包余额
-   */
-  async getWalletBalance(address: string, chainId: number): Promise<string> {
-    try {
-      // 这里应该调用 RPC 获取链上余额
-      // 暂时返回一个模拟值，实际实现需要调用以太坊 RPC
-      const response = await fetch(`http://localhost:3000/api/wallet/balance?address=${address}&chainId=${chainId}`);
-      const data = await response.json() as any;
-      
-      if (data.success && data.data) {
-        return data.data.balance || '0';
-      }
-      
-      return '0';
-    } catch (error) {
-      console.error('获取钱包余额失败:', error);
-      return '0';
-    }
-  }
 
   /**
    * 创建热钱包（通过签名机）
@@ -196,13 +175,6 @@ export class HotWalletService {
    */
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
     return await this.db.syncNonceFromChain(address, chainId, chainNonce);
-  }
-
-  /**
-   * 延迟函数
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
 }

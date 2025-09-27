@@ -25,6 +25,101 @@ export class WalletBusinessService {
 
 
   /**
+   * 选择合适的热钱包
+   */
+  private async selectHotWallet(params: {
+    chainId: number;
+    chainType: string;
+    requiredAmount: string;
+    tokenId?: number;
+  }): Promise<{
+    success: boolean;
+    wallet?: {
+      address: string;
+      nonce: number;
+      device?: string;
+      userId: number;
+    };
+    error?: string;
+  }> {
+    try {
+      // 1. 获取所有可用的热钱包
+      const availableWallets = await this.hotWalletService.getAllAvailableHotWallets(
+        params.chainId, 
+        params.chainType
+      );
+      
+      if (availableWallets.length === 0) {
+        return {
+          success: false,
+          error: '没有可用的热钱包'
+        };
+      }
+
+      // 2. 依次检查热钱包余额，找到第一个余额足够的钱包
+      for (const wallet of availableWallets) {
+        const walletBalance = await this.balanceService.getWalletBalance(
+          wallet.address, 
+          params.chainId,
+          params.tokenId
+        );
+
+        console.log('🔍 WalletBusinessService: 热钱包余额:', wallet.address, walletBalance);
+        
+        // 检查热钱包是否有足够的提现金额
+        if (BigInt(walletBalance) >= BigInt(params.requiredAmount)) {
+          // 获取钱包的 nonce 和用户ID
+          const nonce = await this.hotWalletService.getCurrentNonce(
+            wallet.address, 
+            params.chainId
+          );
+
+          // 获取钱包信息以获取用户ID
+          const walletInfo = await this.dbService.getConnection().getWallet(wallet.address);
+          if (!walletInfo || !walletInfo.user_id) {
+            continue; // 跳过没有用户ID的钱包
+          }
+
+          const result: {
+            success: true;
+            wallet: {
+              address: string;
+              nonce: number;
+              device?: string;
+              userId: number;
+            };
+          } = {
+            success: true,
+            wallet: {
+              address: wallet.address,
+              nonce: nonce,
+              userId: walletInfo.user_id
+            }
+          };
+          
+          if (wallet.device) {
+            result.wallet.device = wallet.device;
+          }
+          
+          return result;
+        }
+      }
+
+      return {
+        success: false,
+        error: '所有热钱包余额都不足，无法完成提现'
+      };
+
+    } catch (error) {
+      console.error('选择热钱包失败:', error);
+      return {
+        success: false,
+        error: `选择热钱包失败: ${error instanceof Error ? error.message : '未知错误'}`
+      };
+    }
+  }
+
+  /**
    * 获取指定链的公共客户端
    */
   private getPublicClient(chain: SupportedChain): any {
@@ -309,7 +404,7 @@ export class WalletBusinessService {
       if (!balanceCheck.sufficient) {
         return {
           success: false,
-          error: `余额不足。可用余额: ${(BigInt(balanceCheck.availableBalance) / BigInt(Math.pow(10, tokenInfo.decimals))).toString()} ${params.tokenSymbol}`
+          error: `用户余额不足。可用余额: ${(BigInt(balanceCheck.availableBalance) / BigInt(Math.pow(10, tokenInfo.decimals))).toString()} ${params.tokenSymbol}`
         };
       }
 
@@ -336,74 +431,37 @@ export class WalletBusinessService {
 
 
 
-      // 10. 选择热钱包并获取 nonce
-      let hotWallet;
-      let nonce: number;
+      // 10. 选择热钱包
       let gasEstimation;
+      let hotWallet: {
+        address: string;
+        nonce: number;
+        device?: string;
+        userId: number;
+      };
+      
       try {
-        // 1. 获取所有可用的热钱包
-        const availableWallets = await this.hotWalletService.getAllAvailableHotWallets(
-          params.chainId, 
-          params.chainType
-        );
-        
-        if (availableWallets.length === 0) {
+        // 选择合适的热钱包
+        const walletSelection = await this.selectHotWallet({
+          chainId: params.chainId,
+          chainType: params.chainType,
+          requiredAmount: actualAmount.toString(),
+          tokenId: tokenInfo.id
+        });
+
+        if (!walletSelection.success) {
           return {
             success: false,
-            error: '没有可用的热钱包'
-          };
-        }
-        
-        let referenceGasEstimation;
-        if (tokenInfo.is_native) {
-          referenceGasEstimation = await this.gasEstimationService.estimateGas({
-            chainId: params.chainId,
-            gasLimit: 21000n // ETH 转账的标准 gas
-          });
-        } else {
-          referenceGasEstimation = await this.gasEstimationService.estimateGas({
-            chainId: params.chainId,
-            gasLimit: 60000n // ERC20 转账的配置 gas 限制
-          });
-        }
-
-        // 3. 计算所需总金额（提现金额 + gas费用）
-        const totalRequired = BigInt(actualAmount.toString()) + BigInt(referenceGasEstimation.gasLimit) * BigInt(referenceGasEstimation.maxFeePerGas);
-
-        // 4. 依次检查热钱包余额，找到第一个余额足够的钱包
-        let selectedWallet = null;
-        for (const wallet of availableWallets) {
-          const walletBalance = await this.hotWalletService.getWalletBalance(
-            wallet.address, 
-            params.chainId
-          );
-          
-          if (BigInt(walletBalance) >= totalRequired) {
-            selectedWallet = wallet;
-            break;
-          }
-        }
-
-        if (!selectedWallet) {
-          return {
-            success: false,
-            error: '所有热钱包余额都不足，无法完成提现'
+            error: walletSelection.error || '选择热钱包失败'
           };
         }
 
-        // 5. 使用选中的钱包
-        hotWallet = selectedWallet;
-
-        // 6. 获取选中钱包的 nonce
-        nonce = await this.hotWalletService.getCurrentNonce(
-          hotWallet.address, 
-          params.chainId
-        );
+        hotWallet = walletSelection.wallet!;
         
-        // 7. 更新提现状态为 signing（填充 from 地址等信息）
+        // 更新提现状态为 signing（填充 from 地址等信息）
         await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'signing', {
           fromAddress: hotWallet.address,
-          nonce: nonce
+          nonce: hotWallet.nonce
         });
 
         // 8. 使用选中钱包重新估算 gas 费用（确保准确性）
@@ -415,7 +473,7 @@ export class WalletBusinessService {
         } else {
           gasEstimation = await this.gasEstimationService.estimateGas({
             chainId: params.chainId,
-            gasLimit: 60000n // ERC20 转账的配置 gas 限制
+            gasLimit: 60000n // ERC20 转账的配置 gas 限制， TODO: 需要根据代币类型调整
           });
         }
       } catch (error) {
@@ -450,7 +508,7 @@ export class WalletBusinessService {
         gas: gasEstimation.gasLimit,
         maxFeePerGas: gasEstimation.maxFeePerGas,
         maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
-        nonce: nonce,
+        nonce: hotWallet.nonce,
         chainId: params.chainId,
         chainType: params.chainType,
         type: 2
@@ -502,7 +560,7 @@ export class WalletBusinessService {
         console.log(`交易已发送到网络，交易哈希: ${txHash}`);
         
         // 标记nonce已使用
-        await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, nonce);
+        await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, hotWallet.nonce);
       
         // 测试交易是否成功
         // const receipt: TransactionReceipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
@@ -533,7 +591,7 @@ export class WalletBusinessService {
         maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas
       });
 
-      // 14. 创建 credit 流水记录（扣除余额）
+      // 14. 创建 credit 流水记录（扣除用户余额）
       await this.dbService.getConnection().createCredit({
         user_id: params.userId,
         token_id: tokenInfo.id,
@@ -544,6 +602,22 @@ export class WalletBusinessService {
         reference_id: withdrawId,
         reference_type: 'withdraw',
         address: params.to,
+        credit_type: 'withdraw',
+        business_type: 'withdraw',
+        status: 'pending'
+      });
+
+      // 15. 创建热钱包 credit 流水记录（热钱包支出）
+      await this.dbService.getConnection().createCredit({
+        user_id: hotWallet.userId,
+        token_id: tokenInfo.id,
+        token_symbol: params.tokenSymbol,
+        amount: `-${actualAmount.toString()}`,
+        chain_id: params.chainId,
+        chain_type: params.chainType,
+        reference_id: withdrawId,
+        reference_type: 'withdraw',
+        address: hotWallet.address,
         credit_type: 'withdraw',
         business_type: 'withdraw',
         status: 'pending'

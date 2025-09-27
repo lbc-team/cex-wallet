@@ -322,6 +322,77 @@ export class CreditModel {
     });
   }
 
+  // 获取指定地址的余额（用于热钱包余额查询）
+  async getUserBalancesByAddress(address: string, tokenId?: number): Promise<UserBalance[]> {
+    let sql = `
+      SELECT 
+        c.user_id,
+        c.address,
+        c.token_id,
+        c.token_symbol,
+        t.decimals,
+        SUM(CASE 
+          WHEN c.credit_type NOT IN ('freeze') AND c.status = 'finalized' 
+          THEN CAST(c.amount AS REAL) 
+          ELSE 0 
+        END) as available_balance,
+        SUM(CASE 
+          WHEN c.credit_type = 'freeze' AND c.status = 'finalized' 
+          THEN CAST(c.amount AS REAL) 
+          ELSE 0 
+        END) as frozen_balance,
+        SUM(CASE 
+          WHEN c.status = 'finalized' 
+          THEN CAST(c.amount AS REAL) 
+          ELSE 0 
+        END) as total_balance
+      FROM credits c
+      JOIN tokens t ON c.token_id = t.id
+      WHERE c.address = ?
+    `;
+
+    const params: any[] = [address];
+
+    if (tokenId) {
+      sql += ' AND c.token_id = ?';
+      params.push(tokenId);
+    }
+
+    sql += `
+      GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
+      HAVING total_balance != 0
+      ORDER BY c.token_symbol
+    `;
+
+    const rows = await this.db.query<{
+      user_id: number;
+      address: string;
+      token_id: number;
+      token_symbol: string;
+      decimals: number;
+      available_balance: number;
+      frozen_balance: number;
+      total_balance: number;
+    }>(sql, params);
+
+    return rows.map(row => {
+      const divisor = Math.pow(10, row.decimals);
+      return {
+        user_id: row.user_id,
+        address: row.address,
+        token_id: row.token_id,
+        token_symbol: row.token_symbol,
+        decimals: row.decimals,
+        available_balance: row.available_balance.toString(),
+        frozen_balance: row.frozen_balance.toString(),
+        total_balance: row.total_balance.toString(),
+        available_balance_formatted: (row.available_balance / divisor).toFixed(6),
+        frozen_balance_formatted: (row.frozen_balance / divisor).toFixed(6),
+        total_balance_formatted: (row.total_balance / divisor).toFixed(6)
+      };
+    });
+  }
+
   // 获取用户各代币总余额（跨地址聚合）
   async getUserTotalBalancesByToken(userId: number): Promise<{
     token_symbol: string;
