@@ -109,6 +109,7 @@ export class GasEstimationService {
     
     try {
       // 获取最近 20 个区块的费用历史
+      // TODO：这里可以考虑做一个缓存，不需要频繁获取
       const feeHistory = await publicClient.request({
         method: 'eth_feeHistory',
         params: [
@@ -124,7 +125,7 @@ export class GasEstimationService {
       // 获取当前 gas 价格
       const gasPrice = await publicClient.getGasPrice();
       
-      // 分析最近 10 个区块的费用趋势
+      // 分析最近区块的费用趋势
       const recentRewards = feeHistory.reward?.slice(-10) || [];
       const allRewards = recentRewards.flat().map((reward: any) => 
         Array.isArray(reward) ? reward.map((r: string) => BigInt(r)) : [BigInt(reward)]
@@ -181,7 +182,7 @@ export class GasEstimationService {
 
 
   /**
-   * 计算优先费用（矿工小费）- 保留原方法作为备用
+   * 计算优先费用（矿工小费）- 作为备用
    */
   private calculatePriorityFee(baseFeePerGas: bigint): bigint {
     // 根据基础费用动态调整优先费用

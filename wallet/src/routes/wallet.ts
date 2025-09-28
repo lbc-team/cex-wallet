@@ -317,7 +317,7 @@ export function walletRoutes(dbService: DatabaseService): Router {
     }
   });
 
-  // 获取待处理的提现（管理员接口）
+  // 获取待处理的提现 
   router.get('/withdraws/pending', async (req: Request, res: Response) => {
     try {
       const pendingWithdraws = await dbService.getConnection().getPendingWithdraws();
@@ -339,7 +339,7 @@ export function walletRoutes(dbService: DatabaseService): Router {
     }
   });
 
-  // 更新提现状态（管理员接口）
+  // 更新提现状态 
   router.put('/withdraws/:withdrawId/status', async (req: Request<{ withdrawId: string }>, res: Response) => {
     const withdrawId = parseInt(req.params.withdrawId, 10);
     const { status, txHash, gasUsed, errorMessage } = req.body;

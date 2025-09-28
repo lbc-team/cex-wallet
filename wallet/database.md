@@ -179,7 +179,7 @@ user_withdraw_request → signing → pending → processing → confirmed
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
-**唯一性约束**: `UNIQUE(reference_id, reference_type, event_index)`
+**唯一性约束**: `UNIQUE(user_id, reference_id, reference_type, event_index)`
 
 用户做现货交易、或者内部转账时，同样用 credits 表跟踪
 

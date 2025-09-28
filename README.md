@@ -2,6 +2,14 @@
 
 交易所钱包系统，提供安全的钱包管理和地址生成服务。
 
+系统设计和实现思路，参考以下文章：
+
+1. [交易所钱包系统的整体架构设计](https://learnblockchain.cn/article/20345)
+2. [签名机与用户账户生成的方案](https://learnblockchain.cn/article/20693) 
+3. [用户充值](https://learnblockchain.cn/article/20925)
+4. [用户充值](https://learnblockchain.cn/article/20925)
+https://learnblockchain.cn/article/21061
+
 ## 主要模块
 
 - **wallet**: 主模块，提供钱包管理 API
