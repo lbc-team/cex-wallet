@@ -392,6 +392,7 @@ export class WalletBusinessService {
 
       // 3. 查找代币信息
       const tokenInfo = await this.dbService.getConnection().findTokenBySymbol(params.tokenSymbol, params.chainId);
+      console.log('🔍 代币信息查询结果:', tokenInfo);
       if (!tokenInfo) {
         return {
           success: false,
@@ -402,11 +403,36 @@ export class WalletBusinessService {
       // 4. 将用户输入的金额转换为最小单位
       const requestedAmountBigInt = BigInt(Math.floor(parseFloat(params.amount) * Math.pow(10, tokenInfo.decimals)));
       
-      // 5. 获取提现费用并计算实际转账金额
+      // 5. 检查最小提现金额
+      const minWithdrawAmount = (tokenInfo as any).min_withdraw_amount || '0';
+      console.log('🔍 最小提现金额验证:', {
+        tokenSymbol: params.tokenSymbol,
+        requestedAmount: params.amount,
+        requestedAmountBigInt: requestedAmountBigInt.toString(),
+        minWithdrawAmount,
+        tokenInfo: tokenInfo
+      });
+      
+      if (requestedAmountBigInt < BigInt(minWithdrawAmount)) {
+        const minAmountFormatted = (BigInt(minWithdrawAmount) / BigInt(Math.pow(10, tokenInfo.decimals))).toString();
+        console.log('❌ 提现金额小于最小提现金额:', {
+          requested: requestedAmountBigInt.toString(),
+          minRequired: minWithdrawAmount,
+          minFormatted: minAmountFormatted
+        });
+        return {
+          success: false,
+          error: `提现金额不能小于最小提现金额 ${minAmountFormatted} ${params.tokenSymbol}`
+        };
+      }
+      
+      console.log('✅ 最小提现金额验证通过');
+      
+      // 6. 获取提现费用并计算实际转账金额
       const withdrawFee = (tokenInfo as any).withdraw_fee || '0';
       const actualAmount = requestedAmountBigInt - BigInt(withdrawFee);
       
-      // 6. 检查用户余额是否充足（包含费用）
+      // 7. 检查用户余额是否充足（包含费用）
       const balanceCheck = await this.balanceService.checkSufficientBalance(
         params.userId,
         tokenInfo.id,
@@ -420,7 +446,7 @@ export class WalletBusinessService {
         };
       }
 
-      // 7. 检查 signer 模块是否可用
+      // 8. 检查 signer 模块是否可用
       const isSignerHealthy = await this.signerService.checkHealth();
       if (!isSignerHealthy) {
         return {
@@ -429,7 +455,7 @@ export class WalletBusinessService {
         };
       }
 
-      // 8. 创建提现记录（状态：user_withdraw_request）
+      // 9. 创建提现记录（状态：user_withdraw_request）
       const withdrawId = await this.dbService.getConnection().createWithdraw({
         userId: params.userId,
         toAddress: params.to,

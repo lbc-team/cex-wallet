@@ -69,21 +69,22 @@ async function insertMockData() {
     logger.info('插入代币配置...');
     
     // 本地测试网络 (chain_id: 31337) - Anvil/Hardhat/Localhost
+    // ETH: withdraw_fee = 0.0001 ETH, min_withdraw_amount = 0.001 ETH (10倍)
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
-      VALUES ('eth', 31337, '0x0000000000000000000000000000000000000000', 'ETH', 'ETH', 18, 1, 100000000000000, 100000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, min_withdraw_amount, status) 
+      VALUES ('eth', 31337, '0x0000000000000000000000000000000000000000', 'ETH', 'ETH', 18, 1, 100000000000000, 100000000000000, 1000000000000000, 1)
     `);
     
-    // 测试代币1: OPS
+    // 测试代币1: OPS - withdraw_fee = 2 OPS, min_withdraw_amount = 20 OPS (10倍)
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
-      VALUES ('eth', 31337, '0x5FbDB2315678afecb367f032d93F642f64180aa3', 'OPS', 'OPS', 18, 0, 10000000000000000000, 2000000000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, min_withdraw_amount, status) 
+      VALUES ('eth', 31337, '0x5FbDB2315678afecb367f032d93F642f64180aa3', 'OPS', 'OPS', 18, 0, 10000000000000000000, 2000000000000000000, 20000000000000000000, 1)
     `);
     
-    // 测试代币2: USDT
+    // 测试代币2: USDT - withdraw_fee = 0.5 USDT, min_withdraw_amount = 5 USDT (10倍)
     await db.run(`
-      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, status) 
-      VALUES ('eth', 31337, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', 'USDT', 'MockU', 18, 0, 10000000000000000000, 500000000000000000, 1)
+      INSERT OR REPLACE INTO tokens (chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, collect_amount, withdraw_fee, min_withdraw_amount, status) 
+      VALUES ('eth', 31337, '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', 'USDT', 'MockU', 18, 0, 10000000000000000000, 500000000000000000, 5000000000000000000, 1)
     `);
 
     logger.info('代币配置插入完成');

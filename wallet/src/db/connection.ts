@@ -132,6 +132,7 @@ export class DatabaseConnection {
           is_native BOOLEAN DEFAULT 0,
           collect_amount TEXT DEFAULT '0',
           withdraw_fee TEXT DEFAULT '0',
+          min_withdraw_amount TEXT DEFAULT '0',
           status INTEGER DEFAULT 1,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -551,9 +552,11 @@ export class DatabaseConnection {
     token_name: string | null;
     decimals: number;
     is_native: boolean;
+    withdraw_fee: string;
+    min_withdraw_amount: string;
   } | null> {
     const result = await this.queryOne(
-      'SELECT * FROM tokens WHERE token_symbol = ? AND chain_id = ? AND status = 1 LIMIT 1',
+      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE token_symbol = ? AND chain_id = ? AND status = 1 LIMIT 1',
       [symbol, chainId]
     );
     return result || null;

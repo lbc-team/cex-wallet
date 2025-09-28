@@ -112,6 +112,7 @@ node dist/scripts/createTables.js
 | is_native | BOOLEAN | 是否为链原生代币（ETH/BTC/SOL等） |
 | collect_amount | TEXT | 归集金额阈值，大整数存储 |
 | withdraw_fee | TEXT | 提现手续费，最小单位存储，默认 '0' |
+| min_withdraw_amount | TEXT | 最小提现金额，最小单位存储，默认 '0' |
 | status | INTEGER | 代币状态：0-禁用，1-启用 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
