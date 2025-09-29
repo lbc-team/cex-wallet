@@ -1,6 +1,6 @@
 import { viemClient } from '../utils/viemClient';
-import { blockDAO, transactionDAO, walletDAO, database } from '../db/models';
-import { creditDAO } from '../db/creditDAO';
+import { blockDAO,  walletDAO, database } from '../db/models';
+import { getDbGatewayService } from './dbGatewayService';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -13,6 +13,8 @@ export interface ReorgInfo {
 }
 
 export class ReorgHandler {
+  private dbGatewayService = getDbGatewayService();
+
   /**
    * 检查区块链重组并处理
    */
@@ -175,7 +177,7 @@ export class ReorgHandler {
       let revertedTransactions = 0;
 
       // 首先删除受影响区块的Credit记录
-      const deletedCredits = await creditDAO.deleteByBlockRange(
+      const deletedCredits = await this.dbGatewayService.deleteCreditsByBlockRangeWithSQL(
         commonAncestor + 1,
         currentBlock
       );
@@ -225,10 +227,7 @@ export class ReorgHandler {
       logger.debug('回滚区块', { blockNumber, hash: dbBlock.hash });
 
       // 1. 获取该区块的所有交易
-      const transactions = await database.all(
-        'SELECT * FROM transactions WHERE block_hash = ?',
-        [dbBlock.hash]
-      );
+      const transactions = await this.dbGatewayService.getTransactionsByBlockHash(dbBlock.hash);
 
       // 2. 回滚交易相关的余额
       for (const tx of transactions) {
@@ -236,16 +235,16 @@ export class ReorgHandler {
       }
 
       // 3. 删除交易记录
-      await database.run(
-        'DELETE FROM transactions WHERE block_hash = ?',
-        [dbBlock.hash]
-      );
+      const deleteResult = await this.dbGatewayService.deleteTransactionsByBlockHash(dbBlock.hash);
+      if (!deleteResult) {
+        logger.error('删除交易记录失败', { blockNumber, blockHash: dbBlock.hash });
+      }
 
       // 4. 标记区块为孤块
-      await database.run(
-        'UPDATE blocks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE hash = ?',
-        ['orphaned', dbBlock.hash]
-      );
+      const updateResult = await this.dbGatewayService.updateBlockStatus(dbBlock.hash, 'orphaned');
+      if (!updateResult) {
+        logger.error('更新区块状态为孤块失败', { blockNumber, blockHash: dbBlock.hash });
+      }
 
       return {
         hash: dbBlock.hash,

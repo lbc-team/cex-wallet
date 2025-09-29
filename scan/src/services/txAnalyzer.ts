@@ -1,6 +1,6 @@
 import { viemClient } from '../utils/viemClient';
-import { transactionDAO, walletDAO, tokenDAO, database } from '../db/models';
-import { creditDAO } from '../db/creditDAO';
+import { walletDAO, tokenDAO, database } from '../db/models';
+import { getDbGatewayService } from './dbGatewayService';
 import logger from '../utils/logger';
 import config from '../config';
 import { Transaction, Block } from 'viem';
@@ -24,7 +24,8 @@ export class TransactionAnalyzer {
   private lastAddressUpdate: number = 0;
   private lastTokenUpdate: number = 0;
   private readonly CACHE_DURATION = 15 * 60 * 1000; // 15分钟缓存（有数据变化检测兜底）
-  
+  private dbGatewayService = getDbGatewayService();
+
   // 检测用户数据 或 Token 变化
   private lastUserCount = 0;
   private lastTokenCount = 0;
@@ -190,6 +191,68 @@ export class TransactionAnalyzer {
 
 
   /**
+   * 批量处理存款（使用远程事务）
+   */
+  async prepareBatchDepositsData(deposits: DepositTransaction[]): Promise<Array<{
+    transaction: any;
+    credit: any;
+  }>> {
+    const batchData = [];
+
+    for (const deposit of deposits) {
+      // 获取代币信息以确定精度
+      let tokenInfo = null;
+      if (deposit.tokenAddress) {
+        tokenInfo = this.supportedTokens.get(deposit.tokenAddress.toLowerCase());
+      } else {
+        tokenInfo = this.supportedTokens.get('native');
+      }
+
+      const decimals = tokenInfo?.decimals || 18;
+
+      batchData.push({
+        transaction: {
+          block_hash: deposit.blockHash,
+          block_no: deposit.blockNumber,
+          tx_hash: deposit.txHash,
+          from_addr: deposit.fromAddress,
+          to_addr: deposit.toAddress,
+          token_addr: deposit.tokenAddress,
+          amount: deposit.amount.toString(),
+          type: 'deposit',
+          status: 'confirmed',
+          confirmation_count: 0
+        },
+        credit: {
+          user_id: deposit.userId,
+          address: deposit.toAddress,
+          token_id: tokenInfo.id,
+          token_symbol: deposit.tokenSymbol,
+          amount: deposit.amount.toString(),
+          credit_type: 'deposit',
+          business_type: 'deposit',
+          reference_id: deposit.txHash, // 使用交易哈希作为reference_id
+          reference_type: 'deposit_transaction',
+          chain_id: tokenInfo.chainId,
+          chain_type: tokenInfo.chainType,
+          status: 'confirmed', // 初始状态为confirmed
+          block_number: deposit.blockNumber,
+          tx_hash: deposit.txHash,
+          event_index: deposit.logIndex, // 使用真实的事件索引
+          metadata: {
+            fromAddress: deposit.fromAddress,
+            tokenAddress: deposit.tokenAddress,
+            decimals: decimals,
+            logIndex: deposit.logIndex
+          }
+        }
+      });
+    }
+
+    return batchData;
+  }
+
+  /**
    * 处理检测到的存款
    */
   async processDeposit(deposit: DepositTransaction): Promise<void> {
@@ -204,8 +267,8 @@ export class TransactionAnalyzer {
       
       const decimals = tokenInfo?.decimals || 18;
       
-      // 保存交易记录
-      await transactionDAO.insertTransaction({
+      // 通过 dbGatewayService 保存交易记录
+      await this.dbGatewayService.insertTransactionWithSQL({
         block_hash: deposit.blockHash,
         block_no: deposit.blockNumber,
         tx_hash: deposit.txHash,
@@ -218,19 +281,23 @@ export class TransactionAnalyzer {
         confirmation_count: 0
       });
 
-      // 立即创建Credit记录（使用真实的事件索引）
-      await creditDAO.createDepositCredit({
-        userId: deposit.userId,
+      // 通过 db_gateway API 立即创建Credit记录（使用真实的事件索引）
+      await this.dbGatewayService.createCredit({
+        user_id: deposit.userId,
         address: deposit.toAddress,
-        tokenId: tokenInfo.id,
-        tokenSymbol: deposit.tokenSymbol,
+        token_id: tokenInfo.id,
+        token_symbol: deposit.tokenSymbol,
         amount: deposit.amount.toString(),
-        txHash: deposit.txHash,
-        blockNumber: deposit.blockNumber,
-        chainId: tokenInfo.chainId,
-        chainType: tokenInfo.chainType,
-        eventIndex: deposit.logIndex, // 使用真实的事件索引
+        credit_type: 'deposit',
+        business_type: 'deposit',
+        reference_id: deposit.txHash, // 使用交易哈希作为reference_id
+        reference_type: 'deposit_transaction',
+        chain_id: tokenInfo.chainId,
+        chain_type: tokenInfo.chainType,
         status: 'confirmed', // 初始状态为confirmed
+        block_number: deposit.blockNumber,
+        tx_hash: deposit.txHash,
+        event_index: deposit.logIndex, // 使用真实的事件索引
         metadata: {
           fromAddress: deposit.fromAddress,
           tokenAddress: deposit.tokenAddress,
@@ -563,20 +630,26 @@ export class TransactionAnalyzer {
         // 分析区块（在事务外进行，避免长时间锁定）
         const deposits = await this.analyzeBatchBlocksForDeposits(batchStart, batchEnd);
         
-        // 使用事务批量处理存款
+        // 使用远程事务批量处理存款
         if (deposits.length > 0) {
-          await database.transaction(async () => {
-            // 批量处理检测到的存款
-            for (const deposit of deposits) {
-              await this.processDeposit(deposit);
-            }
-            
-            logger.debug('历史区块批次事务提交成功', { 
+          const batchData = await this.prepareBatchDepositsData(deposits);
+          const success = await this.dbGatewayService.processDepositsInTransaction(batchData);
+
+          if (success) {
+            logger.debug('历史区块批次远程事务提交成功', {
               batchStart,
               batchEnd,
               deposits: deposits.length
             });
-          });
+          } else {
+            logger.error('历史区块批次远程事务提交失败', {
+              batchStart,
+              batchEnd,
+              deposits: deposits.length
+            });
+            // 可以选择抛出错误或者进行重试
+            throw new Error(`批量处理存款失败: ${batchStart}-${batchEnd}`);
+          }
         }
 
         logger.info('历史区块分析进度', { 

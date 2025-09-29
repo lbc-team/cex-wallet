@@ -54,94 +54,6 @@ export interface Credit {
  */
 export class CreditDAO {
   /**
-   * 创建充值Credit记录（幂等性保证）
-   */
-  async createDepositCredit(params: {
-    userId: number;
-    address: string;
-    tokenId: number;
-    tokenSymbol: string;
-    amount: string;
-    txHash: string;
-    blockNumber: number;
-    chainId?: number;
-    chainType?: string;
-    eventIndex?: number; // 添加事件索引参数
-    status?: 'pending' | 'confirmed' | 'finalized';
-    metadata?: any;
-  }): Promise<number | null> {
-    try {
-      const result = await database.run(
-        `INSERT INTO credits (
-          user_id, address, token_id, token_symbol, amount,
-          credit_type, business_type, reference_id, reference_type,
-          chain_id, chain_type, status, block_number, tx_hash, event_index, metadata,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [
-          params.userId,
-          params.address,
-          params.tokenId,
-          params.tokenSymbol,
-          params.amount,
-          CreditType.DEPOSIT,
-          BusinessType.BLOCKCHAIN,
-          EventIndexHelper.generateCreditReferenceId(params.txHash, params.eventIndex || 0),
-          'blockchain_tx',
-          params.chainId,
-          params.chainType,
-          params.status || 'confirmed',
-          params.blockNumber,
-          params.txHash,
-          params.eventIndex || 0, // 使用真实的事件索引
-          params.metadata ? JSON.stringify(params.metadata) : null
-        ]
-      );
-
-      logger.debug('创建充值Credit记录', {
-        creditId: result.lastID,
-        userId: params.userId,
-        tokenSymbol: params.tokenSymbol,
-        amount: params.amount,
-        txHash: params.txHash
-      });
-
-      return result.lastID!;
-    } catch (error: any) {
-      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-        // 重复处理，返回null表示已存在
-        logger.debug('充值Credit记录已存在', {
-          txHash: params.txHash,
-          userId: params.userId
-        });
-        return null;
-      }
-      logger.error('创建充值Credit记录失败', { params, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 批量更新Credit状态（通过交易哈希）
-   */
-  async updateCreditStatusByTxHash(
-    txHash: string, 
-    status: 'pending' | 'confirmed' | 'finalized' | 'failed'
-  ): Promise<void> {
-    try {
-      await database.run(
-        'UPDATE credits SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        [status, txHash]
-      );
-      
-      logger.debug('更新Credit状态', { txHash, status });
-    } catch (error) {
-      logger.error('更新Credit状态失败', { txHash, status, error });
-      throw error;
-    }
-  }
-
-  /**
    * 查找Credit记录（通过交易哈希）
    */
   async findCreditsByTxHash(txHash: string): Promise<Credit[]> {
@@ -157,29 +69,6 @@ export class CreditDAO {
     }
   }
 
-  /**
-   * 删除指定区块范围的Credit记录（用于重组回滚）
-   */
-  async deleteByBlockRange(startBlock: number, endBlock: number): Promise<number> {
-    try {
-      const result = await database.run(
-        'DELETE FROM credits WHERE block_number >= ? AND block_number <= ?',
-        [startBlock, endBlock]
-      );
-      
-      const deletedCount = result.changes || 0;
-      logger.info('重组回滚删除Credit记录', {
-        startBlock,
-        endBlock,
-        deletedCount
-      });
-      
-      return deletedCount;
-    } catch (error) {
-      logger.error('删除Credit记录失败', { startBlock, endBlock, error });
-      throw error;
-    }
-  }
 
   /**
    * 获取用户余额（实时计算）

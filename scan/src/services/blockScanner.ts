@@ -1,8 +1,9 @@
 import { viemClient } from '../utils/viemClient';
-import { blockDAO, transactionDAO, walletDAO, tokenDAO, database } from '../db/models';
+import { database } from '../db/models';
 import { transactionAnalyzer } from './txAnalyzer';
 import { reorgHandler } from './reorgHandler';
 import { confirmationManager } from './confirmationManager';
+import { getDbGatewayService } from './dbGatewayService';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -22,6 +23,7 @@ export interface ScanProgress {
 export class BlockScanner {
   private isScanning: boolean = false;
   private intervalTimer: NodeJS.Timeout | null = null;
+  private dbGatewayService = getDbGatewayService();
 
   /**
    * 启动扫描服务
@@ -230,33 +232,33 @@ export class BlockScanner {
       // 批量分析交易（使用 bloom 过滤器优化）
       const deposits = await transactionAnalyzer.analyzeBatchBlocksForDeposits(startBlock, endBlock);
 
-      // 使用事务批量保存所有数据
-      await database.transaction(async () => {
-        // 批量保存区块信息
-        for (const block of blocks) {
-          await blockDAO.insertBlock({
-            hash: block.data.hash!,
-            parent_hash: block.data.parentHash,
-            number: block.data.number!.toString(),
-            timestamp: Number(block.data.timestamp),
-            status: 'confirmed'
-          });
-        }
+      // 批量保存区块信息
+      const blockData = blocks.map(block => ({
+        hash: block.data.hash!,
+        parent_hash: block.data.parentHash,
+        number: block.data.number!.toString(),
+        timestamp: Number(block.data.timestamp),
+        status: 'confirmed'
+      }));
 
-        // 批量处理存款
-        for (const deposit of deposits) {
-          await transactionAnalyzer.processDeposit(deposit);
-        }
+      // 准备批量存款数据
+      const depositData = await transactionAnalyzer.prepareBatchDepositsData(deposits);
 
-        // 处理确认
-        await confirmationManager.processConfirmations();
+      // 使用远程事务批量处理区块和存款
+      const success = await this.dbGatewayService.processBlocksAndDepositsInTransaction(blockData, depositData);
 
-        logger.debug('批量区块扫描事务提交成功', {
-          startBlock,
-          endBlock,
-          blocksProcessed: blocks.length,
-          deposits: deposits.length
-        });
+      if (!success) {
+        throw new Error(`批量处理区块和存款失败: ${startBlock}-${endBlock}`);
+      }
+
+      // 处理确认（这个可以在事务外进行）
+      await confirmationManager.processConfirmations();
+
+      logger.debug('批量区块扫描远程事务提交成功', {
+        startBlock,
+        endBlock,
+        blocksProcessed: blocks.length,
+        depositsProcessed: deposits.length
       });
 
     } catch (error) {
@@ -303,7 +305,7 @@ export class BlockScanner {
           }
 
           // 保存区块信息
-          await blockDAO.insertBlock({
+          await this.dbGatewayService.insertBlock({
             hash: block.hash!,
             parent_hash: block.parentHash,
             number: block.number!.toString(),
@@ -402,7 +404,7 @@ export class BlockScanner {
       // 使用事务处理所有数据库写入操作，确保完整的数据一致性
       await database.transaction(async () => {
         // 1. 保存区块信息
-        await blockDAO.insertBlock({
+        await this.dbGatewayService.insertBlock({
           hash: block.hash!,
           parent_hash: block.parentHash,
           number: block.number!.toString(),
@@ -518,7 +520,7 @@ export class BlockScanner {
     try {
       const latestBlock = await viemClient.getLatestBlockNumber();
       const lastScannedBlock = await this.getLastScannedBlock();
-      const pendingTxs = await transactionDAO.getPendingTransactions();
+      const pendingTxs = await this.dbGatewayService.getPendingTransactionsWithSQL();
       const reorgStats = await reorgHandler.getReorgStats();
 
       const isUpToDate = lastScannedBlock >= latestBlock;

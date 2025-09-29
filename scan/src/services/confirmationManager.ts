@@ -1,6 +1,7 @@
 import { viemClient } from '../utils/viemClient';
-import { transactionDAO, walletDAO, tokenDAO } from '../db/models';
+import { walletDAO, tokenDAO } from '../db/models';
 import { creditDAO } from '../db/creditDAO';
+import { getDbGatewayService } from './dbGatewayService';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -25,6 +26,7 @@ export class ConfirmationManager {
     finalized: { block: null, timestamp: 0 },
     ttl: 30000 // 30秒缓存
   };
+  private dbGatewayService = getDbGatewayService();
 
   /**
    * 初始化：检测网络终结性支持
@@ -51,7 +53,7 @@ export class ConfirmationManager {
    */
   async processConfirmations(): Promise<void> {
     try {
-      const pendingTransactions = await transactionDAO.getPendingTransactions();
+      const pendingTransactions = await this.dbGatewayService.getPendingTransactionsWithSQL();
       
       if (pendingTransactions.length === 0) {
         return;
@@ -170,7 +172,7 @@ export class ConfirmationManager {
       }
 
       // 更新确认数
-      await transactionDAO.updateTransactionConfirmation(tx.tx_hash, confirmations);
+      await this.dbGatewayService.updateTransactionConfirmationWithSQL(tx.tx_hash, confirmations);
 
     } catch (error) {
       logger.error('基于确认数更新交易状态失败', { 
@@ -185,7 +187,7 @@ export class ConfirmationManager {
    * 将交易标记为 safe
    */
   private async safeTransaction(tx: any, method: 'network_finality' | 'confirmation_count'): Promise<void> {
-    await transactionDAO.updateTransactionStatus(tx.tx_hash, 'safe');
+    await this.dbGatewayService.updateTransactionStatus(tx.tx_hash, 'safe');
     
     logger.info('交易状态更新为 safe', { 
       txHash: tx.tx_hash, 
@@ -230,11 +232,11 @@ export class ConfirmationManager {
 
           const amount = tx.amount; // amount已经是以最小单位存储的字符串
           
-          // 更新现有Credit记录的状态为finalized（Credit记录已在processDeposit时创建）
-          await creditDAO.updateCreditStatusByTxHash(tx.tx_hash, 'finalized');
+          // 通过 db_gateway API 更新现有Credit记录的状态为finalized（Credit记录已在processDeposit时创建）
+          await this.dbGatewayService.updateCreditStatusByTxHash(tx.tx_hash, 'finalized');
 
 
-          await transactionDAO.updateTransactionStatus(tx.tx_hash, 'finalized');
+          await this.dbGatewayService.updateTransactionStatus(tx.tx_hash, 'finalized');
 
           logger.info('存款余额已更新', {
             txHash: tx.tx_hash,

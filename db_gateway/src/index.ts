@@ -285,6 +285,7 @@ class DatabaseGatewayService {
 
     // Credits管理
     this.app.post('/api/business/credits', this.businessController.createCredit);
+    this.app.put('/api/business/credits/update-by-tx-hash', this.businessController.updateCreditStatusByTxHash);
 
     // Nonce管理
     this.app.post('/api/business/nonces/atomic-increment', this.businessController.atomicIncrementNonce);
@@ -293,8 +294,12 @@ class DatabaseGatewayService {
     // 区块链数据管理
     this.app.post('/api/business/blocks', this.businessController.insertBlock);
     this.app.get('/api/business/blocks', this.businessController.getBlocks);
+    this.app.put('/api/business/blocks/update-status', this.businessController.updateBlockStatus);
     this.app.post('/api/business/transactions', this.businessController.insertTransaction);
     this.app.get('/api/business/transactions', this.businessController.getTransactions);
+    this.app.get('/api/business/transactions/by-block-hash', this.businessController.getTransactionsByBlockHash);
+    this.app.put('/api/business/transactions/update-status', this.businessController.updateTransactionStatus);
+    this.app.delete('/api/business/transactions/by-block-hash', this.businessController.deleteTransactionsByBlockHash);
 
     // 404 处理
     this.app.use('*', (req, res) => {

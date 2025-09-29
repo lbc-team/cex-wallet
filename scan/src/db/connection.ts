@@ -10,28 +10,12 @@ export class Database {
   constructor() {
     const dbPath = path.resolve(config.databaseUrl);
     
-    this.db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+    this.db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         logger.error('数据库连接失败', { path: dbPath, error: err.message });
         throw err;
       } else {
         logger.info('数据库连接成功', { path: dbPath });
-        
-        // 启用 WAL 模式以支持并发读写
-        this.db?.run('PRAGMA journal_mode=WAL', (walErr) => {
-          if (walErr) {
-            logger.warn('启用WAL模式失败', { error: walErr.message });
-          } else {
-            logger.debug('WAL模式已启用');
-          }
-        });
-
-        // 设置忙碌超时
-        this.db?.run('PRAGMA busy_timeout=30000', (timeoutErr) => {
-          if (timeoutErr) {
-            logger.warn('设置忙碌超时失败', { error: timeoutErr.message });
-          }
-        });
       }
     });
   }
@@ -126,39 +110,6 @@ export class Database {
         }
       });
     });
-  }
-
-  /**
-   * 执行事务 - 支持嵌套事务检测
-   */
-  private inTransaction: boolean = false;
-  
-  async transaction<T>(callback: () => Promise<T>): Promise<T> {
-    // 如果已经在事务中，直接执行回调（支持伪嵌套）
-    if (this.inTransaction) {
-      logger.debug('检测到嵌套事务调用，直接执行回调');
-      return await callback();
-    }
-    
-    try {
-      this.inTransaction = true;
-      await this.run('BEGIN TRANSACTION');
-      const result = await callback();
-      await this.run('COMMIT');
-      return result;
-    } catch (error) {
-      await this.run('ROLLBACK');
-      throw error;
-    } finally {
-      this.inTransaction = false;
-    }
-  }
-
-  /**
-   * 检查是否在事务中
-   */
-  isInTransaction(): boolean {
-    return this.inTransaction;
   }
 
   /**

@@ -783,6 +783,131 @@ export class BusinessController {
     }
   };
 
+  // ========== Credit 更新 API ==========
+
+  updateCreditStatusByTxHash = async (req: Request, res: Response) => {
+    try {
+      const { tx_hash, status, block_number } = req.body;
+
+      if (!tx_hash || !status) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'MISSING_FIELDS', message: 'tx_hash and status are required' }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      // 构建更新语句
+      const updateFields = ['status = ?', 'updated_at = CURRENT_TIMESTAMP'];
+      const params = [status];
+
+      if (block_number !== undefined) {
+        updateFields.push('block_number = ?');
+        params.push(block_number);
+      }
+
+      params.push(tx_hash);
+
+      const result = await this.dbService.run(
+        `UPDATE credits SET ${updateFields.join(', ')} WHERE tx_hash = ?`,
+        params
+      );
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'sensitive',
+        table_name: 'credits',
+        action: 'update',
+        module: 'scan',
+        data_before: null,
+        data_after: { tx_hash, status, block_number },
+        business_signer: 'system',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          tx_hash,
+          status,
+          updated_count: result.changes
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to update credit status by tx hash', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'CREDIT_STATUS_UPDATE_FAILED',
+          message: 'Failed to update credit status by tx hash',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  // ========== Transaction 更新 API ==========
+
+  updateTransactionStatus = async (req: Request, res: Response) => {
+    try {
+      const { tx_hash, status } = req.body;
+
+      if (!tx_hash || !status) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'MISSING_FIELDS', message: 'tx_hash and status are required' }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      const result = await this.dbService.run(
+        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
+        [status, tx_hash]
+      );
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'transactions',
+        action: 'update',
+        module: 'scan',
+        data_before: null,
+        data_after: { tx_hash, status },
+        business_signer: 'system',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          tx_hash,
+          status,
+          updated_count: result.changes
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to update transaction status', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'TRANSACTION_STATUS_UPDATE_FAILED',
+          message: 'Failed to update transaction status',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
   // ========== 读取数据 API ==========
 
   getUser = async (req: Request, res: Response) => {
@@ -1064,6 +1189,280 @@ export class BusinessController {
         error: {
           code: 'BLOCKS_RETRIEVAL_FAILED',
           message: 'Failed to retrieve blocks',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  /**
+   * 删除交易记录（用于区块回滚）
+   */
+  deleteTransactionsByBlockHash = async (req: Request, res: Response) => {
+    try {
+      const { block_hash } = req.body;
+
+      if (!block_hash) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_BLOCK_HASH',
+            message: 'block_hash is required'
+          }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      // 先获取要删除的交易记录（用于审计）
+      const transactions = await this.dbService.query(
+        'SELECT * FROM transactions WHERE block_hash = ?',
+        [block_hash]
+      );
+
+      // 删除交易记录
+      const result = await this.dbService.run(
+        'DELETE FROM transactions WHERE block_hash = ?',
+        [block_hash]
+      );
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'transactions',
+        action: 'delete',
+        module: 'scan',
+        data_before: { block_hash, transactions_count: transactions.length },
+        data_after: null,
+        business_signer: 'scan',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          deletedCount: result.changes || 0,
+          transactionCount: transactions.length
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to delete transactions by block hash', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'DELETE_TRANSACTIONS_FAILED',
+          message: 'Failed to delete transactions by block hash',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  /**
+   * 更新区块状态为孤块（用于区块回滚）
+   */
+  updateBlockStatus = async (req: Request, res: Response) => {
+    try {
+      const { block_hash, status } = req.body;
+
+      if (!block_hash || !status) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_PARAMETERS',
+            message: 'block_hash and status are required'
+          }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      // 先获取当前区块信息（用于审计）
+      const currentBlocks = await this.dbService.query(
+        'SELECT * FROM blocks WHERE hash = ?',
+        [block_hash]
+      );
+
+      const currentBlock = currentBlocks[0] || null;
+
+      // 更新区块状态
+      const result = await this.dbService.run(
+        'UPDATE blocks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE hash = ?',
+        [status, block_hash]
+      );
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'blocks',
+        action: 'update',
+        module: 'scan',
+        data_before: currentBlock,
+        data_after: { ...currentBlock, status },
+        business_signer: 'scan',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          updatedCount: result.changes || 0
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to update block status', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'UPDATE_BLOCK_STATUS_FAILED',
+          message: 'Failed to update block status',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  /**
+   * 获取区块的所有交易（用于区块回滚）
+   */
+  getTransactionsByBlockHash = async (req: Request, res: Response) => {
+    try {
+      const { block_hash } = req.query;
+
+      if (!block_hash) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_BLOCK_HASH',
+            message: 'block_hash is required'
+          }
+        });
+      }
+
+      const transactions = await this.dbService.query(
+        'SELECT * FROM transactions WHERE block_hash = ?',
+        [block_hash]
+      );
+
+      res.json({
+        success: true,
+        data: transactions
+      });
+
+    } catch (error) {
+      logger.error('Failed to get transactions by block hash', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'GET_TRANSACTIONS_FAILED',
+          message: 'Failed to get transactions by block hash',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  /**
+   * 获取孤块统计信息
+   */
+  getOrphanedBlocksStats = async (req: Request, res: Response) => {
+    try {
+      const stats = await this.dbService.query(`
+        SELECT
+          COUNT(DISTINCT hash) as orphaned_blocks,
+          (SELECT COUNT(*) FROM transactions WHERE status = 'reverted') as reverted_transactions
+        FROM blocks
+        WHERE status = 'orphaned'
+      `);
+
+      res.json({
+        success: true,
+        data: {
+          orphanedBlocks: stats[0]?.orphaned_blocks || 0,
+          revertedTransactions: stats[0]?.reverted_transactions || 0
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to get orphaned blocks stats', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'STATS_RETRIEVAL_FAILED',
+          message: 'Failed to retrieve orphaned blocks stats',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  /**
+   * 清理孤块数据
+   */
+  cleanupOrphanedBlocks = async (req: Request, res: Response) => {
+    try {
+      const operationId = uuidv4();
+
+      // 获取所有孤立区块
+      const orphanedBlocks = await this.dbService.query(
+        'SELECT hash FROM blocks WHERE status = "orphaned"'
+      );
+
+      let deletedTransactions = 0;
+
+      // 删除孤立区块的相关数据
+      for (const block of orphanedBlocks) {
+        // 删除相关交易（如果还有的话）
+        const result = await this.dbService.run(
+          'DELETE FROM transactions WHERE block_hash = ?',
+          [block.hash]
+        );
+        deletedTransactions += result.changes || 0;
+      }
+
+      // 删除孤立区块记录
+      const blockResult = await this.dbService.run(
+        'DELETE FROM blocks WHERE status = "orphaned"'
+      );
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'blocks',
+        action: 'delete',
+        module: 'scan',
+        data_before: { orphaned_blocks_count: orphanedBlocks.length },
+        data_after: null,
+        business_signer: 'scan',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          deletedBlocks: blockResult.changes || 0,
+          deletedTransactions: deletedTransactions
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to cleanup orphaned blocks', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'CLEANUP_FAILED',
+          message: 'Failed to cleanup orphaned blocks',
           details: error instanceof Error ? error.message : 'Unknown error'
         }
       });
