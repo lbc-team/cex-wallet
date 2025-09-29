@@ -1,4 +1,4 @@
-import { getDatabase } from '../db/connection';
+import { getDatabase } from '../../../db_gateway/src/db/connection';
 import { HotWalletService } from '../services/hotWalletService';
 
 

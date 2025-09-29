@@ -7,8 +7,8 @@
 1. [交易所钱包系统的整体架构设计](https://learnblockchain.cn/article/20345)
 2. [签名机与用户账户生成的方案](https://learnblockchain.cn/article/20693) 
 3. [用户充值](https://learnblockchain.cn/article/20925)
-4. [用户充值](https://learnblockchain.cn/article/20925)
-https://learnblockchain.cn/article/21061
+4. [用户提现](https://learnblockchain.cn/article/21061)
+
 
 ## 主要模块
 
@@ -29,11 +29,15 @@ https://learnblockchain.cn/article/21061
 ## 快速开始
 
 1. 配置环境变量（参考各模块文档）
-2. 启动 wallet 服务（自动创建数据库表）
-3. 启动 signer 服务（为使用生成一些地址， 配置 .env 的助记词）
-4. 执行 wallet 模块下的 mock.ts 填充一些测试数据。
-5. 执行 scan 服务 ， 扫描存款入账
-6. 执行 wallet 模块下的 requestWithdraw.ts 测试提款
+2.   1. 启动Database Gateway: cd db_gateway && npm run dev
+  2. 生成密钥对: curl -X POST http://localhost:3003/generate-keypair
+  3. 配置环境变量: 将公钥配置到网关，私钥配置到各模块
+  4. 改造后的Wallet/Scan模块: 使用新的Gateway服务类
+3. 启动 wallet 服务（自动创建数据库表）
+4. 启动 signer 服务（为使用生成一些地址， 配置 .env 的助记词）
+5. 执行 wallet 模块下的 mock.ts 填充一些测试数据。
+6. 执行 scan 服务 ， 扫描存款入账
+7. 执行 wallet 模块下的 requestWithdraw.ts 测试提款
 
 
 ## 贡献指南
