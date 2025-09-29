@@ -166,22 +166,6 @@ export class DatabaseConnection {
         )
       `);
 
-      // 创建余额缓存表（用于高频查询优化）
-      await this.run(`
-        CREATE TABLE IF NOT EXISTS user_balance_cache (
-          user_id INTEGER NOT NULL,
-          token_id INTEGER NOT NULL,
-          token_symbol TEXT NOT NULL,
-          available_balance TEXT NOT NULL DEFAULT '0',
-          frozen_balance TEXT NOT NULL DEFAULT '0',
-          total_balance TEXT NOT NULL DEFAULT '0',
-          last_credit_id INTEGER NOT NULL DEFAULT 0,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (user_id, token_id),
-          FOREIGN KEY (user_id) REFERENCES users(id),
-          FOREIGN KEY (token_id) REFERENCES tokens(id)
-        )
-      `);
 
       // 创建钱包 nonce 管理表
       await this.run(`

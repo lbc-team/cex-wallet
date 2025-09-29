@@ -55,23 +55,6 @@ export class TransactionModel {
     this.db = database;
   }
 
-  // 创建新交易
-  async create(transactionData: CreateTransactionRequest): Promise<Transaction> {
-    const { block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status = 'pending' } = transactionData;
-    
-    const result = await this.db.run(
-      'INSERT INTO transactions (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status]
-    );
-
-    const newTransaction = await this.findById(result.lastID);
-    if (!newTransaction) {
-      throw new Error('创建交易后无法获取交易信息');
-    }
-
-    return newTransaction;
-  }
-
   // 根据ID查找交易
   async findById(id: number): Promise<Transaction | null> {
     const transaction = await this.db.queryOne<Transaction>(
@@ -213,70 +196,6 @@ export class TransactionModel {
     }
 
     return await this.db.query<Transaction>(sql, params);
-  }
-
-  // 更新交易状态
-  async updateStatus(id: number, status: 'pending' | 'confirmed' | 'failed'): Promise<Transaction> {
-    const result = await this.db.run(
-      'UPDATE transactions SET status = ? WHERE id = ?',
-      [status, id]
-    );
-
-    if (result.changes === 0) {
-      throw new Error('交易不存在或更新失败');
-    }
-
-    const updatedTransaction = await this.findById(id);
-    if (!updatedTransaction) {
-      throw new Error('更新后无法获取交易信息');
-    }
-
-    return updatedTransaction;
-  }
-
-  // 更新交易信息
-  async update(id: number, updateData: UpdateTransactionRequest): Promise<Transaction> {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updateData.status !== undefined) {
-      fields.push('status = ?');
-      values.push(updateData.status);
-    }
-
-    if (updateData.amount !== undefined) {
-      fields.push('amount = ?');
-      values.push(updateData.amount);
-    }
-
-    if (fields.length === 0) {
-      throw new Error('没有要更新的字段');
-    }
-
-    values.push(id);
-
-    const sql = `UPDATE transactions SET ${fields.join(', ')} WHERE id = ?`;
-    const result = await this.db.run(sql, values);
-
-    if (result.changes === 0) {
-      throw new Error('交易不存在或更新失败');
-    }
-
-    const updatedTransaction = await this.findById(id);
-    if (!updatedTransaction) {
-      throw new Error('更新后无法获取交易信息');
-    }
-
-    return updatedTransaction;
-  }
-
-  // 删除交易
-  async delete(id: number): Promise<void> {
-    const result = await this.db.run('DELETE FROM transactions WHERE id = ?', [id]);
-    
-    if (result.changes === 0) {
-      throw new Error('交易不存在或删除失败');
-    }
   }
 
   // 检查交易是否存在

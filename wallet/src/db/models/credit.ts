@@ -111,46 +111,6 @@ export class CreditModel {
     this.db = database;
   }
 
-  // 创建 Credit记录（幂等性保证）
-  async create(creditData: CreateCreditRequest): Promise<Credit> {
-    const {
-      user_id, address, token_id, token_symbol, amount,
-      credit_type, business_type, reference_id, reference_type,
-      status = 'pending', block_number, tx_hash,
-      event_index = 0, metadata
-    } = creditData;
-
-    try {
-      const result = await this.db.run(
-        `INSERT INTO credits (
-          user_id, address, token_id, token_symbol, amount,
-          credit_type, business_type, reference_id, reference_type,
-          status, block_number, tx_hash, event_index, metadata
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          user_id, address, token_id, token_symbol, amount,
-          credit_type, business_type, reference_id, reference_type,
-          status, block_number, tx_hash, event_index, metadata
-        ]
-      );
-
-      const newCredit = await this.findById(result.lastID);
-      if (!newCredit) {
-        throw new Error('创建Credit后无法获取记录信息');
-      }
-
-      return newCredit;
-    } catch (error: any) {
-      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-        // 重复处理，查询现有记录返回
-        const existing = await this.findByReference(reference_id, reference_type, event_index);
-        if (existing) {
-          return existing;
-        }
-      }
-      throw error;
-    }
-  }
 
   // 根据ID查找Credit
   async findById(id: number): Promise<Credit | null> {
@@ -223,33 +183,6 @@ export class CreditModel {
     }
 
     return await this.db.query<Credit>(sql, params);
-  }
-
-  // 更新Credit状态
-  async updateStatus(id: number, status: 'pending' | 'confirmed' | 'finalized' | 'failed'): Promise<Credit> {
-    const result = await this.db.run(
-      'UPDATE credits SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [status, id]
-    );
-
-    if (result.changes === 0) {
-      throw new Error('Credit不存在或更新失败');
-    }
-
-    const updatedCredit = await this.findById(id);
-    if (!updatedCredit) {
-      throw new Error('更新后无法获取Credit信息');
-    }
-
-    return updatedCredit;
-  }
-
-  // 批量更新Credit状态（通过tx_hash）
-  async updateStatusByTxHash(txHash: string, status: 'pending' | 'confirmed' | 'finalized' | 'failed'): Promise<void> {
-    await this.db.run(
-      'UPDATE credits SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-      [status, txHash]
-    );
   }
 
   // 获取用户余额（实时计算）
@@ -409,13 +342,13 @@ export class CreditModel {
   }[]> {
     // 使用视图优化性能
     const sql = `
-      SELECT 
+      SELECT
         token_symbol,
         total_available_formatted as available_balance,
         total_frozen_formatted as frozen_balance,
         total_balance_formatted as total_balance,
         address_count
-      FROM v_user_token_totals 
+      FROM v_user_token_totals
       WHERE user_id = ?
       ORDER BY total_balance DESC
     `;
@@ -431,13 +364,55 @@ export class CreditModel {
     return rows;
   }
 
-  // 删除Credit记录（用于重组回滚）
-  async deleteByBlockRange(startBlock: number, endBlock: number): Promise<number> {
-    const result = await this.db.run(
-      'DELETE FROM credits WHERE block_number >= ? AND block_number <= ?',
-      [startBlock, endBlock]
-    );
-    return result.changes || 0;
+  // 获取用户聚合余额（使用视图优化，跨地址聚合）
+  async getUserAggregatedBalances(userId: number, tokenId?: number): Promise<{
+    token_id: number;
+    token_symbol: string;
+    available_balance: string;
+    frozen_balance: string;
+    total_balance: string;
+    available_balance_formatted: string;
+    frozen_balance_formatted: string;
+    total_balance_formatted: string;
+    decimals: number;
+  }[]> {
+    let sql = `
+      SELECT
+        token_id,
+        token_symbol,
+        decimals,
+        total_available_balance as available_balance,
+        total_frozen_balance as frozen_balance,
+        total_balance,
+        total_available_formatted as available_balance_formatted,
+        total_frozen_formatted as frozen_balance_formatted,
+        total_balance_formatted
+      FROM v_user_token_totals
+      WHERE user_id = ?
+    `;
+
+    const params: any[] = [userId];
+
+    if (tokenId) {
+      sql += ' AND token_id = ?';
+      params.push(tokenId);
+    }
+
+    sql += ' ORDER BY total_balance DESC';
+
+    const rows = await this.db.query(sql, params);
+
+    return rows.map((row: any) => ({
+      token_id: row.token_id,
+      token_symbol: row.token_symbol,
+      available_balance: row.available_balance.toString(),
+      frozen_balance: row.frozen_balance.toString(),
+      total_balance: row.total_balance.toString(),
+      available_balance_formatted: row.available_balance_formatted,
+      frozen_balance_formatted: row.frozen_balance_formatted,
+      total_balance_formatted: row.total_balance_formatted,
+      decimals: row.decimals
+    }));
   }
 
   // 获取Credit统计信息

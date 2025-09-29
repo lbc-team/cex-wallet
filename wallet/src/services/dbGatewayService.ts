@@ -302,6 +302,22 @@ export class DbGatewayService {
       throw new Error(`创建credit记录失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   }
+
+  /**
+   * 删除指定区块范围的Credit记录（用于重组回滚） - 使用SQL语句
+   */
+  async deleteByBlockRange(startBlock: number, endBlock: number): Promise<number> {
+    try {
+      const sql = `DELETE FROM credits WHERE block_number >= ? AND block_number <= ?`;
+      const values = [startBlock, endBlock];
+
+      const result = await this.executeSQL(sql, values);
+      return result.changes || 0;
+    } catch (error) {
+      console.error(`删除Credit记录失败 (startBlock: ${startBlock}, endBlock: ${endBlock}):`, error);
+      return 0;
+    }
+  }
 }
 
 // 单例实例

@@ -73,39 +73,7 @@ export class HotWalletService {
     nonce: number;
     device?: string;
   }[]> {
-    // 关联查询 wallets 和 wallet_nonces，按 last_used_at 排序， 确保优先选择最久未使用的热钱包，提升负载均衡。
-    const sql = `
-      SELECT 
-        w.address,
-        w.device,
-        COALESCE(wn.nonce, 0) as nonce,
-        wn.last_used_at
-      FROM wallets w
-      LEFT JOIN wallet_nonces wn ON w.id = wn.wallet_id AND wn.chain_id = ?
-      WHERE w.chain_type = ? AND w.wallet_type = 'hot' AND w.is_active = 1
-      ORDER BY 
-        CASE WHEN wn.last_used_at IS NULL THEN 0 ELSE 1 END,
-        wn.last_used_at ASC
-    `;
-    
-    const results = await this.db.query(sql, [chainId, chainType]);
-    
-    return results.map((row: any) => {
-      const result: {
-        address: string;
-        nonce: number;
-        device?: string;
-      } = {
-        address: row.address,
-        nonce: row.nonce
-      };
-      
-      if (row.device) {
-        result.device = row.device;
-      }
-      
-      return result;
-    });
+    return await this.db.getAllAvailableHotWallets(chainId, chainType);
   }
 
 
@@ -153,6 +121,9 @@ export class HotWalletService {
       });
 
       const walletId = wallet.id;
+      if (!walletId) {
+        throw new Error('创建钱包后未返回有效的钱包ID');
+      }
 
       return {
         walletId,

@@ -207,16 +207,3 @@ user_withdraw_request → signing → pending → processing → confirmed
 ### 余额聚合视图用户代币总余额 （[v_user_token_totals](./src/db/connection.ts)）
 
 
-### 余额缓存表 (user_balance_cache)
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| user_id | INTEGER | 用户ID（复合主键） |
-| token_id | INTEGER | 代币ID（复合主键） |
-| token_symbol | TEXT | 代币符号 |
-| available_balance | TEXT | 可用余额，最小单位存储 |
-| frozen_balance | TEXT | 冻结余额，最小单位存储 |
-| total_balance | TEXT | 总余额，最小单位存储 |
-| last_credit_id | INTEGER | 最后处理的credit记录ID |
-| updated_at | DATETIME | 缓存更新时间 |
-
-**主键**: `PRIMARY KEY(user_id, token_id)`

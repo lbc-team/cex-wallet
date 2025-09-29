@@ -1,5 +1,4 @@
 import { DatabaseReader } from '../db';
-import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
 import { GasEstimationService } from '../utils/gasEstimation';

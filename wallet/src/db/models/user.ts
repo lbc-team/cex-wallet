@@ -53,23 +53,6 @@ export class UserModel {
     this.db = database;
   }
 
-  // 创建新用户
-  async create(userData: CreateUserRequest): Promise<User> {
-    const { username, email, phone, password_hash, status = 0, kyc_status = 0 } = userData;
-    
-    const result = await this.db.run(
-      'INSERT INTO users (username, email, phone, password_hash, status, kyc_status) VALUES (?, ?, ?, ?, ?, ?)',
-      [username, email, phone, password_hash, status, kyc_status]
-    );
-
-    const newUser = await this.findById(result.lastID);
-    if (!newUser) {
-      throw new Error('创建用户后无法获取用户信息');
-    }
-
-    return newUser;
-  }
-
   // 根据ID查找用户
   async findById(id: number): Promise<User | null> {
     const user = await this.db.queryOne<User>(
@@ -130,77 +113,6 @@ export class UserModel {
     }
 
     return await this.db.query<User>(sql, params);
-  }
-
-  // 更新用户信息
-  async update(id: number, updateData: UpdateUserRequest): Promise<User> {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updateData.username !== undefined) {
-      fields.push('username = ?');
-      values.push(updateData.username);
-    }
-
-    if (updateData.email !== undefined) {
-      fields.push('email = ?');
-      values.push(updateData.email);
-    }
-
-    if (updateData.phone !== undefined) {
-      fields.push('phone = ?');
-      values.push(updateData.phone);
-    }
-
-    if (updateData.password_hash !== undefined) {
-      fields.push('password_hash = ?');
-      values.push(updateData.password_hash);
-    }
-
-    if (updateData.status !== undefined) {
-      fields.push('status = ?');
-      values.push(updateData.status);
-    }
-
-    if (updateData.kyc_status !== undefined) {
-      fields.push('kyc_status = ?');
-      values.push(updateData.kyc_status);
-    }
-
-    if (updateData.last_login_at !== undefined) {
-      fields.push('last_login_at = ?');
-      values.push(updateData.last_login_at);
-    }
-
-    if (fields.length === 0) {
-      throw new Error('没有要更新的字段');
-    }
-
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(id);
-
-    const sql = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
-    const result = await this.db.run(sql, values);
-
-    if (result.changes === 0) {
-      throw new Error('用户不存在或更新失败');
-    }
-
-    const updatedUser = await this.findById(id);
-    if (!updatedUser) {
-      throw new Error('更新后无法获取用户信息');
-    }
-
-    return updatedUser;
-  }
-
-  // 删除用户
-  async delete(id: number): Promise<void> {
-    const result = await this.db.run('DELETE FROM users WHERE id = ?', [id]);
-    
-    if (result.changes === 0) {
-      throw new Error('用户不存在或删除失败');
-    }
   }
 
   // 检查用户是否存在
@@ -268,11 +180,6 @@ export class UserModel {
       kycPendingUsers: 0,
       kycVerifiedUsers: 0
     };
-  }
-
-  // 更新最后登录时间
-  async updateLastLogin(id: number): Promise<void> {
-    await this.update(id, { last_login_at: new Date().toISOString() });
   }
 
   // 获取安全的用户信息（不包含密码哈希）

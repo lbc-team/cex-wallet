@@ -13,29 +13,12 @@ export class DatabaseConnection {
   // 连接数据库
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err: Error | null) => {
+      this.db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY , (err: Error | null) => {
         if (err) {
           console.error('数据库连接错误:', err.message);
           reject(err);
         } else {
           console.log('已连接到SQLite数据库');
-          
-          // 启用 WAL 模式以支持并发读写
-          this.db?.run('PRAGMA journal_mode=WAL', (walErr) => {
-            if (walErr) {
-              console.warn('启用WAL模式失败:', walErr.message);
-            } else {
-              console.log('WAL模式已启用');
-            }
-          });
-
-          // 设置忙碌超时
-          this.db?.run('PRAGMA busy_timeout=30000', (timeoutErr) => {
-            if (timeoutErr) {
-              console.warn('设置忙碌超时失败:', timeoutErr.message);
-            }
-          });
-          
         }
       });
     });
@@ -101,24 +84,6 @@ export class DatabaseConnection {
           reject(err);
         } else {
           resolve(row);
-        }
-      });
-    });
-  }
-
-  // 执行插入/更新/删除
-  async run(sql: string, params: any[] = []): Promise<sqlite3.RunResult> {
-    return new Promise((resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('数据库未连接'));
-        return;
-      }
-
-      this.db.run(sql, params, function(this: sqlite3.RunResult, err: Error | null) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(this);
         }
       });
     });
@@ -332,6 +297,52 @@ export class DatabaseConnection {
       'SELECT * FROM credits WHERE reference_id = ? AND reference_type LIKE ?',
       [withdrawId, 'withdraw%']
     );
+  }
+
+  /**
+   * 获取所有可用的热钱包
+   */
+  async getAllAvailableHotWallets(
+    chainId: number, 
+    chainType: string
+  ): Promise<{
+    address: string;
+    nonce: number;
+    device?: string;
+  }[]> {
+    // 关联查询 wallets 和 wallet_nonces，按 last_used_at 排序， 确保优先选择最久未使用的热钱包，提升负载均衡。
+    const sql = `
+      SELECT 
+        w.address,
+        w.device,
+        COALESCE(wn.nonce, 0) as nonce,
+        wn.last_used_at
+      FROM wallets w
+      LEFT JOIN wallet_nonces wn ON w.id = wn.wallet_id AND wn.chain_id = ?
+      WHERE w.chain_type = ? AND w.wallet_type = 'hot' AND w.is_active = 1
+      ORDER BY 
+        CASE WHEN wn.last_used_at IS NULL THEN 0 ELSE 1 END,
+        wn.last_used_at ASC
+    `;
+    
+    const results = await this.query(sql, [chainId, chainType]);
+    
+    return results.map((row: any) => {
+      const result: {
+        address: string;
+        nonce: number;
+        device?: string;
+      } = {
+        address: row.address,
+        nonce: row.nonce
+      };
+      
+      if (row.device) {
+        result.device = row.device;
+      }
+      
+      return result;
+    });
   }
 
 }
