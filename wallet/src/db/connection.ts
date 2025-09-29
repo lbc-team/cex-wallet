@@ -7,7 +7,7 @@ export class DatabaseConnection {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || path.join(__dirname, '../../wallet.db');
+    this.dbPath = dbPath || path.join(__dirname, '../../../../db_gateway/wallet.db');
   }
 
   // 连接数据库
@@ -36,158 +36,11 @@ export class DatabaseConnection {
             }
           });
           
-          this.initDatabase()
-            .then(() => resolve())
-            .catch(reject);
         }
       });
     });
   }
 
-  // 初始化数据库表
-  private async initDatabase(): Promise<void> {
-    
-  }
-
-
-  // 创建余额聚合视图
-  private async createBalanceViews(): Promise<void> {
-    try {
-      // 1. 用户余额实时视图（按地址分组）
-      await this.run(`
-        CREATE VIEW IF NOT EXISTS v_user_balances AS
-        SELECT 
-          c.user_id,
-          c.address,
-          c.token_id,
-          c.token_symbol,
-          t.decimals,
-          SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) as available_balance,
-          SUM(CASE 
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized') 
-            THEN ABS(CAST(c.amount AS REAL))
-            ELSE 0 
-          END) as frozen_balance,
-          SUM(CASE 
-            WHEN (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) as total_balance,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as available_balance_formatted,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized') 
-            THEN ABS(CAST(c.amount AS REAL))
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as frozen_balance_formatted,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as total_balance_formatted,
-          MAX(c.updated_at) as last_updated
-        FROM credits c
-        JOIN tokens t ON c.token_id = t.id
-        GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
-        HAVING total_balance > 0
-      `);
-
-      // 2. 用户代币总余额视图（跨地址聚合）
-      await this.run(`
-        CREATE VIEW IF NOT EXISTS v_user_token_totals AS
-        SELECT 
-          c.user_id,
-          c.token_id,
-          c.token_symbol,
-          t.decimals,
-          SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) as total_available_balance,
-          SUM(CASE 
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized') 
-            THEN ABS(CAST(c.amount AS REAL))
-            ELSE 0 
-          END) as total_frozen_balance,
-          SUM(CASE 
-            WHEN (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) as total_balance,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type NOT IN ('freeze') AND (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as total_available_formatted,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized') 
-            THEN ABS(CAST(c.amount AS REAL))
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as total_frozen_formatted,
-          PRINTF('%.6f', SUM(CASE 
-            WHEN (
-              (c.credit_type = 'deposit' AND c.status = 'finalized') OR
-              (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
-            )
-            THEN CAST(c.amount AS REAL) 
-            ELSE 0 
-          END) / POWER(10, t.decimals)) as total_balance_formatted,
-          COUNT(DISTINCT c.address) as address_count,
-          MAX(c.updated_at) as last_updated
-        FROM credits c
-        JOIN tokens t ON c.token_id = t.id
-        GROUP BY c.user_id, c.token_id, c.token_symbol, t.decimals
-        HAVING total_balance > 0
-      `);
-
-      // 3. 用户余额统计视图
-      await this.run(`
-        CREATE VIEW IF NOT EXISTS v_user_balance_stats AS
-        SELECT 
-          user_id,
-          COUNT(DISTINCT token_id) as token_count,
-          COUNT(DISTINCT address) as address_count,
-          SUM(CASE WHEN total_balance > 0 THEN 1 ELSE 0 END) as positive_balance_count,
-          MAX(last_updated) as last_balance_update
-        FROM v_user_token_totals
-        GROUP BY user_id
-      `);
-
-      console.log('余额聚合视图创建完成');
-    } catch (error) {
-      console.error('创建余额视图失败', error);
-      throw error;
-    }
-  }
 
   // 获取数据库实例
   getDatabase(): sqlite3.Database {
@@ -367,34 +220,6 @@ export class DatabaseConnection {
   }
 
   // ========== 钱包管理相关方法 ==========
-
-  // 创建钱包
-  async createWallet(params: {
-    userId: number | null;  // null 表示系统钱包
-    address: string;
-    device?: string;
-    path?: string;
-    chainType: string;
-    walletType: 'user' | 'hot' | 'multisig' | 'cold' | 'vault';
-    isActive?: boolean;
-  }): Promise<number> {
-    const result = await this.run(`
-      INSERT INTO wallets (
-        user_id, address, device, path, chain_type, 
-        wallet_type, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [
-      params.userId,
-      params.address,
-      params.device || null,
-      params.path || null,
-      params.chainType,
-      params.walletType,
-      params.isActive !== false ? 1 : 0
-    ]);
-    return result.lastID;
-  }
-
   // 获取钱包信息
   async getWallet(address: string): Promise<{
     id: number;
@@ -443,35 +268,8 @@ export class DatabaseConnection {
     return await this.query(sql, params);
   }
 
-  // 激活/停用钱包
-  async setWalletActive(address: string, isActive: boolean): Promise<boolean> {
-    try {
-      await this.run(`
-        UPDATE wallets 
-        SET is_active = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE address = ?
-      `, [isActive ? 1 : 0, address]);
-      return true;
-    } catch (error) {
-      console.error('设置钱包状态失败:', error);
-      return false;
-    }
-  }
 
   // ========== Nonce 管理相关方法 ==========
-
-  // 创建或更新钱包 nonce
-  async createOrUpdateWalletNonce(params: {
-    walletId: number;
-    chainId: number;
-    nonce?: number;
-  }): Promise<void> {
-    await this.run(`
-      INSERT OR REPLACE INTO wallet_nonces (
-        wallet_id, chain_id, nonce, last_used_at, created_at, updated_at
-      ) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [params.walletId, params.chainId, params.nonce || 0]);
-  }
 
   // 获取钱包 nonce
   async getWalletNonce(walletId: number, chainId: number): Promise<number> {
@@ -491,173 +289,6 @@ export class DatabaseConnection {
       WHERE w.address = ? AND wn.chain_id = ?
     `, [address, chainId]);
     return result?.nonce || -1;
-  }
-
-  // 原子性更新 nonce
-  async atomicIncrementNonce(address: string, chainId: number, expectedNonce: number): Promise<{
-    success: boolean;
-    newNonce: number;
-  }> {
-    try {
-      const result = await this.run(`
-        UPDATE wallet_nonces 
-        SET nonce = nonce + 1, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
-        AND chain_id = ? AND nonce = ?
-      `, [address, chainId, expectedNonce]);
-      
-      if (result.changes === 0) {
-        return {
-          success: false,
-          newNonce: expectedNonce
-        };
-      }
-      
-      return {
-        success: true,
-        newNonce: expectedNonce + 1
-      };
-    } catch (error) {
-      console.error('原子性更新 nonce 失败:', error);
-      return {
-        success: false,
-        newNonce: expectedNonce
-      };
-    }
-  }
-
-  // 标记 nonce 已使用
-  async markNonceUsed(address: string, chainId: number, nonce: number): Promise<boolean> {
-    try {
-      await this.run(`
-        UPDATE wallet_nonces 
-        SET last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
-        AND chain_id = ? AND nonce = ?
-      `, [address, chainId, nonce]);
-      return true;
-    } catch (error) {
-      console.error('标记 nonce 已使用失败:', error);
-      return false;
-    }
-  }
-
-  // 同步 nonce 从链上
-  async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
-    try {
-      // 先尝试更新，如果记录不存在则插入
-      const updateResult = await this.run(`
-        UPDATE wallet_nonces 
-        SET nonce = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?) 
-        AND chain_id = ?
-      `, [chainNonce, address, chainId]);
-      
-      // 如果没有更新任何记录，则插入新记录
-      if (updateResult.changes === 0) {
-        await this.run(`
-          INSERT INTO wallet_nonces (wallet_id, chain_id, nonce, created_at, updated_at)
-          SELECT id, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          FROM wallets WHERE address = ?
-        `, [chainId, chainNonce, address]);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('同步 nonce 失败:', error);
-      return false;
-    }
-  }
-
-  // ==================== 提现相关方法 ====================
-
-  /**
-   * 创建提现记录
-   */
-  async createWithdraw(record: {
-    userId: number;
-    toAddress: string;
-    tokenId: number;
-    amount: string;
-    fee: string;
-    chainId: number;
-    chainType: string;
-    status?: string;
-  }): Promise<number> {
-    const result = await this.run(`
-      INSERT INTO withdraws (
-        user_id, to_address, token_id,
-        amount, fee, chain_id, chain_type, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [
-      record.userId, record.toAddress, record.tokenId,
-      record.amount, record.fee, record.chainId, record.chainType, 
-      record.status || 'user_withdraw_request'
-    ]);
-    
-    return result.lastID;
-  }
-
-  /**
-   * 更新提现状态
-   */
-  async updateWithdrawStatus(
-    id: number, 
-    status: string, 
-    data?: {
-      fromAddress?: string;
-      txHash?: string;
-      nonce?: number;
-      gasUsed?: string;
-      gasPrice?: string;
-      maxFeePerGas?: string;
-      maxPriorityFeePerGas?: string;
-      errorMessage?: string;
-    }
-  ): Promise<void> {
-    const updates: string[] = ['status = ?', 'updated_at = CURRENT_TIMESTAMP'];
-    const params: any[] = [status];
-    
-    if (data?.fromAddress) {
-      updates.push('from_address = ?');
-      params.push(data.fromAddress);
-    }
-    if (data?.txHash) {
-      updates.push('tx_hash = ?');
-      params.push(data.txHash);
-    }
-    if (data?.nonce) {
-      updates.push('nonce = ?');
-      params.push(data.nonce);
-    }
-    if (data?.gasUsed) {
-      updates.push('gas_used = ?');
-      params.push(data.gasUsed);
-    }
-    if (data?.gasPrice) {
-      updates.push('gas_price = ?');
-      params.push(data.gasPrice);
-    }
-    if (data?.maxFeePerGas) {
-      updates.push('max_fee_per_gas = ?');
-      params.push(data.maxFeePerGas);
-    }
-    if (data?.maxPriorityFeePerGas) {
-      updates.push('max_priority_fee_per_gas = ?');
-      params.push(data.maxPriorityFeePerGas);
-    }
-    if (data?.errorMessage) {
-      updates.push('error_message = ?');
-      params.push(data.errorMessage);
-    }
-    
-    params.push(id);
-    
-    await this.run(`
-      UPDATE withdraws 
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `, params);
   }
 
   /**
@@ -703,38 +334,6 @@ export class DatabaseConnection {
     );
   }
 
-  /**
-   * 创建 credit 记录
-   */
-  async createCredit(record: {
-    user_id: number;
-    token_id: number;
-    token_symbol: string;
-    amount: string;
-    chain_id: number;
-    chain_type: string;
-    reference_id: number;
-    reference_type: string;
-    address?: string;
-    credit_type?: string;
-    business_type?: string;
-    status?: string;
-  }): Promise<number> {
-    const result = await this.run(`
-      INSERT INTO credits (
-        user_id, token_id, token_symbol, amount, chain_id, chain_type,
-        reference_id, reference_type, address, credit_type, business_type, status,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [
-      record.user_id, record.token_id, record.token_symbol, record.amount,
-      record.chain_id, record.chain_type, record.reference_id, record.reference_type,
-      record.address || '', record.credit_type || 'withdraw', record.business_type || 'withdraw',
-      record.status || 'pending'
-    ]);
-    
-    return result.lastID;
-  }
 }
 
 // 单例数据库连接实例

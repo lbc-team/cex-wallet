@@ -1,5 +1,6 @@
 import { DatabaseConnection } from '../db/connection';
 import { SignerService } from './signerService';
+import { getDbGatewayService } from './dbGatewayService';
 
 /**
  * 热钱包管理服务，支持高并发提现场景下的 nonce 管理
@@ -7,6 +8,7 @@ import { SignerService } from './signerService';
 export class HotWalletService {
   private db: DatabaseConnection;
   private signerService: SignerService;
+  private dbGatewayService = getDbGatewayService();
 
   constructor(db: DatabaseConnection) {
     this.db = db;
@@ -45,13 +47,13 @@ export class HotWalletService {
    */
   async markNonceUsed(address: string, chainId: number, usedNonce: number): Promise<void> {
     try {
-      // 原子性更新nonce为已使用的nonce + 1
-      const result = await this.db.atomicIncrementNonce(address, chainId, usedNonce);
-      
+      // 通过 db_gateway API 原子性更新nonce为已使用的nonce + 1
+      const result = await this.dbGatewayService.atomicIncrementNonce(address, chainId, usedNonce);
+
       if (!result.success) {
         throw new Error(`Failed to mark nonce ${usedNonce} as used for wallet ${address} on chain ${chainId}`);
       }
-      
+
       console.log(`✅ Nonce ${usedNonce} 已标记为已使用，下一个nonce: ${result.newNonce}`);
     } catch (error) {
       console.error('标记nonce已使用失败:', error);
@@ -140,15 +142,17 @@ export class HotWalletService {
         throw new Error('签名机返回的地址已存在，请重试');
       }
 
-      // 4. 保存到 wallets 表
-      const walletId = await this.db.createWallet({
-        userId: systemUserId,
+      // 4. 通过 db_gateway API 保存到 wallets 表
+      const wallet = await this.dbGatewayService.createWallet({
+        user_id: systemUserId,
         address,
         device,
         path,
-        chainType: params.chainType,
-        walletType: 'hot'
+        chain_type: params.chainType,
+        wallet_type: 'hot'
       });
+
+      const walletId = wallet.id;
 
       return {
         walletId,
@@ -174,7 +178,7 @@ export class HotWalletService {
    * 同步 nonce 从链上
    */
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
-    return await this.db.syncNonceFromChain(address, chainId, chainNonce);
+    return await this.dbGatewayService.syncNonceFromChain(address, chainId, chainNonce);
   }
 
 }

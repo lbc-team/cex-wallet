@@ -286,6 +286,10 @@ class DatabaseGatewayService {
     // Credits管理
     this.app.post('/api/business/credits', this.businessController.createCredit);
 
+    // Nonce管理
+    this.app.post('/api/business/nonces/atomic-increment', this.businessController.atomicIncrementNonce);
+    this.app.post('/api/business/nonces/sync-from-chain', this.businessController.syncNonceFromChain);
+
     // 区块链数据管理
     this.app.post('/api/business/blocks', this.businessController.insertBlock);
     this.app.get('/api/business/blocks', this.businessController.getBlocks);

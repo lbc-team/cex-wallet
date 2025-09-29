@@ -1,27 +1,29 @@
-import { DatabaseService } from '../db';
+import { DatabaseReader } from '../db';
 import { CreateWalletRequest } from '../db';
 import { SignerService } from './signerService';
 import { BalanceService } from './balanceService';
 import { GasEstimationService } from '../utils/gasEstimation';
 import { HotWalletService } from './hotWalletService';
+import { getDbGatewayService } from './dbGatewayService';
 import { normalizeBigIntString, isBigIntStringGreaterOrEqual } from '../utils/numberUtils';
 import { chainConfigManager, SupportedChain } from '../utils/chains';
 import { type TransactionReceipt } from 'viem';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
-  private dbService: DatabaseService;
+  private dbReader: DatabaseReader;
   private signerService: SignerService;
   private balanceService: BalanceService;
   private gasEstimationService: GasEstimationService;
   private hotWalletService: HotWalletService;
+  private dbGatewayService = getDbGatewayService();
 
-  constructor(dbService: DatabaseService) {
-    this.dbService = dbService;
+  constructor(dbReader: DatabaseReader) {
+    this.dbReader = dbReader;
     this.signerService = new SignerService();
-    this.balanceService = new BalanceService(dbService);
+    this.balanceService = new BalanceService(dbReader);
     this.gasEstimationService = new GasEstimationService();
-    this.hotWalletService = new HotWalletService(dbService.getConnection());
+    this.hotWalletService = new HotWalletService(dbReader.getConnection());
   }
 
 
@@ -78,7 +80,7 @@ export class WalletBusinessService {
           );
 
           // 获取钱包信息以获取用户ID
-          const walletInfo = await this.dbService.getConnection().getWallet(wallet.address);
+          const walletInfo = await this.dbReader.getConnection().getWallet(wallet.address);
           if (!walletInfo || !walletInfo.user_id) {
             continue; // 跳过没有用户ID的钱包
           }
@@ -146,7 +148,7 @@ export class WalletBusinessService {
   }> {
     try {
       // 首先检查用户是否已有钱包
-      const existingWallet = await this.dbService.wallets.findByUserId(userId);
+      const existingWallet = await this.dbReader.wallets.findByUserId(userId);
       if (existingWallet) {
         const responseData = {
           id: existingWallet.id,
@@ -179,7 +181,7 @@ export class WalletBusinessService {
       const walletData = await this.signerService.createWallet(chainType);
 
       // 检查生成的地址是否已被其他用户使用
-      const addressExists = await this.dbService.wallets.findByAddress(walletData.address);
+      const addressExists = await this.dbReader.wallets.findByAddress(walletData.address);
       if (addressExists) {
         return {
           success: false,
@@ -187,16 +189,16 @@ export class WalletBusinessService {
         };
       }
 
-      // 将钱包数据写入数据库
-      const dbWalletData: CreateWalletRequest = {
+      
+      // 通过 db_gateway 服务创建钱包
+      const wallet = await this.dbGatewayService.createWallet({
         user_id: userId,
         address: walletData.address,
         chain_type: walletData.chainType,
         device: walletData.device,
-        path: walletData.path
-      };
-      
-      const wallet = await this.dbService.wallets.create(dbWalletData);
+        path: walletData.path,
+        wallet_type: 'user'
+      });
       
       // 返回给前端的数据，移除 device 字段
       const responseData = {
@@ -266,7 +268,7 @@ export class WalletBusinessService {
     error?: string;
   }> {
     try {
-      const pendingDeposits = await this.dbService.transactions.getUserPendingDepositBalances(userId);
+      const pendingDeposits = await this.dbReader.transactions.getUserPendingDepositBalances(userId);
       return {
         success: true,
         data: pendingDeposits
@@ -375,7 +377,7 @@ export class WalletBusinessService {
       }
 
       // 2. 获取用户钱包地址
-      const wallet = await this.dbService.wallets.findByUserId(params.userId);
+      const wallet = await this.dbReader.wallets.findByUserId(params.userId);
       if (!wallet) {
         return {
           success: false,
@@ -391,7 +393,7 @@ export class WalletBusinessService {
       }
 
       // 3. 查找代币信息
-      const tokenInfo = await this.dbService.getConnection().findTokenBySymbol(params.tokenSymbol, params.chainId);
+      const tokenInfo = await this.dbReader.getConnection().findTokenBySymbol(params.tokenSymbol, params.chainId);
       console.log('🔍 代币信息查询结果:', tokenInfo);
       if (!tokenInfo) {
         return {
@@ -456,14 +458,14 @@ export class WalletBusinessService {
       }
 
       // 9. 创建提现记录（状态：user_withdraw_request）
-      const withdrawId = await this.dbService.getConnection().createWithdraw({
-        userId: params.userId,
-        toAddress: params.to,
-        tokenId: tokenInfo.id,
+      const withdrawId = await this.dbGatewayService.createWithdrawRequest({
+        user_id: params.userId,
+        to_address: params.to,
+        token_id: tokenInfo.id,
         amount: requestedAmountBigInt.toString(),
         fee: withdrawFee,
-        chainId: params.chainId,
-        chainType: params.chainType,
+        chain_id: params.chainId,
+        chain_type: params.chainType,
         status: 'user_withdraw_request'
       });
 
@@ -497,8 +499,8 @@ export class WalletBusinessService {
         hotWallet = walletSelection.wallet!;
         
         // 更新提现状态为 signing（填充 from 地址等信息）
-        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'signing', {
-          fromAddress: hotWallet.address,
+        await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'signing', {
+          from_address: hotWallet.address,
           nonce: hotWallet.nonce
         });
 
@@ -516,8 +518,8 @@ export class WalletBusinessService {
         }
       } catch (error) {
         // 更新提现状态为失败
-        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
-          errorMessage: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
+        await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+          error_message: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
         });
         
         return {
@@ -573,8 +575,8 @@ export class WalletBusinessService {
         console.error('📄 处理后的错误消息:', errorMessage);
         
         // 更新提现状态为失败
-        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
-          errorMessage: `签名失败: ${errorMessage}`
+        await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+          error_message: `签名失败: ${errorMessage}`
         });
         
         return {
@@ -611,8 +613,8 @@ export class WalletBusinessService {
         console.error('发送交易失败:', error);
         
         // 更新提现状态为失败
-        await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
-          errorMessage: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
+        await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+          error_message: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
         });
         
         return {
@@ -622,15 +624,15 @@ export class WalletBusinessService {
       }
 
       // 13. 更新提现状态为 pending，使用实际的交易哈希
-      await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'pending', {
-        txHash: txHash, // 使用发送交易后返回的真实哈希
-        gasPrice: gasEstimation.gasPrice,
-        maxFeePerGas: gasEstimation.maxFeePerGas,
-        maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas
+      await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'pending', {
+        tx_hash: txHash, // 使用发送交易后返回的真实哈希
+        gas_price: gasEstimation.gasPrice,
+        max_fee_per_gas: gasEstimation.maxFeePerGas,
+        max_priority_fee_per_gas: gasEstimation.maxPriorityFeePerGas
       });
 
       // 14. 创建 credit 流水记录（扣除用户余额）
-      await this.dbService.getConnection().createCredit({
+      await this.dbGatewayService.createCredit({
         user_id: params.userId,
         token_id: tokenInfo.id,
         token_symbol: params.tokenSymbol,
@@ -646,7 +648,7 @@ export class WalletBusinessService {
       });
 
       // 15. 创建热钱包 credit 流水记录（热钱包支出）
-      await this.dbService.getConnection().createCredit({
+      await this.dbGatewayService.createCredit({
         user_id: hotWallet.userId,
         token_id: tokenInfo.id,
         token_symbol: params.tokenSymbol,
@@ -683,8 +685,8 @@ export class WalletBusinessService {
       // 如果有 withdrawId，更新提现状态为失败
       if (withdrawId !== undefined) {
         try {
-          await this.dbService.getConnection().updateWithdrawStatus(withdrawId, 'failed', {
-            errorMessage: error instanceof Error ? error.message : '提现失败'
+          await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+            error_message: error instanceof Error ? error.message : '提现失败'
           });
         } catch (updateError) {
           console.error('更新提现状态失败:', updateError);

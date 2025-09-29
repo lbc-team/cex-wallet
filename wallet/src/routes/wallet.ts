@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { DatabaseService } from '../db';
+import { DatabaseReader } from '../db';
 
 import { WalletBusinessService } from '../services/walletBusinessService';
 import { chainConfigManager } from '../utils/chains';
@@ -11,7 +11,7 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
-export function walletRoutes(dbService: DatabaseService): Router {
+export function walletRoutes(dbService: DatabaseReader): Router {
   const router = Router();
   const walletBusinessService = new WalletBusinessService(dbService);
 

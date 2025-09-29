@@ -36,22 +36,6 @@ export class WalletModel {
     this.db = database;
   }
 
-  // 创建新钱包
-  async create(walletData: CreateWalletRequest): Promise<Wallet> {
-    const { user_id, address, device, path, chain_type } = walletData;
-    
-    const result = await this.db.run(
-      'INSERT INTO wallets (user_id, address, device, path, chain_type, wallet_type, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [user_id, address, device, path, chain_type, 'user', 1]
-    );
-
-    const newWallet = await this.findById(result.lastID);
-    if (!newWallet) {
-      throw new Error('创建钱包后无法获取钱包信息');
-    }
-
-    return newWallet;
-  }
 
   // 根据ID查找钱包
   async findById(id: number): Promise<Wallet | null> {
@@ -85,48 +69,6 @@ export class WalletModel {
     return await this.db.query<Wallet>('SELECT * FROM wallets ORDER BY created_at DESC');
   }
 
-
-
-  // 更新钱包信息
-  async update(id: number, updateData: UpdateWalletRequest): Promise<Wallet> {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updateData.balance !== undefined) {
-      fields.push('balance = ?');
-      values.push(updateData.balance);
-    }
-
-    if (fields.length === 0) {
-      throw new Error('没有要更新的字段');
-    }
-
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(id);
-
-    const sql = `UPDATE wallets SET ${fields.join(', ')} WHERE id = ?`;
-    const result = await this.db.run(sql, values);
-
-    if (result.changes === 0) {
-      throw new Error('钱包不存在或更新失败');
-    }
-
-    const updatedWallet = await this.findById(id);
-    if (!updatedWallet) {
-      throw new Error('更新后无法获取钱包信息');
-    }
-
-    return updatedWallet;
-  }
-
-  // 删除钱包
-  async delete(id: number): Promise<void> {
-    const result = await this.db.run('DELETE FROM wallets WHERE id = ?', [id]);
-    
-    if (result.changes === 0) {
-      throw new Error('钱包不存在或删除失败');
-    }
-  }
 
   // 检查钱包是否存在
   async exists(id: number): Promise<boolean> {

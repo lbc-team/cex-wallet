@@ -38,7 +38,7 @@ import { UserModel } from './models/user';
 import { CreditModel } from './models/credit';
 
 // 数据库服务类 - 统一管理所有模型
-export class DatabaseService {
+export class DatabaseReader {
   private connection: DatabaseConnection;
   public users: UserModel;
   public wallets: WalletModel;
@@ -65,20 +65,20 @@ export class DatabaseService {
 }
 
 // 单例数据库服务实例
-let dbService: DatabaseService | null = null;
+let dbService: DatabaseReader | null = null;
 
 // 获取数据库服务实例
-export function getDatabaseService(): DatabaseService {
+export function getDatabaseService(): DatabaseReader {
   if (!dbService) {
     const connection = getDatabase();
-    dbService = new DatabaseService(connection);
+    dbService = new DatabaseReader(connection);
   }
   return dbService;
 }
 
 // 初始化数据库服务
-export async function initDatabaseService(): Promise<DatabaseService> {
+export async function initDatabaseService(): Promise<DatabaseReader> {
   const connection = await initDatabase();
-  dbService = new DatabaseService(connection);
+  dbService = new DatabaseReader(connection);
   return dbService;
 }

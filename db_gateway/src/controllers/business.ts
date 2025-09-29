@@ -634,6 +634,155 @@ export class BusinessController {
     }
   };
 
+  // ========== Nonce 管理 API ==========
+
+  atomicIncrementNonce = async (req: Request, res: Response) => {
+    try {
+      const { address, chain_id, expected_nonce } = req.body;
+
+      if (!address || !chain_id || expected_nonce === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'MISSING_FIELDS', message: 'address, chain_id, and expected_nonce are required' }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      // 获取钱包ID
+      const walletResult = await this.dbService.query(
+        'SELECT id FROM wallets WHERE address = ?',
+        [address]
+      );
+
+      if (walletResult.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'WALLET_NOT_FOUND', message: 'Wallet not found for address' }
+        });
+      }
+
+      const walletId = walletResult[0].id;
+
+      // 原子性更新 nonce
+      const updateResult = await this.dbService.run(`
+        UPDATE wallet_nonces
+        SET nonce = nonce + 1, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE wallet_id = ? AND chain_id = ? AND nonce = ?
+      `, [walletId, chain_id, expected_nonce]);
+
+      if (updateResult.changes === 0) {
+        return res.json({
+          success: false,
+          data: {
+            success: false,
+            newNonce: expected_nonce
+          }
+        });
+      }
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'wallet_nonces',
+        action: 'update',
+        module: 'system',
+        data_before: { wallet_id: walletId, chain_id, nonce: expected_nonce },
+        data_after: { wallet_id: walletId, chain_id, nonce: expected_nonce + 1 },
+        business_signer: 'system',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          success: true,
+          newNonce: expected_nonce + 1
+        }
+      });
+
+    } catch (error) {
+      logger.error('Failed to increment nonce atomically', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'NONCE_INCREMENT_FAILED',
+          message: 'Failed to increment nonce atomically',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  syncNonceFromChain = async (req: Request, res: Response) => {
+    try {
+      const { address, chain_id, chain_nonce } = req.body;
+
+      if (!address || !chain_id || chain_nonce === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'MISSING_FIELDS', message: 'address, chain_id, and chain_nonce are required' }
+        });
+      }
+
+      const operationId = uuidv4();
+
+      // 先尝试更新，如果记录不存在则插入
+      const updateResult = await this.dbService.run(`
+        UPDATE wallet_nonces
+        SET nonce = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE wallet_id = (SELECT id FROM wallets WHERE address = ?)
+        AND chain_id = ?
+      `, [chain_nonce, address, chain_id]);
+
+      let action = 'update';
+
+      // 如果没有更新任何记录，则插入新记录
+      if (updateResult.changes === 0) {
+        await this.dbService.run(`
+          INSERT INTO wallet_nonces (wallet_id, chain_id, nonce, created_at, updated_at)
+          SELECT id, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          FROM wallets WHERE address = ?
+        `, [chain_id, chain_nonce, address]);
+        action = 'insert';
+      }
+
+      await this.auditService.logOperation({
+        operation_id: operationId,
+        operation_type: 'write',
+        table_name: 'wallet_nonces',
+        action: action,
+        module: 'system',
+        data_before: null,
+        data_after: { address, chain_id, chain_nonce },
+        business_signer: 'system',
+        ip_address: req.ip || 'unknown',
+        user_agent: req.get('User-Agent') || 'unknown',
+        timestamp: Date.now(),
+        result: 'success'
+      });
+
+      res.json({
+        success: true,
+        data: { synced: true }
+      });
+
+    } catch (error) {
+      logger.error('Failed to sync nonce from chain', { error });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'NONCE_SYNC_FAILED',
+          message: 'Failed to sync nonce from chain',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
   // ========== 读取数据 API ==========
 
   getUser = async (req: Request, res: Response) => {
