@@ -18,10 +18,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "axios": "^1.12.2",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "sqlite3": "^5.1.7",
+    "tweetnacl": "^1.0.3",
+    "uuid": "^13.0.0",
     "viem": "^2.37.8"
   },
   "devDependencies": {
