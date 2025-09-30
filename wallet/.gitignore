@@ -5,6 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # 环境变量
+.claude/
 .env
 .env.local
 .env.development.local

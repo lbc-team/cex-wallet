@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { GatewayController } from './controllers/gateway';
-import { BusinessController } from './controllers/business';
 import { SignatureMiddleware } from './middleware/signature';
 import { logger } from './utils/logger';
 import { Ed25519Verifier } from './utils/crypto';
@@ -16,14 +15,12 @@ class DatabaseGatewayService {
   private app: express.Application;
   private port: number;
   private gatewayController: GatewayController;
-  private businessController: BusinessController;
   private signatureMiddleware: SignatureMiddleware;
 
   constructor() {
     this.app = express();
     this.port = parseInt(process.env.PORT || '3003');
     this.gatewayController = new GatewayController();
-    this.businessController = new BusinessController();
     this.signatureMiddleware = new SignatureMiddleware();
 
     this.setupMiddleware();
@@ -116,33 +113,6 @@ class DatabaseGatewayService {
       this.signatureMiddleware.checkRiskControlSignature,
       this.gatewayController.executeOperation
     );
-
-    // 审计日志查询API
-    this.app.get('/api/audit/logs',
-      // TODO: 添加管理员认证中间件
-      this.gatewayController.getAuditLogs
-    );
-
-    // 审计日志详情API
-    this.app.get('/api/audit/operation/:operationId', async (req, res) => {
-      try {
-        // TODO: 添加权限验证
-        const operationId = req.params.operationId;
-        // 这里应该调用auditService的方法获取特定操作的详情
-        res.json({
-          success: true,
-          message: 'Operation details endpoint (to be implemented)'
-        });
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'Failed to retrieve operation details'
-          }
-        });
-      }
-    });
 
     // 风控评估API
     this.app.post('/api/risk-control/evaluate', async (req, res) => {
@@ -267,40 +237,6 @@ class DatabaseGatewayService {
       }
     });
 
-    // ========== 业务API路由 ==========
-
-    // 用户管理
-    this.app.post('/api/business/users', this.businessController.createUser);
-    this.app.get('/api/business/users', this.businessController.getUser);
-    this.app.get('/api/business/users/balance', this.businessController.getUserBalance);
-
-    // 钱包管理
-    this.app.post('/api/business/wallets', this.businessController.createWallet);
-    this.app.get('/api/business/wallets', this.businessController.getWallets);
-
-    // 提现管理
-    this.app.post('/api/business/withdraws', this.businessController.createWithdrawRequest);
-    this.app.put('/api/business/withdraws/:withdraw_id', this.businessController.updateWithdrawStatus);
-    this.app.get('/api/business/withdraws', this.businessController.getWithdraws);
-
-    // Credits管理
-    this.app.post('/api/business/credits', this.businessController.createCredit);
-    this.app.put('/api/business/credits/update-by-tx-hash', this.businessController.updateCreditStatusByTxHash);
-
-    // Nonce管理
-    this.app.post('/api/business/nonces/atomic-increment', this.businessController.atomicIncrementNonce);
-    this.app.post('/api/business/nonces/sync-from-chain', this.businessController.syncNonceFromChain);
-
-    // 区块链数据管理
-    this.app.post('/api/business/blocks', this.businessController.insertBlock);
-    this.app.get('/api/business/blocks', this.businessController.getBlocks);
-    this.app.put('/api/business/blocks/update-status', this.businessController.updateBlockStatus);
-    this.app.post('/api/business/transactions', this.businessController.insertTransaction);
-    this.app.get('/api/business/transactions', this.businessController.getTransactions);
-    this.app.get('/api/business/transactions/by-block-hash', this.businessController.getTransactionsByBlockHash);
-    this.app.put('/api/business/transactions/update-status', this.businessController.updateTransactionStatus);
-    this.app.delete('/api/business/transactions/by-block-hash', this.businessController.deleteTransactionsByBlockHash);
-
     // 404 处理
     this.app.use('*', (req, res) => {
       res.status(404).json({
@@ -359,7 +295,6 @@ class DatabaseGatewayService {
 
     try {
       await this.gatewayController.close();
-      await this.businessController.close();
       logger.info('Database connections closed');
 
       logger.close();
