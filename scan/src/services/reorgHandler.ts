@@ -177,7 +177,7 @@ export class ReorgHandler {
       let revertedTransactions = 0;
 
       // 首先删除受影响区块的Credit记录
-      const deletedCredits = await this.dbGatewayService.deleteCreditsByBlockRangeWithSQL(
+      const deletedCredits = await this.dbGatewayService.deleteCreditsByBlockRange(
         commonAncestor + 1,
         currentBlock
       );

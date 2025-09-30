@@ -230,9 +230,8 @@ export class TransactionAnalyzer {
           token_symbol: deposit.tokenSymbol,
           amount: deposit.amount.toString(),
           credit_type: 'deposit',
-          business_type: 'deposit',
-          reference_id: deposit.txHash, // 使用交易哈希作为reference_id
-          reference_type: 'deposit_transaction',
+          business_type: 'blockchain',
+          reference_type: 'blockchain_tx',
           chain_id: tokenInfo.chainId,
           chain_type: tokenInfo.chainType,
           status: 'confirmed', // 初始状态为confirmed
@@ -245,6 +244,7 @@ export class TransactionAnalyzer {
             decimals: decimals,
             logIndex: deposit.logIndex
           }
+          // reference_id 将由 createCredit 自动生成为 ${txHash}_${eventIndex}
         }
       });
     }
@@ -289,9 +289,8 @@ export class TransactionAnalyzer {
         token_symbol: deposit.tokenSymbol,
         amount: deposit.amount.toString(),
         credit_type: 'deposit',
-        business_type: 'deposit',
-        reference_id: deposit.txHash, // 使用交易哈希作为reference_id
-        reference_type: 'deposit_transaction',
+        business_type: 'blockchain',
+        reference_type: 'blockchain_tx',
         chain_id: tokenInfo.chainId,
         chain_type: tokenInfo.chainType,
         status: 'confirmed', // 初始状态为confirmed
@@ -304,6 +303,7 @@ export class TransactionAnalyzer {
           decimals: decimals,
           logIndex: deposit.logIndex
         }
+        // reference_id 将由 createCredit 自动生成为 ${txHash}_${eventIndex}
       });
 
       logger.info('存款处理完成', {

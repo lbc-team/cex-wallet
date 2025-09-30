@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '../services/database';
 import { RiskControlService, RiskAssessment } from '../services/riskControl';
 import { AuthenticatedRequest } from '../middleware/signature';
-import { GatewayResponse, OperationType, DatabaseAction } from '../types';
+import { GatewayResponse, OperationType, DatabaseAction, BatchGatewayResponse } from '../types';
 import { logger } from '../utils/logger';
 
 export class GatewayController {
@@ -244,6 +244,163 @@ export class GatewayController {
 
     return clauses.join(' AND ');
   }
+
+  executeBatchOperation = async (req: AuthenticatedRequest, res: Response) => {
+    const batchRequest = req.batchGatewayRequest!;
+
+    logger.info('Executing batch database operation', {
+      operation_id: batchRequest.operation_id,
+      module: batchRequest.module,
+      operation_type: batchRequest.operation_type,
+      operation_count: batchRequest.operations.length
+    });
+
+    try {
+      // 敏感操作需要风控评估
+      if (batchRequest.operation_type === 'sensitive') {
+        // 对整个批量操作进行风控评估
+        const riskAssessment = await this.riskControlService.assessRisk({
+          operation_id: batchRequest.operation_id,
+          operation_type: batchRequest.operation_type,
+          table: 'batch',
+          action: 'batch',
+          data: { operations: batchRequest.operations },
+          business_signature: batchRequest.business_signature,
+          timestamp: batchRequest.timestamp,
+          module: batchRequest.module
+        } as any);
+
+        logger.info('Risk assessment completed for batch operation', {
+          operation_id: batchRequest.operation_id,
+          risk_level: riskAssessment.risk_level,
+          decision: riskAssessment.decision,
+          risk_score: riskAssessment.risk_score
+        });
+
+        if (riskAssessment.decision === 'deny') {
+          const response: BatchGatewayResponse = {
+            success: false,
+            operation_id: batchRequest.operation_id,
+            error: {
+              code: 'RISK_CONTROL_DENIED',
+              message: 'Batch operation denied by risk control policy',
+              details: {
+                risk_level: riskAssessment.risk_level,
+                risk_score: riskAssessment.risk_score,
+                reasons: riskAssessment.reasons
+              }
+            }
+          };
+
+          res.status(403).json(response);
+          return;
+        }
+
+        if (riskAssessment.decision === 'manual_review') {
+          const response: BatchGatewayResponse = {
+            success: false,
+            operation_id: batchRequest.operation_id,
+            error: {
+              code: 'MANUAL_APPROVAL_REQUIRED',
+              message: 'Batch operation requires manual risk control approval',
+              details: {
+                risk_level: riskAssessment.risk_level,
+                risk_score: riskAssessment.risk_score,
+                required_approvals: riskAssessment.required_approvals,
+                reasons: riskAssessment.reasons,
+                expires_at: riskAssessment.expires_at
+              }
+            }
+          };
+
+          res.status(202).json(response);
+          return;
+        }
+
+        logger.info('Risk control approved, proceeding with batch operation', {
+          operation_id: batchRequest.operation_id
+        });
+      }
+
+      // 在事务中执行所有操作
+      const results = await this.dbService.executeInTransaction(async () => {
+        const operationResults: any[] = [];
+
+        for (const operation of batchRequest.operations) {
+          let result: any;
+
+          switch (operation.action) {
+            case DatabaseAction.SELECT:
+              result = await this.handleSelectOperation({
+                table: operation.table,
+                conditions: operation.conditions,
+                action: operation.action
+              });
+              break;
+            case DatabaseAction.INSERT:
+              result = await this.handleInsertOperation({
+                table: operation.table,
+                data: operation.data,
+                action: operation.action
+              });
+              break;
+            case DatabaseAction.UPDATE:
+              result = await this.handleUpdateOperation({
+                table: operation.table,
+                data: operation.data,
+                conditions: operation.conditions,
+                action: operation.action
+              });
+              break;
+            case DatabaseAction.DELETE:
+              result = await this.handleDeleteOperation({
+                table: operation.table,
+                conditions: operation.conditions,
+                action: operation.action
+              });
+              break;
+            default:
+              throw new Error(`Unsupported database action: ${operation.action}`);
+          }
+
+          operationResults.push(result);
+        }
+
+        return operationResults;
+      });
+
+      const response: BatchGatewayResponse = {
+        success: true,
+        operation_id: batchRequest.operation_id,
+        results: results
+      };
+
+      logger.info('Batch database operation completed successfully', {
+        operation_id: batchRequest.operation_id,
+        operation_count: results.length
+      });
+
+      res.json(response);
+
+    } catch (error) {
+      logger.error('Batch database operation failed', {
+        operation_id: batchRequest.operation_id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+
+      const response: BatchGatewayResponse = {
+        success: false,
+        operation_id: batchRequest.operation_id,
+        error: {
+          code: 'BATCH_OPERATION_FAILED',
+          message: 'Batch database operation failed',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      };
+
+      res.status(500).json(response);
+    }
+  };
 
   async close() {
     await this.dbService.close();

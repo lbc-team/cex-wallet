@@ -172,7 +172,7 @@ export class ConfirmationManager {
       }
 
       // 更新确认数
-      await this.dbGatewayService.updateTransactionConfirmationWithSQL(tx.tx_hash, confirmations);
+      await this.dbGatewayService.updateTransactionConfirmation(tx.tx_hash, confirmations);
 
     } catch (error) {
       logger.error('基于确认数更新交易状态失败', { 

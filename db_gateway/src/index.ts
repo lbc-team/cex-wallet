@@ -114,6 +114,13 @@ class DatabaseGatewayService {
       this.gatewayController.executeOperation
     );
 
+    // 批量数据库操作API（支持事务）
+    this.app.post('/api/database/batch',
+      this.signatureMiddleware.validateBatchRequest,
+      this.signatureMiddleware.verifyBatchBusinessSignature,
+      this.gatewayController.executeBatchOperation
+    );
+
     // 风控评估API
     this.app.post('/api/risk-control/evaluate', async (req, res) => {
       try {

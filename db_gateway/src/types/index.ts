@@ -20,7 +20,35 @@ export interface GatewayResponse {
     message: string;
     details?: any;
   };
-  audit_log_id: string;
+  audit_log_id?: string;
+}
+
+export interface BatchOperation {
+  table: string;
+  action: 'select' | 'insert' | 'update' | 'delete';
+  data?: any;
+  conditions?: any;
+}
+
+export interface BatchGatewayRequest {
+  operation_id: string;
+  operation_type: 'read' | 'write' | 'sensitive';
+  operations: BatchOperation[];
+  business_signature: string;
+  risk_control_signature?: string;
+  timestamp: number;
+  module: 'wallet' | 'scan';
+}
+
+export interface BatchGatewayResponse {
+  success: boolean;
+  operation_id: string;
+  results?: any[];
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
 }
 
 export interface SignaturePayload {
