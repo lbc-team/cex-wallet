@@ -340,56 +340,6 @@ export function walletRoutes(dbService: DatabaseReader): Router {
     }
   });
 
-  // 更新提现状态 
-  router.put('/withdraws/:withdrawId/status', async (req: Request<{ withdrawId: string }>, res: Response) => {
-    const withdrawId = parseInt(req.params.withdrawId, 10);
-    const { status, txHash, gasUsed, errorMessage } = req.body;
-    
-    if (isNaN(withdrawId)) {
-      const errorResponse: ApiResponse = { error: '无效的提现ID' };
-      res.status(400).json(errorResponse);
-      return;
-    }
-
-    if (!status) {
-      const errorResponse: ApiResponse = { error: '状态是必需的' };
-      res.status(400).json(errorResponse);
-      return;
-    }
-
-    // 验证状态值
-    const validStatuses = ['user_withdraw_request', 'signing', 'pending', 'processing', 'confirmed', 'failed'];
-    if (!validStatuses.includes(status)) {
-      const errorResponse: ApiResponse = { 
-        error: `无效的状态值，支持的状态: ${validStatuses.join(', ')}` 
-      };
-      res.status(400).json(errorResponse);
-      return;
-    }
-
-    try {
-      await dbService.getConnection().updateWithdrawStatus(withdrawId, status, {
-        txHash,
-        gasUsed,
-        errorMessage
-      });
-      
-      const response: ApiResponse = {
-        message: '更新提现状态成功',
-        data: {
-          withdrawId,
-          status
-        }
-      };
-      
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '更新提现状态失败' 
-      };
-      res.status(500).json(errorResponse);
-    }
-  });
 
   // 获取网络状态和 Gas 信息
   router.get('/network/status', async (req: Request, res: Response) => {

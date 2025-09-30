@@ -7,7 +7,7 @@ export class DatabaseConnection {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || path.join(__dirname, '../../wallet.db');
+    this.dbPath = dbPath || path.join(__dirname, '../wallet.db');
   }
 
   // 连接数据库

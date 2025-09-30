@@ -105,6 +105,122 @@ export class DbGatewayService {
   }
 
   /**
+   * 创建用户
+   */
+  async createUser(params: {
+    username: string;
+    email?: string;
+    phone?: string;
+    password_hash?: string;
+    user_type?: string;
+    status?: number;
+    kyc_status?: number;
+  }): Promise<{
+    id?: number;
+    username: string;
+    email?: string;
+    user_type: string;
+  }> {
+    try {
+      const data = {
+        username: params.username,
+        email: params.email || null,
+        phone: params.phone || null,
+        password_hash: params.password_hash || null,
+        user_type: params.user_type || 'normal',
+        status: params.status !== undefined ? params.status : 1,
+        kyc_status: params.kyc_status !== undefined ? params.kyc_status : 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const result = await this.executeOperation('users', 'insert', 'write', data);
+
+      return {
+        id: result.lastID,
+        username: params.username,
+        email: params.email,
+        user_type: params.user_type || 'normal'
+      };
+    } catch (error) {
+      throw new Error(`创建用户失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  /**
+   * 查询用户
+   */
+  async getUsers(conditions: {
+    id?: number;
+    username?: string;
+    email?: string;
+    user_type?: string;
+  }): Promise<any[]> {
+    try {
+      const result = await this.executeOperation('users', 'select', 'read', undefined, conditions);
+      return result || [];
+    } catch (error) {
+      throw new Error(`查询用户失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  /**
+   * 创建代币配置
+   */
+  async createToken(params: {
+    chain_type: string;
+    chain_id: number;
+    token_address?: string;
+    token_symbol: string;
+    token_name?: string;
+    decimals?: number;
+    is_native?: boolean;
+    collect_amount?: string;
+    withdraw_fee?: string;
+    min_withdraw_amount?: string;
+    status?: number;
+  }): Promise<number> {
+    try {
+      const data = {
+        chain_type: params.chain_type,
+        chain_id: params.chain_id,
+        token_address: params.token_address || null,
+        token_symbol: params.token_symbol,
+        token_name: params.token_name || null,
+        decimals: params.decimals !== undefined ? params.decimals : 18,
+        is_native: params.is_native ? 1 : 0,
+        collect_amount: params.collect_amount || '0',
+        withdraw_fee: params.withdraw_fee || '0',
+        min_withdraw_amount: params.min_withdraw_amount || '0',
+        status: params.status !== undefined ? params.status : 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const result = await this.executeOperation('tokens', 'insert', 'write', data);
+      return result.lastID;
+    } catch (error) {
+      throw new Error(`创建代币配置失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  /**
+   * 查询代币配置
+   */
+  async getTokens(conditions: {
+    chain_id?: number;
+    token_symbol?: string;
+    token_address?: string;
+  }): Promise<any[]> {
+    try {
+      const result = await this.executeOperation('tokens', 'select', 'read', undefined, conditions);
+      return result || [];
+    } catch (error) {
+      throw new Error(`查询代币配置失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  /**
    * 创建钱包
    */
   async createWallet(params: {
