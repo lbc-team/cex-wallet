@@ -1,6 +1,7 @@
+import 'dotenv/config';
 import { getDbGatewayService } from '../services/dbGatewayService';
 import { HotWalletService } from '../services/hotWalletService';
-import { getDatabase } from '../../../db_gateway/src/db/connection';
+import { getDatabase } from '../db/connection';
 
 // 简单的日志函数
 const logger = {
@@ -203,10 +204,10 @@ async function insertMockData() {
     const tokens = await dbGateway.getTokens({ chain_id: 31337 });
     logger.info('本地测试网络代币:', { count: tokens.length, tokens });
 
-    const users = await dbGateway.getUsers({});
+    const users = await dbGateway.getUsers({ user_type: 'normal' });
     logger.info('用户数据:', { count: users.length });
 
-    const wallets = await dbGateway.getWallets({});
+    const wallets = await dbGateway.getWallets({ user_id: 1 });
     logger.info('钱包数据:', { count: wallets.length });
 
     process.exit(0);

@@ -7,7 +7,7 @@ export class DatabaseConnection {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || path.join(__dirname, '../../../../db_gateway/wallet.db');
+    this.dbPath = dbPath || path.join(__dirname, '../../../db_gateway/wallet.db');
   }
 
   // 连接数据库
@@ -19,6 +19,7 @@ export class DatabaseConnection {
           reject(err);
         } else {
           console.log('已连接到SQLite数据库');
+          resolve();
         }
       });
     });

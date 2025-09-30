@@ -136,12 +136,22 @@ export class DbGatewayService {
 
       const result = await this.executeOperation('users', 'insert', 'write', data);
 
-      return {
+      const returnValue: {
+        id?: number;
+        username: string;
+        email?: string;
+        user_type: string;
+      } = {
         id: result.lastID,
         username: params.username,
-        email: params.email,
         user_type: params.user_type || 'normal'
       };
+      
+      if (params.email !== undefined) {
+        returnValue.email = params.email;
+      }
+      
+      return returnValue;
     } catch (error) {
       throw new Error(`创建用户失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
@@ -254,16 +264,30 @@ export class DbGatewayService {
 
       const result = await this.executeOperation('wallets', 'insert', 'write', data);
 
-      return {
+      const returnValue: {
+        id?: number;
+        user_id: number;
+        address: string;
+        chain_type: string;
+        wallet_type?: string;
+        path?: string;
+        created_at?: string;
+        updated_at?: string;
+      } = {
         id: result.lastID,
         user_id: params.user_id,
         address: params.address,
         chain_type: params.chain_type,
         wallet_type: params.wallet_type || 'user',
-        path: params.path,
         created_at: data.created_at,
         updated_at: data.updated_at
       };
+      
+      if (params.path !== undefined) {
+        returnValue.path = params.path;
+      }
+      
+      return returnValue;
     } catch (error) {
       throw new Error(`创建钱包失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
