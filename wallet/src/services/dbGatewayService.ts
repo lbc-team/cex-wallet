@@ -9,7 +9,7 @@ interface GatewayRequest {
   data?: any;
   conditions?: any;
   business_signature: string;
-  risk_control_signature?: string;
+  risk_signature?: string;
   timestamp: number;
 }
 
@@ -46,9 +46,30 @@ export class DbGatewayService {
   ): Promise<any> {
     try {
       const operationId = uuidv4();
-      const timestamp = Date.now();
+      const timestamp = Date.now();  // 业务层生成 timestamp
+      let riskSignature: string | undefined;
 
-      // 创建签名payload
+      // 如果是敏感操作，先请求风控评估
+      if (operationType === 'sensitive') {
+        const riskResult = await this.requestRiskAssessment({
+          operation_id: operationId,
+          operation_type: operationType,
+          table,
+          action,
+          data,
+          conditions,
+          timestamp  // 传递业务层的 timestamp 给风控
+        });
+
+        // 使用风控返回的签名（风控使用相同的 timestamp 签名）
+        riskSignature = riskResult.risk_signature;
+
+        // 如果风控修改了数据（如冻结状态），使用风控返回的数据
+        if (riskResult.db_operation?.data) {
+          data = riskResult.db_operation.data;
+        }
+      }
+
       const signaturePayload: SignaturePayload = {
         operation_id: operationId,
         operation_type: operationType,
@@ -59,10 +80,9 @@ export class DbGatewayService {
         timestamp
       };
 
-      // 生成签名
+      // 生成业务签名
       const signature = this.signer.sign(signaturePayload);
 
-      // 构建请求
       const gatewayRequest: GatewayRequest = {
         operation_id: operationId,
         operation_type: operationType,
@@ -71,6 +91,7 @@ export class DbGatewayService {
         data,
         conditions,
         business_signature: signature,
+        risk_signature: riskSignature,
         timestamp
       };
 
@@ -554,7 +575,8 @@ export class DbGatewayService {
         updated_at: new Date().toISOString()
       };
 
-      const result = await this.executeOperation('credits', 'insert', 'write', data);
+      // credits 表的插入操作是敏感操作，需要风控评估
+      const result = await this.executeOperation('credits', 'insert', 'sensitive', data);
       return result.lastID;
     } catch (error) {
       throw new Error(`创建credit记录失败: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -662,6 +684,98 @@ export class DbGatewayService {
       console.error(`删除Credit记录失败 (startBlock: ${startBlock}, endBlock: ${endBlock}):`, error);
       return 0;
     }
+  }
+
+  /**
+   * 请求风控评估
+   * @param params 风控评估参数
+   * @returns 风控评估结果
+   */
+  private async requestRiskAssessment(params: {
+    operation_id: string;
+    operation_type: 'read' | 'write' | 'sensitive';
+    table: string;
+    action: 'select' | 'insert' | 'update' | 'delete';
+    data?: any;
+    conditions?: any;
+    timestamp: number;  // 业务层生成的时间戳
+  }): Promise<{
+    success: boolean;
+    decision: string;
+    risk_signature: string;
+    timestamp: number;  // 风控层返回相同的 timestamp
+    db_operation?: {
+      table: string;
+      action: string;
+      data?: any;
+      conditions?: any;
+    };
+    reasons?: string[];
+  }> {
+    const riskControlUrl = process.env.RISK_CONTROL_URL || 'http://localhost:3004';
+
+    const riskRequest = {
+      operation_id: params.operation_id,
+      operation_type: params.operation_type,
+      table: params.table,
+      action: params.action,
+      data: params.data,
+      conditions: params.conditions,
+      timestamp: params.timestamp,  // 传递业务层生成的 timestamp
+      // 使用 context 传递风控相关信息，更灵活
+      context: this.extractRiskContext(params.table, params.action, params.data)
+    };
+
+    // 请求风控评估
+    const riskResponse = await fetch(`${riskControlUrl}/api/assess`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(riskRequest)
+    });
+
+    if (!riskResponse.ok) {
+      const errorData = await riskResponse.json().catch(() => ({}));
+      throw new Error(`风控评估失败: ${riskResponse.status} - ${errorData.error?.message || '评估失败'}`);
+    }
+
+    const riskResult = await riskResponse.json();
+
+    if (!riskResult.success) {
+      throw new Error(`风控评估被拒绝: ${riskResult.decision} - ${riskResult.reasons?.join(', ') || '未通过风控'}`);
+    }
+
+    return riskResult;
+  }
+
+  /**
+   * 提取风控上下文信息
+   * 根据不同的表和操作类型，提取相关的风控字段
+   */
+  private extractRiskContext(table: string, action: string, data?: any): Record<string, any> {
+    if (!data) return {};
+
+    const context: Record<string, any> = {};
+
+    // 根据表类型提取不同的字段
+    if (table === 'credits') {
+      // 充值/提现/转账相关字段
+      if (data.user_id) context.user_id = data.user_id;
+      if (data.amount) context.amount = data.amount;
+      if (data.credit_type) context.credit_type = data.credit_type;
+      if (data.address) context.from_address = data.address;  // 用户地址作为from_address
+      if (data.business_type) context.business_type = data.business_type;
+    } else if (table === 'withdraws') {
+      // 提现请求相关字段
+      if (data.user_id) context.user_id = data.user_id;
+      if (data.amount) context.amount = data.amount;
+      if (data.to_address) context.to_address = data.to_address;
+      if (data.from_address) context.from_address = data.from_address;
+      context.credit_type = 'withdraw';
+    }
+
+    return context;
   }
 }
 
