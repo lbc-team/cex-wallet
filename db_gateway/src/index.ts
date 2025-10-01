@@ -99,7 +99,7 @@ class DatabaseGatewayService {
     this.app.post('/api/database/execute',
       this.signatureMiddleware.validateRequest,
       this.signatureMiddleware.verifyBusinessSignature,
-      this.signatureMiddleware.checkRiskControlSignature,
+      this.signatureMiddleware.verifyRiskControlSignature,
       this.gatewayController.executeOperation
     );
 
@@ -107,6 +107,7 @@ class DatabaseGatewayService {
     this.app.post('/api/database/batch',
       this.signatureMiddleware.validateBatchRequest,
       this.signatureMiddleware.verifyBatchBusinessSignature,
+      this.signatureMiddleware.verifyBatchRiskControlSignature,
       this.gatewayController.executeBatchOperation
     );
 

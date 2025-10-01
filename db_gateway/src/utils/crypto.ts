@@ -61,11 +61,13 @@ export class Ed25519Verifier {
    * 验证签名并自动识别签名者
    * @param payload 签名负载
    * @param signature 签名（十六进制字符串）
+   * @param expectedSigner 可选：预期的签名者。如果指定，则只验证该签名者的公钥（用于风控签名验证）
    * @returns { valid: boolean, signer?: string } 验证结果和签名者
    */
   public verifySignature(
     payload: SignaturePayload,
-    signature: string
+    signature: string,
+    expectedSigner?: string
   ): { valid: boolean; signer?: string } {
     try {
       // 创建签名payload
@@ -75,7 +77,29 @@ export class Ed25519Verifier {
       // 解析签名
       const signatureBytes = this.hexToUint8Array(signature);
 
-      // 尝试所有已知的公钥 TODO: 根据 IP 地址判断可用的公钥
+      // 如果指定了预期签名者，只验证该公钥
+      if (expectedSigner) {
+        const publicKey = this.modulePublicKeys.get(expectedSigner);
+        if (!publicKey) {
+          console.warn(`Expected signer ${expectedSigner} not found in public keys`);
+          return { valid: false };
+        }
+
+        const isValid = nacl.sign.detached.verify(message, signatureBytes, publicKey);
+
+        if (isValid) {
+          console.log(`Signature verified successfully, signer: ${expectedSigner}`, {
+            payload: messageString,
+            signature: signature.substring(0, 16) + '...'
+          });
+          return { valid: true, signer: expectedSigner };
+        } else {
+          console.warn(`Signature verification failed for expected signer: ${expectedSigner}`);
+          return { valid: false };
+        }
+      }
+
+      // 未指定预期签名者，尝试所有已知的公钥
       for (const [moduleName, publicKey] of this.modulePublicKeys.entries()) {
         const isValid = nacl.sign.detached.verify(message, signatureBytes, publicKey);
 

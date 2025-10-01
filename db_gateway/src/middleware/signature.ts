@@ -21,7 +21,7 @@ export class SignatureMiddleware {
     this.operationIdService = new OperationIdService(dbService);
   }
 
-  validateRequest = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  validateRequest = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const gatewayRequest = req.body as GatewayRequest;
 
@@ -76,6 +76,27 @@ export class SignatureMiddleware {
             code: 'TIMESTAMP_EXPIRED',
             message: 'Request timestamp is too old or too far in the future',
             details: `Time difference: ${timeDiff}ms, max allowed: ${maxTimeDiff}ms`
+          }
+        });
+      }
+
+      // 验证operation_id作为nonce（防重放攻击）
+      const isOperationIdValid = await this.operationIdService.validateAndRecordOperationId(
+        gatewayRequest.operation_id,
+        gatewayRequest.timestamp
+      );
+
+      if (!isOperationIdValid) {
+        logger.warn('Operation ID validation failed - possible replay attack', {
+          operation_id: gatewayRequest.operation_id
+        });
+
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_OPERATION_ID',
+            message: 'Operation ID has already been used',
+            details: 'This operation_id has already been used. Possible replay attack detected.'
           }
         });
       }
@@ -152,7 +173,7 @@ export class SignatureMiddleware {
     }
   };
 
-  checkRiskControlSignature = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  verifyRiskControlSignature = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const gatewayRequest = req.gatewayRequest!;
       const signaturePayload = req.signaturePayload!;
@@ -189,28 +210,7 @@ export class SignatureMiddleware {
           });
         }
 
-        // 3. 验证operation_id作为nonce（防重放攻击）
-        const isOperationIdValid = await this.operationIdService.validateAndRecordOperationId(
-          gatewayRequest.operation_id,
-          gatewayRequest.timestamp
-        );
-
-        if (!isOperationIdValid) {
-          logger.warn('Operation ID validation failed - possible replay attack', {
-            operation_id: gatewayRequest.operation_id
-          });
-
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'DUPLICATE_OPERATION_ID',
-              message: 'Operation ID has already been used',
-              details: 'This operation_id has already been used. Possible replay attack detected.'
-            }
-          });
-        }
-
-        // 4. 创建签名负载
+        // 3. 创建签名负载
         const riskSignaturePayload: SignaturePayload = {
           operation_id: gatewayRequest.operation_id,
           operation_type: gatewayRequest.operation_type,
@@ -221,18 +221,18 @@ export class SignatureMiddleware {
           timestamp: gatewayRequest.timestamp
         };
 
-        // 5. 验证风控签名（自动识别签名者）
+        // 4. 验证风控签名（指定 risk 签名者）
         const riskVerificationResult = this.verifier.verifySignature(
           riskSignaturePayload,
-          gatewayRequest.risk_signature
+          gatewayRequest.risk_signature,
+          'risk'  // 指定预期签名者为 risk，避免遍历所有公钥
         );
 
-        if (!riskVerificationResult.valid || riskVerificationResult.signer !== 'risk') {
+        if (!riskVerificationResult.valid) {
           logger.warn('Risk control signature verification failed', {
             operation_id: gatewayRequest.operation_id,
             table: gatewayRequest.table,
-            action: gatewayRequest.action,
-            signer: riskVerificationResult.signer
+            action: gatewayRequest.action
           });
 
           return res.status(401).json({
@@ -240,9 +240,7 @@ export class SignatureMiddleware {
             error: {
               code: 'RISK_SIGNATURE_VERIFICATION_FAILED',
               message: 'Risk control signature verification failed',
-              details: riskVerificationResult.signer
-                ? `Signature is valid but from wrong signer: ${riskVerificationResult.signer}`
-                : 'The provided risk signature is invalid'
+              details: 'The provided risk signature is invalid'
             }
           });
         }
@@ -267,7 +265,7 @@ export class SignatureMiddleware {
     }
   };
 
-  validateBatchRequest = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  validateBatchRequest = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const batchRequest = req.body as BatchGatewayRequest;
 
@@ -342,6 +340,27 @@ export class SignatureMiddleware {
         });
       }
 
+      // 验证operation_id作为nonce（防重放攻击）
+      const isOperationIdValid = await this.operationIdService.validateAndRecordOperationId(
+        batchRequest.operation_id,
+        batchRequest.timestamp
+      );
+
+      if (!isOperationIdValid) {
+        logger.warn('Operation ID validation failed - possible replay attack', {
+          operation_id: batchRequest.operation_id
+        });
+
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_OPERATION_ID',
+            message: 'Operation ID has already been used',
+            details: 'This operation_id has already been used. Possible replay attack detected.'
+          }
+        });
+      }
+
       req.batchGatewayRequest = batchRequest;
       next();
     } catch (error) {
@@ -357,11 +376,11 @@ export class SignatureMiddleware {
     }
   };
 
-  verifyBatchBusinessSignature = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  verifyBatchBusinessSignature = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const batchRequest = req.batchGatewayRequest!;
 
-      // 创建签名负载 
+      // 创建签名负载
       const signaturePayload: any = {
         operation_id: batchRequest.operation_id,
         operation_type: batchRequest.operation_type,
@@ -405,6 +424,93 @@ export class SignatureMiddleware {
         error: {
           code: 'BATCH_SIGNATURE_VERIFICATION_ERROR',
           message: 'Failed to verify batch signature',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+  };
+
+  verifyBatchRiskControlSignature = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const batchRequest = req.batchGatewayRequest!;
+
+      // 检查是否需要风控签名（敏感操作）
+      if (batchRequest.operation_type === 'sensitive') {
+        // 1. 验证必需字段 - 敏感操作必须有风控签名
+        if (!batchRequest.risk_signature) {
+          logger.error('Missing risk signature for sensitive batch operation', {
+            operation_id: batchRequest.operation_id,
+            operation_count: batchRequest.operations.length
+          });
+
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'MISSING_RISK_SIGNATURE',
+              message: 'Risk signature is required for sensitive batch operations',
+              details: 'Sensitive operations must include risk_signature field'
+            }
+          });
+        }
+
+        // 2. 检查风控系统是否有配置的公钥
+        if (!this.verifier.hasPublicKey('risk')) {
+          return res.status(500).json({
+            success: false,
+            error: {
+              code: 'NO_RISK_PUBLIC_KEY',
+              message: 'No public key configured for risk control system',
+              details: 'Risk control public key must be configured in environment variables'
+            }
+          });
+        }
+
+        // 3. 创建签名负载（批量操作）
+        const riskSignaturePayload: any = {
+          operation_id: batchRequest.operation_id,
+          operation_type: batchRequest.operation_type,
+          operations: batchRequest.operations,
+          timestamp: batchRequest.timestamp
+        };
+
+        // 4. 验证风控签名（指定 risk 签名者）
+        const riskVerificationResult = this.verifier.verifySignature(
+          riskSignaturePayload as any,
+          batchRequest.risk_signature,
+          'risk'  // 指定预期签名者为 risk，避免遍历所有公钥
+        );
+
+        if (!riskVerificationResult.valid) {
+          logger.warn('Risk control signature verification failed for batch operation', {
+            operation_id: batchRequest.operation_id,
+            operation_count: batchRequest.operations.length
+          });
+
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: 'RISK_SIGNATURE_VERIFICATION_FAILED',
+              message: 'Risk control signature verification failed',
+              details: 'The provided risk signature is invalid'
+            }
+          });
+        }
+
+        logger.info('Risk control signature verified successfully for batch operation', {
+          operation_id: batchRequest.operation_id,
+          signer: riskVerificationResult.signer,
+          operation_count: batchRequest.operations.length
+        });
+      }
+
+      next();
+    } catch (error) {
+      logger.error('Batch risk control verification error', { error, operation_id: req.batchGatewayRequest?.operation_id });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'RISK_CONTROL_VERIFICATION_ERROR',
+          message: 'Failed to verify risk control signature for batch operation',
           details: error instanceof Error ? error.message : 'Unknown error'
         }
       });
