@@ -1,22 +1,20 @@
 // 风控评估请求
 export interface RiskAssessmentRequest {
   operation_id: string;  // 由业务层生成的唯一操作ID
-  event_type: 'deposit' | 'withdraw' | 'transfer' | 'other';
   operation_type: 'read' | 'write' | 'sensitive';
   table: string;
   action: 'select' | 'insert' | 'update' | 'delete';
   data?: any;
   conditions?: any;
-  module: 'wallet' | 'scan';
+  timestamp: number;  // 由业务层生成的时间戳，确保业务签名和风控签名使用相同的时间戳
 
-  // 业务相关信息（用于风控决策）
-  user_id?: number;
-  amount?: string;
-  from_address?: string;
-  to_address?: string;
-  tx_hash?: string;
-  token_id?: number;
-  metadata?: any;
+  // 业务上下文（用于风控决策）- 灵活的key-value结构
+  // 不同业务场景可以传入不同的字段，风控系统根据需要提取
+  // 推荐字段：
+  // - credit_type: 'deposit' | 'withdraw' | 'transfer' (用于 credits 表)
+  // - business_type: 更细粒度的业务类型描述
+  // - user_id, amount, from_address, to_address 等业务字段
+  context?: Record<string, any>;
 }
 
 // 风控决策类型
@@ -38,7 +36,7 @@ export interface RiskAssessmentResponse {
 
   // 风控签名
   risk_signature: string;
-  timestamp: number;
+  timestamp: number;  // 原样返回业务层传入的 timestamp
 
   // 风控评估详情
   risk_level?: 'low' | 'medium' | 'high' | 'critical';
@@ -62,7 +60,6 @@ export interface SignaturePayload {
   data?: any;
   conditions?: any;
   timestamp: number;
-  module: string;
 }
 
 // 黑名单地址（模拟）

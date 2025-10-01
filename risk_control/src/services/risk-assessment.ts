@@ -38,16 +38,15 @@ export class RiskAssessmentService {
   async assessRisk(request: RiskAssessmentRequest): Promise<RiskAssessmentResponse> {
     logger.info('Assessing risk for operation', {
       operation_id: request.operation_id,
-      event_type: request.event_type,
-      module: request.module,
       table: request.table,
-      action: request.action
+      action: request.action,
+      context: request.context
     });
 
     try {
-      // 1. 使用业务层传入的 operation_id
+      // 1. 使用业务层传入的 operation_id 和 timestamp
       const operation_id = request.operation_id;
-      const timestamp = Date.now();
+      const timestamp = request.timestamp;  // 使用业务层传入的 timestamp
 
       // 2. 执行风控规则检查
       const riskCheck = this.checkRiskRules(request);
@@ -88,8 +87,7 @@ export class RiskAssessmentService {
         action: dbOperation.action,
         data: dbOperation.data,
         conditions: dbOperation.conditions,
-        timestamp,
-        module: request.module
+        timestamp
       };
 
       // 6. 对操作进行签名
@@ -134,36 +132,41 @@ export class RiskAssessmentService {
   } {
     const reasons: string[] = [];
     let risk_score = 0;
+    const ctx = request.context || {};
 
     // 规则1: 检查黑名单地址
-    if (request.from_address && this.blacklistAddresses.has(request.from_address.toLowerCase())) {
-      const blacklistInfo = this.blacklistAddresses.get(request.from_address.toLowerCase())!;
+    const fromAddress = ctx.from_address || request.data?.from_address;
+    if (fromAddress && this.blacklistAddresses.has(fromAddress.toLowerCase())) {
+      const blacklistInfo = this.blacklistAddresses.get(fromAddress.toLowerCase())!;
       reasons.push(`From address is blacklisted: ${blacklistInfo.reason}`);
       risk_score += 100;
     }
 
-    if (request.to_address && this.blacklistAddresses.has(request.to_address.toLowerCase())) {
-      const blacklistInfo = this.blacklistAddresses.get(request.to_address.toLowerCase())!;
+    const toAddress = ctx.to_address || request.data?.to_address;
+    if (toAddress && this.blacklistAddresses.has(toAddress.toLowerCase())) {
+      const blacklistInfo = this.blacklistAddresses.get(toAddress.toLowerCase())!;
       reasons.push(`To address is blacklisted: ${blacklistInfo.reason}`);
       risk_score += 100;
     }
 
     // 规则2: 检查高风险用户
-    if (request.user_id && this.highRiskUsers.has(request.user_id)) {
+    const userId = ctx.user_id || request.data?.user_id;
+    if (userId && this.highRiskUsers.has(userId)) {
       reasons.push('User is marked as high risk');
       risk_score += 50;
     }
 
     // 规则3: 检查大额交易
-    if (request.amount) {
+    const amount = ctx.amount || request.data?.amount;
+    if (amount) {
       try {
-        const amount = BigInt(request.amount);
-        if (amount > this.LARGE_AMOUNT_THRESHOLD) {
-          reasons.push(`Large amount transaction: ${request.amount}`);
+        const amountBigInt = BigInt(amount);
+        if (amountBigInt > this.LARGE_AMOUNT_THRESHOLD) {
+          reasons.push(`Large amount transaction: ${amount}`);
           risk_score += 30;
         }
       } catch (error) {
-        logger.warn('Failed to parse amount', { amount: request.amount });
+        logger.warn('Failed to parse amount', { amount });
       }
     }
 
@@ -172,8 +175,9 @@ export class RiskAssessmentService {
       risk_score += 20;
     }
 
-    // 规则5: 提现操作加分
-    if (request.event_type === 'withdraw') {
+    // 规则5: 提现操作加分（从 context 中读取）
+    const creditType = ctx.credit_type || request.data?.credit_type;
+    if (creditType === 'withdraw') {
       risk_score += 10;
     }
 
@@ -249,7 +253,9 @@ export class RiskAssessmentService {
     }
 
     // 如果是批准决策，确保 status 正确
-    if (decision === 'approve' && dbOperation.data && request.event_type === 'deposit') {
+    const ctx = request.context || {};
+    const creditType = ctx.credit_type || request.data?.credit_type;
+    if (decision === 'approve' && dbOperation.data && creditType === 'deposit') {
       dbOperation.data.status = dbOperation.data.status || 'confirmed';
       dbOperation.data.credit_type = 'deposit';
     }

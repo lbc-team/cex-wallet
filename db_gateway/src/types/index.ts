@@ -8,7 +8,6 @@ export interface GatewayRequest {
   business_signature: string;
   risk_signature?: string;  // 风控签名（敏感操作必需）
   timestamp: number;
-  module: 'wallet' | 'scan';
 }
 
 export interface GatewayResponse {
@@ -37,7 +36,6 @@ export interface BatchGatewayRequest {
   business_signature: string;
   risk_signature?: string;  // 风控签名（敏感操作必需）
   timestamp: number;
-  module: 'wallet' | 'scan';
 }
 
 export interface BatchGatewayResponse {
@@ -59,27 +57,8 @@ export interface SignaturePayload {
   data?: any;
   conditions?: any;
   timestamp: number;
-  module: string;
 }
 
-export interface AuditLog {
-  id: string;
-  operation_id: string;
-  operation_type: string;
-  table_name: string;
-  action: string;
-  module: string;
-  data_before?: any;
-  data_after?: any;
-  business_signer: string;
-  risk_control_signer?: string;
-  ip_address: string;
-  user_agent: string;
-  timestamp: number;
-  result: 'success' | 'failed';
-  error_message?: string;
-  created_at: Date;
-}
 
 export interface ModulePublicKeys {
   wallet: string;

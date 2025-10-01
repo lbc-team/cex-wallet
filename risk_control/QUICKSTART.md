@@ -97,7 +97,6 @@ curl -X POST http://localhost:3004/api/assess \
     "operation_type": "sensitive",
     "table": "credits",
     "action": "insert",
-    "module": "scan",
     "user_id": 123,
     "amount": "1000000000000000000",
     "from_address": "0x1234567890abcdef",
@@ -136,7 +135,6 @@ curl -X POST http://localhost:3004/api/assess \
     "operation_type": "sensitive",
     "table": "credits",
     "action": "insert",
-    "module": "scan",
     "user_id": 123,
     "amount": "1000000000000000000",
     "from_address": "0xBlacklistAddress",
@@ -193,7 +191,6 @@ const riskResponse = await fetch('http://localhost:3004/api/assess', {
     operation_type: 'sensitive',
     table: 'credits',
     action: 'insert',
-    module: 'scan',
     user_id: deposit.user_id,
     amount: deposit.amount,
     from_address: deposit.from_address,
@@ -219,7 +216,6 @@ const gatewayRequest = {
   data: riskResponse.db_operation.data,
   timestamp: riskResponse.timestamp,
   risk_signature: riskResponse.risk_signature,  // 风控签名
-  module: 'scan'
 };
 
 // 4. 添加业务签名
@@ -230,8 +226,7 @@ const signaturePayload = {
   action: gatewayRequest.action,
   data: gatewayRequest.data,
   conditions: null,
-  timestamp: gatewayRequest.timestamp,
-  module: 'scan'
+  timestamp: gatewayRequest.timestamp
 };
 
 const business_signature = signer.sign(signaturePayload);

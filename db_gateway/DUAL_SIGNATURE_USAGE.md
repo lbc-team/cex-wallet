@@ -126,7 +126,6 @@ const gatewayRequest = {
   data: riskResponse.db_operation.data,
   timestamp: riskResponse.timestamp,
   risk_signature: riskResponse.risk_signature,  // 来自风控
-  module: 'scan'
 };
 
 // 创建签名负载（与风控签名的数据一致）
@@ -137,8 +136,7 @@ const signaturePayload = {
   action: gatewayRequest.action,
   data: gatewayRequest.data,
   conditions: null,
-  timestamp: gatewayRequest.timestamp,
-  module: gatewayRequest.module
+  timestamp: gatewayRequest.timestamp
 };
 
 // Scan 添加自己的签名
@@ -195,7 +193,6 @@ RISK_PUBLIC_KEY=ghi789...
   "data": { ... },
   "conditions": null,
   "timestamp": 1234567890,
-  "module": "scan"
 }
 ```
 
@@ -369,7 +366,6 @@ const gatewayRequest = {
   ...riskResponse.db_operation,
   timestamp: riskResponse.timestamp,
   risk_signature: riskResponse.risk_signature,
-  module: 'scan'
 };
 
 const signaturePayload = {
@@ -380,7 +376,6 @@ const signaturePayload = {
   data: gatewayRequest.data,
   conditions: null,
   timestamp: gatewayRequest.timestamp,
-  module: 'scan'
 };
 
 gatewayRequest.business_signature = signer.sign(

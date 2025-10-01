@@ -72,7 +72,6 @@ node dist/scripts/createTables.js
 | operation_id | TEXT | 操作ID 唯一 |
 | used_at | INTEGER | 使用时间戳（毫秒） |
 | expires_at | INTEGER | 过期时间戳（毫秒） |
-| module | TEXT | 模块名称 |
 | created_at | DATETIME | 创建时间 |
 
 **索引**:

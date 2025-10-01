@@ -47,8 +47,7 @@ export class Ed25519Signer {
       action: payload.action,
       data: payload.data || null,
       conditions: payload.conditions || null,
-      timestamp: payload.timestamp,
-      module: payload.module
+      timestamp: payload.timestamp
     });
   }
 

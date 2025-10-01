@@ -28,7 +28,6 @@ export class OperationIdService {
           operation_id TEXT UNIQUE NOT NULL,
           used_at INTEGER NOT NULL,
           expires_at INTEGER NOT NULL,
-          module TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -41,10 +40,6 @@ export class OperationIdService {
         CREATE INDEX IF NOT EXISTS idx_operation_ids_expires_at ON used_operation_ids(expires_at)
       `);
 
-      await this.dbService.run(`
-        CREATE INDEX IF NOT EXISTS idx_operation_ids_module ON used_operation_ids(module)
-      `);
-
       logger.info('Operation ID tracking table initialized');
     } catch (error) {
       logger.error('Failed to initialize operation ID tracking table', { error });
@@ -55,19 +50,17 @@ export class OperationIdService {
   /**
    * 验证并记录operation_id（作为nonce使用）
    * @param operationId 操作ID（同时作为nonce）
-   * @param module 模块名称
    * @param timestamp 时间戳
    * @returns 如果operation_id有效（未被使用）返回true，否则返回false
    */
   async validateAndRecordOperationId(
     operationId: string,
-    module: string,
     timestamp: number
   ): Promise<boolean> {
     try {
       // 1. 检查内存缓存（快速路径）
       if (this.memoryCache.has(operationId)) {
-        logger.warn('Operation ID already used (memory cache)', { operationId, module });
+        logger.warn('Operation ID already used (memory cache)', { operationId });
         return false;
       }
 
@@ -78,7 +71,7 @@ export class OperationIdService {
       );
 
       if (existing) {
-        logger.warn('Operation ID already used (database)', { operationId, module });
+        logger.warn('Operation ID already used (database)', { operationId });
         return false;
       }
 
@@ -87,18 +80,18 @@ export class OperationIdService {
       const expiresAt = usedAt + this.NONCE_EXPIRY_MS;
 
       await this.dbService.run(
-        `INSERT INTO used_operation_ids (operation_id, used_at, expires_at, module)
-         VALUES (?, ?, ?, ?)`,
-        [operationId, usedAt, expiresAt, module]
+        `INSERT INTO used_operation_ids (operation_id, used_at, expires_at)
+         VALUES (?, ?, ?)`,
+        [operationId, usedAt, expiresAt]
       );
 
       // 4. 添加到内存缓存
       this.memoryCache.set(operationId, expiresAt);
 
-      logger.info('Operation ID validated and recorded', { operationId, module });
+      logger.info('Operation ID validated and recorded', { operationId });
       return true;
     } catch (error) {
-      logger.error('Operation ID validation failed', { operationId, module, error });
+      logger.error('Operation ID validation failed', { operationId, error });
       return false;
     }
   }

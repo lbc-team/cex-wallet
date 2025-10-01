@@ -13,26 +13,13 @@ export class RiskController {
     try {
       const request = req.body as RiskAssessmentRequest;
 
-      // 验证必需字段
-      if (!request.operation_id || !request.event_type || !request.operation_type || !request.table || !request.action || !request.module) {
+      if (!request.operation_id || !request.operation_type || !request.table || !request.action || !request.timestamp) {
         return res.status(400).json({
           success: false,
           error: {
             code: 'INVALID_REQUEST',
             message: 'Missing required fields',
-            details: 'operation_id, event_type, operation_type, table, action, and module are required'
-          }
-        });
-      }
-
-      // 验证模块
-      if (!['wallet', 'scan'].includes(request.module)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_MODULE',
-            message: 'Invalid module',
-            details: 'Module must be either wallet or scan'
+            details: 'operation_id, operation_type, table, action, and timestamp are required'
           }
         });
       }

@@ -95,7 +95,6 @@ POST /api/assess
   "operation_type": "sensitive",
   "table": "credits",
   "action": "insert",
-  "module": "scan",
   "user_id": 123,
   "amount": "1000000000000000000",
   "from_address": "0xabc...",
@@ -158,6 +157,21 @@ POST /api/assess
 
 ## 风控规则
 
+
+系统内置以下风控规则：
+
+1. **大额提现**: 超过阈值的提现需要人工审核
+2. **频繁提现**: 短时间内多次提现
+3. **新地址提现**: 向未知地址提现
+4. **Credit操作**: 大额余额变更
+
+### 风险等级
+
+- **Low (0-30分)**: 自动通过
+- **Medium (31-70分)**: 需要1个审批
+- **High (71-90分)**: 需要2个审批
+- **Critical (91+分)**: 直接拒绝
+
 当前实现的风控规则（模拟）：
 
 ### 1. 黑名单检测（100分）
@@ -196,7 +210,6 @@ curl -X POST http://localhost:3004/api/assess \
     "operation_type": "sensitive",
     "table": "credits",
     "action": "insert",
-    "module": "scan",
     "user_id": 123,
     "amount": "1000000000000000000",
     "from_address": "0xnormal",
@@ -219,7 +232,6 @@ curl -X POST http://localhost:3004/api/assess \
     "operation_type": "sensitive",
     "table": "credits",
     "action": "insert",
-    "module": "scan",
     "user_id": 123,
     "amount": "1000000000000000000",
     "from_address": "0xBlacklistAddress",

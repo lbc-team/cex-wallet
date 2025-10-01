@@ -31,26 +31,13 @@ export class SignatureMiddleware {
           !gatewayRequest.table ||
           !gatewayRequest.action ||
           !gatewayRequest.business_signature ||
-          !gatewayRequest.timestamp ||
-          !gatewayRequest.module) {
+          !gatewayRequest.timestamp ) {
         return res.status(400).json({
           success: false,
           error: {
             code: 'INVALID_REQUEST',
             message: 'Missing required fields',
             details: 'operation_id, operation_type, table, action, business_signature, timestamp, and module are required'
-          }
-        });
-      }
-
-      // 验证模块类型
-      if (!['wallet', 'scan'].includes(gatewayRequest.module)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_MODULE',
-            message: 'Invalid module specified',
-            details: 'Module must be either wallet or scan'
           }
         });
       }
@@ -62,8 +49,7 @@ export class SignatureMiddleware {
           logger.warn('Non-sensitive operation attempted on sensitive table', {
             operation_id: gatewayRequest.operation_id,
             table: gatewayRequest.table,
-            action: gatewayRequest.action,
-            module: gatewayRequest.module
+            action: gatewayRequest.action
           });
 
           return res.status(400).json({
@@ -94,18 +80,6 @@ export class SignatureMiddleware {
         });
       }
 
-      // 检查模块是否有配置的公钥
-      if (!this.verifier.hasPublicKey(gatewayRequest.module)) {
-        return res.status(500).json({
-          success: false,
-          error: {
-            code: 'NO_PUBLIC_KEY',
-            message: 'No public key configured for this module',
-            details: `Module ${gatewayRequest.module} does not have a configured public key`
-          }
-        });
-      }
-
       req.gatewayRequest = gatewayRequest;
       next();
     } catch (error) {
@@ -125,7 +99,6 @@ export class SignatureMiddleware {
     try {
       const gatewayRequest = req.gatewayRequest!;
 
-      // 创建签名负载
       const signaturePayload: SignaturePayload = {
         operation_id: gatewayRequest.operation_id,
         operation_type: gatewayRequest.operation_type,
@@ -133,21 +106,18 @@ export class SignatureMiddleware {
         action: gatewayRequest.action,
         data: gatewayRequest.data,
         conditions: gatewayRequest.conditions,
-        timestamp: gatewayRequest.timestamp,
-        module: gatewayRequest.module
+        timestamp: gatewayRequest.timestamp
       };
 
-      // 验证业务签名
-      const isValidSignature = this.verifier.verifySignature(
+      // 验证业务签名（自动识别签名者）
+      const verificationResult = this.verifier.verifySignature(
         signaturePayload,
-        gatewayRequest.business_signature,
-        gatewayRequest.module
+        gatewayRequest.business_signature
       );
 
-      if (!isValidSignature) {
+      if (!verificationResult.valid) {
         logger.warn('Business signature verification failed', {
           operation_id: gatewayRequest.operation_id,
-          module: gatewayRequest.module,
           table: gatewayRequest.table,
           action: gatewayRequest.action
         });
@@ -165,7 +135,7 @@ export class SignatureMiddleware {
       req.signaturePayload = signaturePayload;
       logger.info('Business signature verified successfully', {
         operation_id: gatewayRequest.operation_id,
-        module: gatewayRequest.module
+        signer: verificationResult.signer  // 记录签名者
       });
 
       next();
@@ -194,8 +164,7 @@ export class SignatureMiddleware {
           logger.error('Missing risk signature for sensitive operation', {
             operation_id: gatewayRequest.operation_id,
             table: gatewayRequest.table,
-            action: gatewayRequest.action,
-            module: gatewayRequest.module
+            action: gatewayRequest.action
           });
 
           return res.status(400).json({
@@ -223,14 +192,12 @@ export class SignatureMiddleware {
         // 3. 验证operation_id作为nonce（防重放攻击）
         const isOperationIdValid = await this.operationIdService.validateAndRecordOperationId(
           gatewayRequest.operation_id,
-          gatewayRequest.module,
           gatewayRequest.timestamp
         );
 
         if (!isOperationIdValid) {
           logger.warn('Operation ID validation failed - possible replay attack', {
-            operation_id: gatewayRequest.operation_id,
-            module: gatewayRequest.module
+            operation_id: gatewayRequest.operation_id
           });
 
           return res.status(400).json({
@@ -243,7 +210,7 @@ export class SignatureMiddleware {
           });
         }
 
-        // 4. 创建签名负载（用于验证风控签名）
+        // 4. 创建签名负载
         const riskSignaturePayload: SignaturePayload = {
           operation_id: gatewayRequest.operation_id,
           operation_type: gatewayRequest.operation_type,
@@ -251,23 +218,21 @@ export class SignatureMiddleware {
           action: gatewayRequest.action,
           data: gatewayRequest.data,
           conditions: gatewayRequest.conditions,
-          timestamp: gatewayRequest.timestamp,
-          module: gatewayRequest.module
+          timestamp: gatewayRequest.timestamp
         };
 
-        // 5. 验证风控签名
-        const isValidRiskSignature = this.verifier.verifySignature(
+        // 5. 验证风控签名（自动识别签名者）
+        const riskVerificationResult = this.verifier.verifySignature(
           riskSignaturePayload,
-          gatewayRequest.risk_signature,
-          'risk'
+          gatewayRequest.risk_signature
         );
 
-        if (!isValidRiskSignature) {
+        if (!riskVerificationResult.valid || riskVerificationResult.signer !== 'risk') {
           logger.warn('Risk control signature verification failed', {
             operation_id: gatewayRequest.operation_id,
-            module: gatewayRequest.module,
             table: gatewayRequest.table,
-            action: gatewayRequest.action
+            action: gatewayRequest.action,
+            signer: riskVerificationResult.signer
           });
 
           return res.status(401).json({
@@ -275,14 +240,16 @@ export class SignatureMiddleware {
             error: {
               code: 'RISK_SIGNATURE_VERIFICATION_FAILED',
               message: 'Risk control signature verification failed',
-              details: 'The provided risk signature is invalid'
+              details: riskVerificationResult.signer
+                ? `Signature is valid but from wrong signer: ${riskVerificationResult.signer}`
+                : 'The provided risk signature is invalid'
             }
           });
         }
 
         logger.info('Risk control signature verified successfully', {
           operation_id: gatewayRequest.operation_id,
-          module: gatewayRequest.module
+          signer: riskVerificationResult.signer
         });
       }
 
@@ -311,14 +278,13 @@ export class SignatureMiddleware {
           !Array.isArray(batchRequest.operations) ||
           batchRequest.operations.length === 0 ||
           !batchRequest.business_signature ||
-          !batchRequest.timestamp ||
-          !batchRequest.module) {
+          !batchRequest.timestamp) {
         return res.status(400).json({
           success: false,
           error: {
             code: 'INVALID_BATCH_REQUEST',
             message: 'Missing required fields for batch operation',
-            details: 'operation_id, operation_type, operations (array), business_signature, timestamp, and module are required'
+            details: 'operation_id, operation_type, operations (array), business_signature, and timestamp are required'
           }
         });
       }
@@ -344,8 +310,7 @@ export class SignatureMiddleware {
             logger.warn('Batch operation contains sensitive table operation but not marked as sensitive', {
               operation_id: batchRequest.operation_id,
               table: op.table,
-              action: op.action,
-              module: batchRequest.module
+              action: op.action
             });
 
             return res.status(400).json({
@@ -358,18 +323,6 @@ export class SignatureMiddleware {
             });
           }
         }
-      }
-
-      // 验证模块类型
-      if (!['wallet', 'scan'].includes(batchRequest.module)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_MODULE',
-            message: 'Invalid module specified',
-            details: 'Module must be either wallet or scan'
-          }
-        });
       }
 
       // 验证时间戳（5分钟窗口）
@@ -385,18 +338,6 @@ export class SignatureMiddleware {
             code: 'TIMESTAMP_EXPIRED',
             message: 'Request timestamp is too old or too far in the future',
             details: `Time difference: ${timeDiff}ms, max allowed: ${maxTimeDiff}ms`
-          }
-        });
-      }
-
-      // 检查模块是否有配置的公钥
-      if (!this.verifier.hasPublicKey(batchRequest.module)) {
-        return res.status(500).json({
-          success: false,
-          error: {
-            code: 'NO_PUBLIC_KEY',
-            message: 'No public key configured for this module',
-            details: `Module ${batchRequest.module} does not have a configured public key`
           }
         });
       }
@@ -420,29 +361,23 @@ export class SignatureMiddleware {
     try {
       const batchRequest = req.batchGatewayRequest!;
 
-      // 创建签名负载（包含所有操作）
+      // 创建签名负载 
       const signaturePayload: any = {
         operation_id: batchRequest.operation_id,
         operation_type: batchRequest.operation_type,
         operations: batchRequest.operations,
-        timestamp: batchRequest.timestamp,
-        module: batchRequest.module
+        timestamp: batchRequest.timestamp
       };
 
-      const messageString = JSON.stringify(signaturePayload);
-      const messageBytes = new TextEncoder().encode(messageString);
-
-      // 验证业务签名
-      const isValidSignature = this.verifier.verifySignature(
+      // 验证业务签名（自动识别签名者）
+      const verificationResult = this.verifier.verifySignature(
         signaturePayload as any,
-        batchRequest.business_signature,
-        batchRequest.module
+        batchRequest.business_signature
       );
 
-      if (!isValidSignature) {
+      if (!verificationResult.valid) {
         logger.warn('Batch business signature verification failed', {
           operation_id: batchRequest.operation_id,
-          module: batchRequest.module,
           operation_count: batchRequest.operations.length
         });
 
@@ -458,7 +393,7 @@ export class SignatureMiddleware {
 
       logger.info('Batch business signature verified successfully', {
         operation_id: batchRequest.operation_id,
-        module: batchRequest.module,
+        signer: verificationResult.signer,
         operation_count: batchRequest.operations.length
       });
 

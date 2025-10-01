@@ -8,7 +8,6 @@ export interface SignaturePayload {
   data?: any;
   conditions?: any;
   timestamp: number;
-  module: string;
 }
 
 export class Ed25519Signer {
@@ -58,7 +57,6 @@ export class Ed25519Signer {
       data: payload.data || null,
       conditions: payload.conditions || null,
       timestamp: payload.timestamp,
-      module: payload.module
     });
   }
 

@@ -11,7 +11,6 @@ interface GatewayRequest {
   business_signature: string;
   risk_control_signature?: string;
   timestamp: number;
-  module: 'wallet' | 'scan';
 }
 
 interface GatewayResponse {
@@ -29,11 +28,9 @@ interface GatewayResponse {
 export class DbGatewayService {
   private baseUrl: string;
   private signer: Ed25519Signer;
-  private module: 'wallet' | 'scan';
 
-  constructor(baseUrl: string = 'http://localhost:3003', module: 'wallet' | 'scan' = 'wallet') {
+  constructor(baseUrl: string = 'http://localhost:3003') {
     this.baseUrl = baseUrl;
-    this.module = module;
     this.signer = new Ed25519Signer(); // 使用环境变量中的私钥
   }
 
@@ -59,8 +56,7 @@ export class DbGatewayService {
         action,
         data: data || null,
         conditions: conditions || null,
-        timestamp,
-        module: this.module
+        timestamp
       };
 
       // 生成签名
@@ -75,8 +71,7 @@ export class DbGatewayService {
         data,
         conditions,
         business_signature: signature,
-        timestamp,
-        module: this.module
+        timestamp
       };
 
       const response = await fetch(`${this.baseUrl}/api/database/execute`, {

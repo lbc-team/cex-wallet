@@ -28,7 +28,6 @@ export class GatewayController {
 
     logger.info('Executing database operation', {
       operation_id: gatewayRequest.operation_id,
-      module: gatewayRequest.module,
       table: gatewayRequest.table,
       action: gatewayRequest.action,
       operation_type: gatewayRequest.operation_type
@@ -192,7 +191,6 @@ export class GatewayController {
 
     logger.info('Executing batch database operation', {
       operation_id: batchRequest.operation_id,
-      module: batchRequest.module,
       operation_type: batchRequest.operation_type,
       operation_count: batchRequest.operations.length
     });

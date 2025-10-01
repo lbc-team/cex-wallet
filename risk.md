@@ -37,7 +37,9 @@ scan(写 credits )
 
 UUID ， 防止签名重放
 
+## 审计日志
 
+#### GET /api/audit/logs
 
 各模块职责清晰分离，
 
@@ -193,7 +195,6 @@ RS256 与 Ed25519 签名验签
   CREATE TABLE risk_assessments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     operation_id TEXT UNIQUE NOT NULL,     -- 操作ID (UUID)
-    module TEXT NOT NULL,                  -- wallet/scan
     table_name TEXT NOT NULL,
     action TEXT NOT NULL,
     user_id INTEGER,                       -- 关联用户
@@ -417,7 +418,6 @@ RS256 与 Ed25519 签名验签
     // 7. 保存评估记录
     await this.db.saveAssessment({
       operation_id: request.operation_id,
-      module: request.module,
       table_name: request.table,
       action: request.action,
       user_id: request.data.user_id,
@@ -620,7 +620,6 @@ RS256 与 Ed25519 签名验签
   {
     "operation_id": "uuid",
     "operation_type": "sensitive",
-    "module": "wallet",
     "table": "withdraws",
     "action": "insert",
     "data": {
@@ -714,7 +713,6 @@ RS256 与 Ed25519 签名验签
       {
         "id": 123,
         "operation_id": "uuid",
-        "module": "wallet",
         "table": "withdraws",
         "action": "insert",
         "user_id": 456,

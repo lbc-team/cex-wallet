@@ -52,23 +52,22 @@ export class Ed25519Verifier {
       action: payload.action,
       data: payload.data || null,
       conditions: payload.conditions || null,
-      timestamp: payload.timestamp,
-      module: payload.module
+      timestamp: payload.timestamp
+      // module 字段已移除
     });
   }
 
+  /**
+   * 验证签名并自动识别签名者
+   * @param payload 签名负载
+   * @param signature 签名（十六进制字符串）
+   * @returns { valid: boolean, signer?: string } 验证结果和签名者
+   */
   public verifySignature(
     payload: SignaturePayload,
-    signature: string,
-    module: 'wallet' | 'scan' | 'risk'
-  ): boolean {
+    signature: string
+  ): { valid: boolean; signer?: string } {
     try {
-      const publicKey = this.modulePublicKeys.get(module);
-      if (!publicKey) {
-        console.error(`Public key not found for module: ${module}`);
-        return false;
-      }
-
       // 创建签名payload
       const messageString = this.createSignaturePayload(payload);
       const message = new TextEncoder().encode(messageString);
@@ -76,19 +75,29 @@ export class Ed25519Verifier {
       // 解析签名
       const signatureBytes = this.hexToUint8Array(signature);
 
-      // 验证签名
-      const isValid = nacl.sign.detached.verify(message, signatureBytes, publicKey);
+      // 尝试所有已知的公钥 TODO: 根据 IP 地址判断可用的公钥
+      for (const [moduleName, publicKey] of this.modulePublicKeys.entries()) {
+        const isValid = nacl.sign.detached.verify(message, signatureBytes, publicKey);
 
-      console.log(`Signature verification for ${module}:`, {
+        if (isValid) {
+          console.log(`Signature verified successfully, signer: ${moduleName}`, {
+            payload: messageString,
+            signature: signature.substring(0, 16) + '...'
+          });
+          return { valid: true, signer: moduleName };
+        }
+      }
+
+      console.warn('Signature verification failed - no matching public key found', {
         payload: messageString,
-        signature: signature,
-        isValid
+        signature: signature.substring(0, 16) + '...',
+        availableModules: Array.from(this.modulePublicKeys.keys())
       });
 
-      return isValid;
+      return { valid: false };
     } catch (error) {
       console.error('Signature verification error:', error);
-      return false;
+      return { valid: false };
     }
   }
 
