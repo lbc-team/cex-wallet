@@ -201,6 +201,42 @@ RISK_PUBLIC_KEY=ghi789...
 
 **注意**：`operation_id` 同时用作防重放攻击的 nonce，无需单独的 nonce 字段。
 
+## 敏感表强制规则
+
+**DB Gateway 强制要求以下表的写操作必须经过风控评估：**
+
+| 表名 | 敏感操作 | 原因 |
+|------|---------|------|
+| `credits` | INSERT, UPDATE, DELETE | 包含用户余额信息 |
+
+**规则：**
+1. 对敏感表的写操作，`operation_type` 必须为 `'sensitive'`
+2. 必须包含有效的 `risk_signature`（风控签名）
+3. 必须包含有效的 `business_signature`（业务签名）
+4. 如果违反规则，请求会被拒绝
+
+**错误示例：**
+```json
+{
+  "operation_type": "write",  // ❌ 错误：应该是 "sensitive"
+  "table": "credits",
+  "action": "insert",
+  // ... 缺少 risk_signature
+}
+```
+
+**正确示例：**
+```json
+{
+  "operation_type": "sensitive",  // ✅ 正确
+  "table": "credits",
+  "action": "insert",
+  "risk_signature": "abc123...",  // ✅ 包含风控签名
+  "business_signature": "def456...",
+  // ...
+}
+```
+
 ## 安全特性
 
 ### 1. 双重授权
@@ -226,6 +262,18 @@ RISK_PUBLIC_KEY=ghi789...
 - 包含双方签名和操作详情
 
 ## 错误处理
+
+### 敏感表操作未标记为 sensitive
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_OPERATION_TYPE",
+    "message": "Operation on credits table must be sensitive",
+    "details": "INSERT on credits requires operation_type: 'sensitive'. Reason: Credits table contains user balance information"
+  }
+}
+```
 
 ### 缺少风控签名
 ```json

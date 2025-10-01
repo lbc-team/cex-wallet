@@ -4,6 +4,7 @@ import { GatewayRequest, SignaturePayload, BatchGatewayRequest } from '../types'
 import { logger } from '../utils/logger';
 import { OperationIdService } from '../services/operation-id';
 import { DatabaseService } from '../services/database';
+import { isSensitiveOperation, getSensitiveReason } from '../config/sensitive-tables';
 
 export interface AuthenticatedRequest extends Request {
   gatewayRequest?: GatewayRequest;
@@ -52,6 +53,28 @@ export class SignatureMiddleware {
             details: 'Module must be either wallet or scan'
           }
         });
+      }
+
+      // 强制规则：敏感表的写操作必须标记为敏感操作
+      if (isSensitiveOperation(gatewayRequest.table, gatewayRequest.action)) {
+        if (gatewayRequest.operation_type !== 'sensitive') {
+          const reason = getSensitiveReason(gatewayRequest.table);
+          logger.warn('Non-sensitive operation attempted on sensitive table', {
+            operation_id: gatewayRequest.operation_id,
+            table: gatewayRequest.table,
+            action: gatewayRequest.action,
+            module: gatewayRequest.module
+          });
+
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_OPERATION_TYPE',
+              message: `Operation on ${gatewayRequest.table} table must be sensitive`,
+              details: `${gatewayRequest.action.toUpperCase()} on ${gatewayRequest.table} requires operation_type: 'sensitive'. Reason: ${reason}`
+            }
+          });
+        }
       }
 
       // 验证时间戳（5分钟窗口）
@@ -166,8 +189,15 @@ export class SignatureMiddleware {
 
       // 检查是否需要风控签名（敏感操作）
       if (gatewayRequest.operation_type === 'sensitive') {
-        // 1. 验证必需字段
+        // 1. 验证必需字段 - 敏感操作必须有风控签名
         if (!gatewayRequest.risk_signature) {
+          logger.error('Missing risk signature for sensitive operation', {
+            operation_id: gatewayRequest.operation_id,
+            table: gatewayRequest.table,
+            action: gatewayRequest.action,
+            module: gatewayRequest.module
+          });
+
           return res.status(400).json({
             success: false,
             error: {
@@ -305,6 +335,28 @@ export class SignatureMiddleware {
               details: 'Each operation must have table and action fields'
             }
           });
+        }
+
+        // 检查批量操作中是否包含敏感表操作
+        if (isSensitiveOperation(op.table, op.action)) {
+          if (batchRequest.operation_type !== 'sensitive') {
+            const reason = getSensitiveReason(op.table);
+            logger.warn('Batch operation contains sensitive table operation but not marked as sensitive', {
+              operation_id: batchRequest.operation_id,
+              table: op.table,
+              action: op.action,
+              module: batchRequest.module
+            });
+
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'INVALID_OPERATION_TYPE',
+                message: `Batch operation contains sensitive table operation`,
+                details: `Operation at index ${i} (${op.action.toUpperCase()} on ${op.table}) requires the entire batch to be marked as operation_type: 'sensitive'. Reason: ${reason}`
+              }
+            });
+          }
         }
       }
 

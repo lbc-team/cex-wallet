@@ -35,56 +35,9 @@ export class GatewayController {
     });
 
     try {
-      // 敏感操作需要风控评估
-      if (gatewayRequest.operation_type === 'sensitive') {
-
-        // 如果风控决策是拒绝，直接返回错误
-        if (riskAssessment.decision === 'deny') {
-          const response: GatewayResponse = {
-            success: false,
-            operation_id: gatewayRequest.operation_id,
-            error: {
-              code: 'RISK_CONTROL_DENIED',
-              message: 'Operation denied by risk control policy',
-              details: {
-                risk_level: riskAssessment.risk_level,
-                risk_score: riskAssessment.risk_score,
-                reasons: riskAssessment.reasons
-              }
-            }
-          };
-
-          res.status(403).json(response);
-          return;
-        }
-
-        // 如果需要人工审核，返回待审批状态
-        if (riskAssessment.decision === 'manual_review') {
-          const response: GatewayResponse = {
-            success: false,
-            operation_id: gatewayRequest.operation_id,
-            error: {
-              code: 'MANUAL_APPROVAL_REQUIRED',
-              message: 'Operation requires manual risk control approval',
-              details: {
-                risk_level: riskAssessment.risk_level,
-                risk_score: riskAssessment.risk_score,
-                required_approvals: riskAssessment.required_approvals,
-                reasons: riskAssessment.reasons,
-                expires_at: riskAssessment.expires_at
-              }
-            }
-          };
-
-          res.status(202).json(response); // 202 Accepted, but needs approval
-          return;
-        }
-
-        // 风控通过，继续执行操作
-        logger.info('Risk control approved, proceeding with operation', {
-          operation_id: gatewayRequest.operation_id
-        });
-      }
+      // 注意：风控评估现在由独立的 risk_control 服务处理
+      // DB Gateway 只负责验证签名和执行数据库操作
+      // 敏感操作必须包含有效的 risk_signature
 
       let result: any;
 
@@ -245,71 +198,9 @@ export class GatewayController {
     });
 
     try {
-      // 敏感操作需要风控评估
-      if (batchRequest.operation_type === 'sensitive') {
-        // 对整个批量操作进行风控评估
-        const riskAssessment = await this.riskControlService.assessRisk({
-          operation_id: batchRequest.operation_id,
-          operation_type: batchRequest.operation_type,
-          table: 'batch',
-          action: 'batch',
-          data: { operations: batchRequest.operations },
-          business_signature: batchRequest.business_signature,
-          timestamp: batchRequest.timestamp,
-          module: batchRequest.module
-        } as any);
-
-        logger.info('Risk assessment completed for batch operation', {
-          operation_id: batchRequest.operation_id,
-          risk_level: riskAssessment.risk_level,
-          decision: riskAssessment.decision,
-          risk_score: riskAssessment.risk_score
-        });
-
-        if (riskAssessment.decision === 'deny') {
-          const response: BatchGatewayResponse = {
-            success: false,
-            operation_id: batchRequest.operation_id,
-            error: {
-              code: 'RISK_CONTROL_DENIED',
-              message: 'Batch operation denied by risk control policy',
-              details: {
-                risk_level: riskAssessment.risk_level,
-                risk_score: riskAssessment.risk_score,
-                reasons: riskAssessment.reasons
-              }
-            }
-          };
-
-          res.status(403).json(response);
-          return;
-        }
-
-        if (riskAssessment.decision === 'manual_review') {
-          const response: BatchGatewayResponse = {
-            success: false,
-            operation_id: batchRequest.operation_id,
-            error: {
-              code: 'MANUAL_APPROVAL_REQUIRED',
-              message: 'Batch operation requires manual risk control approval',
-              details: {
-                risk_level: riskAssessment.risk_level,
-                risk_score: riskAssessment.risk_score,
-                required_approvals: riskAssessment.required_approvals,
-                reasons: riskAssessment.reasons,
-                expires_at: riskAssessment.expires_at
-              }
-            }
-          };
-
-          res.status(202).json(response);
-          return;
-        }
-
-        logger.info('Risk control approved, proceeding with batch operation', {
-          operation_id: batchRequest.operation_id
-        });
-      }
+      // 注意：风控评估现在由独立的 risk_control 服务处理
+      // DB Gateway 只负责验证签名和执行数据库操作
+      // 敏感操作必须包含有效的 risk_signature
 
       // 在事务中执行所有操作
       const results = await this.dbService.executeInTransaction(async () => {
