@@ -65,6 +65,25 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
+### 已使用操作ID表 (used_operation_ids) - 防止重放攻击
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键，自增 |
+| operation_id | TEXT | 操作ID 唯一 |
+| used_at | INTEGER | 使用时间戳（毫秒） |
+| expires_at | INTEGER | 过期时间戳（毫秒） |
+| module | TEXT | 模块名称 |
+| created_at | DATETIME | 创建时间 |
+
+**索引**:
+- `idx_nonces_nonce` - 操作ID索引
+- `idx_nonces_expires_at` - 过期时间索引
+
+**说明**：
+- 用于DB Gateway服务，防止API重放攻击
+- 每个操作ID只能使用一次，默认5分钟后过期
+- 系统每分钟自动清理过期记录
+- 使用内存缓存+数据库双重验证机制
 
 
 ### 区块表 (blocks)

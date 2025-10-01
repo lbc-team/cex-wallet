@@ -1,18 +1,15 @@
 import { Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '../services/database';
-import { RiskControlService, RiskAssessment } from '../services/riskControl';
 import { AuthenticatedRequest } from '../middleware/signature';
 import { GatewayResponse, OperationType, DatabaseAction, BatchGatewayResponse } from '../types';
 import { logger } from '../utils/logger';
 
 export class GatewayController {
   private dbService: DatabaseService;
-  public riskControlService: RiskControlService;
 
   constructor() {
     this.dbService = new DatabaseService();
-    this.riskControlService = new RiskControlService();
     this.initializeDatabase();
   }
 
@@ -40,14 +37,6 @@ export class GatewayController {
     try {
       // 敏感操作需要风控评估
       if (gatewayRequest.operation_type === 'sensitive') {
-        const riskAssessment = await this.riskControlService.assessRisk(gatewayRequest);
-
-        logger.info('Risk assessment completed', {
-          operation_id: gatewayRequest.operation_id,
-          risk_level: riskAssessment.risk_level,
-          decision: riskAssessment.decision,
-          risk_score: riskAssessment.risk_score
-        });
 
         // 如果风控决策是拒绝，直接返回错误
         if (riskAssessment.decision === 'deny') {

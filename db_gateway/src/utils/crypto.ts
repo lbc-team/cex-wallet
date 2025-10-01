@@ -11,6 +11,7 @@ export class Ed25519Verifier {
   private loadPublicKeys() {
     const walletPublicKey = process.env.WALLET_PUBLIC_KEY;
     const scanPublicKey = process.env.SCAN_PUBLIC_KEY;
+    const riskPublicKey = process.env.RISK_PUBLIC_KEY;
 
     if (walletPublicKey) {
       this.modulePublicKeys.set('wallet', this.hexToUint8Array(walletPublicKey));
@@ -18,6 +19,10 @@ export class Ed25519Verifier {
 
     if (scanPublicKey) {
       this.modulePublicKeys.set('scan', this.hexToUint8Array(scanPublicKey));
+    }
+
+    if (riskPublicKey) {
+      this.modulePublicKeys.set('risk', this.hexToUint8Array(riskPublicKey));
     }
   }
 
@@ -55,7 +60,7 @@ export class Ed25519Verifier {
   public verifySignature(
     payload: SignaturePayload,
     signature: string,
-    module: 'wallet' | 'scan'
+    module: 'wallet' | 'scan' | 'risk'
   ): boolean {
     try {
       const publicKey = this.modulePublicKeys.get(module);

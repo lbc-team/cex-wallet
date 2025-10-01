@@ -16,12 +16,18 @@ class DatabaseGatewayService {
   private port: number;
   private gatewayController: GatewayController;
   private signatureMiddleware: SignatureMiddleware;
+  private dbService: import('./services/database').DatabaseService;
 
   constructor() {
     this.app = express();
     this.port = parseInt(process.env.PORT || '3003');
+
+    // 创建共享的DatabaseService实例
+    const { DatabaseService } = require('./services/database');
+    this.dbService = new DatabaseService();
+
     this.gatewayController = new GatewayController();
-    this.signatureMiddleware = new SignatureMiddleware();
+    this.signatureMiddleware = new SignatureMiddleware(this.dbService);
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -104,128 +110,6 @@ class DatabaseGatewayService {
       this.gatewayController.executeBatchOperation
     );
 
-    // 风控评估API
-    this.app.post('/api/risk-control/evaluate', async (req, res) => {
-      try {
-        const gatewayRequest = req.body;
-
-        if (!gatewayRequest || !gatewayRequest.operation_id) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: 'Invalid risk evaluation request'
-            }
-          });
-        }
-
-        const riskAssessment = await this.gatewayController.riskControlService.assessRisk(gatewayRequest);
-
-        res.json({
-          success: true,
-          data: riskAssessment
-        });
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'RISK_EVALUATION_FAILED',
-            message: 'Risk evaluation failed',
-            details: error instanceof Error ? error.message : 'Unknown error'
-          }
-        });
-      }
-    });
-
-    // 风控人工审批API
-    this.app.post('/api/risk-control/approve', async (req, res) => {
-      try {
-        const { operation_id, approver_user_id, approved, comment } = req.body;
-
-        if (!operation_id || !approver_user_id || typeof approved !== 'boolean') {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: 'Missing required fields: operation_id, approver_user_id, approved'
-            }
-          });
-        }
-
-        const result = await this.gatewayController.riskControlService.manualApprove(
-          operation_id,
-          approver_user_id,
-          approved,
-          comment
-        );
-
-        if (result.success) {
-          res.json({
-            success: true,
-            message: result.message
-          });
-        } else {
-          res.status(400).json({
-            success: false,
-            error: {
-              code: 'APPROVAL_FAILED',
-              message: result.message
-            }
-          });
-        }
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'APPROVAL_PROCESSING_FAILED',
-            message: 'Failed to process manual approval',
-            details: error instanceof Error ? error.message : 'Unknown error'
-          }
-        });
-      }
-    });
-
-    // 获取待审批操作列表API
-    this.app.get('/api/risk-control/pending', async (req, res) => {
-      try {
-        const pendingApprovals = await this.gatewayController.riskControlService.getPendingApprovals();
-
-        res.json({
-          success: true,
-          data: pendingApprovals,
-          count: pendingApprovals.length
-        });
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'PENDING_RETRIEVAL_FAILED',
-            message: 'Failed to retrieve pending approvals',
-            details: error instanceof Error ? error.message : 'Unknown error'
-          }
-        });
-      }
-    });
-
-    // 风控规则管理API
-    this.app.get('/api/risk-control/rules', (req, res) => {
-      try {
-        const rules = this.gatewayController.riskControlService.getRiskRules();
-        res.json({
-          success: true,
-          data: rules,
-          count: rules.length
-        });
-      } catch (error) {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: 'RULES_RETRIEVAL_FAILED',
-            message: 'Failed to retrieve risk control rules'
-          }
-        });
-      }
-    });
 
     // 404 处理
     this.app.use('*', (req, res) => {
@@ -308,14 +192,20 @@ class DatabaseGatewayService {
       const verifier = new Ed25519Verifier();
       const hasWalletKey = verifier.hasPublicKey('wallet');
       const hasScanKey = verifier.hasPublicKey('scan');
+      const hasRiskKey = verifier.hasPublicKey('risk');
 
       logger.info('Public key configuration', {
         wallet: hasWalletKey ? 'configured' : 'missing',
-        scan: hasScanKey ? 'configured' : 'missing'
+        scan: hasScanKey ? 'configured' : 'missing',
+        risk: hasRiskKey ? 'configured' : 'missing'
       });
 
       if (!hasWalletKey || !hasScanKey) {
         logger.warn('Some public keys are missing. Service will reject requests from modules without configured keys.');
+      }
+
+      if (!hasRiskKey) {
+        logger.warn('Risk control public key is missing. Sensitive operations will be rejected.');
       }
     });
   }

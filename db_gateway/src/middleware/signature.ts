@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { Ed25519Verifier } from '../utils/crypto';
 import { GatewayRequest, SignaturePayload, BatchGatewayRequest } from '../types';
 import { logger } from '../utils/logger';
+import { OperationIdService } from '../services/operation-id';
+import { DatabaseService } from '../services/database';
 
 export interface AuthenticatedRequest extends Request {
   gatewayRequest?: GatewayRequest;
@@ -11,9 +13,11 @@ export interface AuthenticatedRequest extends Request {
 
 export class SignatureMiddleware {
   private verifier: Ed25519Verifier;
+  private operationIdService: OperationIdService;
 
-  constructor() {
+  constructor(dbService: DatabaseService) {
     this.verifier = new Ed25519Verifier();
+    this.operationIdService = new OperationIdService(dbService);
   }
 
   validateRequest = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -155,33 +159,101 @@ export class SignatureMiddleware {
     }
   };
 
-  checkRiskControlSignature = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  checkRiskControlSignature = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const gatewayRequest = req.gatewayRequest!;
+      const signaturePayload = req.signaturePayload!;
 
       // 检查是否需要风控签名（敏感操作）
       if (gatewayRequest.operation_type === 'sensitive') {
-        // TODO: 实现风控签名验证
-        // 现在只是预留接口，暂时跳过验证
-        logger.info('Sensitive operation detected, risk control verification needed', {
-          operation_id: gatewayRequest.operation_id,
-          table: gatewayRequest.table,
-          action: gatewayRequest.action
-        });
-
-        // 预留风控签名验证逻辑
-        if (gatewayRequest.risk_control_signature) {
-          logger.info('Risk control signature provided (validation skipped for now)', {
-            operation_id: gatewayRequest.operation_id
+        // 1. 验证必需字段
+        if (!gatewayRequest.risk_signature) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'MISSING_RISK_SIGNATURE',
+              message: 'Risk signature is required for sensitive operations',
+              details: 'Sensitive operations must include risk_signature field'
+            }
           });
-        } else {
-          logger.warn('Sensitive operation without risk control signature', {
-            operation_id: gatewayRequest.operation_id
-          });
-
-          // 暂时允许通过，但记录警告
-          // 在生产环境中，这里应该返回错误
         }
+
+        // 2. 检查风控系统是否有配置的公钥
+        if (!this.verifier.hasPublicKey('risk')) {
+          return res.status(500).json({
+            success: false,
+            error: {
+              code: 'NO_RISK_PUBLIC_KEY',
+              message: 'No public key configured for risk control system',
+              details: 'Risk control public key must be configured in environment variables'
+            }
+          });
+        }
+
+        // 3. 验证operation_id作为nonce（防重放攻击）
+        const isOperationIdValid = await this.operationIdService.validateAndRecordOperationId(
+          gatewayRequest.operation_id,
+          gatewayRequest.module,
+          gatewayRequest.timestamp
+        );
+
+        if (!isOperationIdValid) {
+          logger.warn('Operation ID validation failed - possible replay attack', {
+            operation_id: gatewayRequest.operation_id,
+            module: gatewayRequest.module
+          });
+
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'DUPLICATE_OPERATION_ID',
+              message: 'Operation ID has already been used',
+              details: 'This operation_id has already been used. Possible replay attack detected.'
+            }
+          });
+        }
+
+        // 4. 创建签名负载（用于验证风控签名）
+        const riskSignaturePayload: SignaturePayload = {
+          operation_id: gatewayRequest.operation_id,
+          operation_type: gatewayRequest.operation_type,
+          table: gatewayRequest.table,
+          action: gatewayRequest.action,
+          data: gatewayRequest.data,
+          conditions: gatewayRequest.conditions,
+          timestamp: gatewayRequest.timestamp,
+          module: gatewayRequest.module
+        };
+
+        // 5. 验证风控签名
+        const isValidRiskSignature = this.verifier.verifySignature(
+          riskSignaturePayload,
+          gatewayRequest.risk_signature,
+          'risk'
+        );
+
+        if (!isValidRiskSignature) {
+          logger.warn('Risk control signature verification failed', {
+            operation_id: gatewayRequest.operation_id,
+            module: gatewayRequest.module,
+            table: gatewayRequest.table,
+            action: gatewayRequest.action
+          });
+
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: 'RISK_SIGNATURE_VERIFICATION_FAILED',
+              message: 'Risk control signature verification failed',
+              details: 'The provided risk signature is invalid'
+            }
+          });
+        }
+
+        logger.info('Risk control signature verified successfully', {
+          operation_id: gatewayRequest.operation_id,
+          module: gatewayRequest.module
+        });
       }
 
       next();

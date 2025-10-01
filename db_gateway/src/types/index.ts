@@ -1,12 +1,12 @@
 export interface GatewayRequest {
-  operation_id: string;
+  operation_id: string;  // 同时作为防重放攻击的nonce
   operation_type: 'read' | 'write' | 'sensitive';
   table: string;
   action: 'select' | 'insert' | 'update' | 'delete';
   data?: any;
   conditions?: any;
   business_signature: string;
-  risk_control_signature?: string;
+  risk_signature?: string;  // 风控签名（敏感操作必需）
   timestamp: number;
   module: 'wallet' | 'scan';
 }
@@ -31,11 +31,11 @@ export interface BatchOperation {
 }
 
 export interface BatchGatewayRequest {
-  operation_id: string;
+  operation_id: string;  // 同时作为防重放攻击的nonce
   operation_type: 'read' | 'write' | 'sensitive';
   operations: BatchOperation[];
   business_signature: string;
-  risk_control_signature?: string;
+  risk_signature?: string;  // 风控签名（敏感操作必需）
   timestamp: number;
   module: 'wallet' | 'scan';
 }
@@ -84,6 +84,7 @@ export interface AuditLog {
 export interface ModulePublicKeys {
   wallet: string;
   scan: string;
+  risk: string;  // 风控系统公钥
 }
 
 export enum OperationType {
