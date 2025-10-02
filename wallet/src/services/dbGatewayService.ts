@@ -352,6 +352,7 @@ export class DbGatewayService {
         updated_at: new Date().toISOString()
       };
 
+      // withdraws 表的插入操作是敏感操作，需要风控评估和双签名
       const result = await this.executeOperation('withdraws', 'insert', 'sensitive', data);
       return result.lastID;
     } catch (error) {
@@ -389,6 +390,7 @@ export class DbGatewayService {
         if (data.error_message !== undefined) updateData.error_message = data.error_message;
       }
 
+      // withdraws 表的更新操作是敏感操作，需要风控评估和双签名
       await this.executeOperation(
         'withdraws',
         'update',

@@ -19,12 +19,11 @@ export const SENSITIVE_TABLES: SensitiveTableConfig[] = [
     actions: ['insert', 'update', 'delete'],
     reason: 'Credits table contains user balance information'
   },
-  // 未来可以添加更多敏感表
-  // {
-  //   table: 'withdraws',
-  //   actions: ['insert', 'update'],
-  //   reason: 'Withdraw operations require risk control'
-  // },
+  {
+    table: 'withdraws',
+    actions: ['insert', 'update'],
+    reason: 'Withdraw operations require risk control'
+  },
 ];
 
 /**
