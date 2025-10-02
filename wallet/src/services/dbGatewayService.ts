@@ -91,8 +91,8 @@ export class DbGatewayService {
         data,
         conditions,
         business_signature: signature,
-        risk_signature: riskSignature,
-        timestamp
+        timestamp,
+        ...(riskSignature && { risk_signature: riskSignature })
       };
 
       const response = await fetch(`${this.baseUrl}/api/database/execute`, {
@@ -738,11 +738,23 @@ export class DbGatewayService {
     });
 
     if (!riskResponse.ok) {
-      const errorData = await riskResponse.json().catch(() => ({}));
+      const errorData = await riskResponse.json().catch(() => ({})) as any;
       throw new Error(`风控评估失败: ${riskResponse.status} - ${errorData.error?.message || '评估失败'}`);
     }
 
-    const riskResult = await riskResponse.json();
+    const riskResult = await riskResponse.json() as {
+      success: boolean;
+      decision: string;
+      risk_signature: string;
+      timestamp: number;
+      db_operation?: {
+        table: string;
+        action: string;
+        data?: any;
+        conditions?: any;
+      };
+      reasons?: string[];
+    };
 
     if (!riskResult.success) {
       throw new Error(`风控评估被拒绝: ${riskResult.decision} - ${riskResult.reasons?.join(', ') || '未通过风控'}`);
