@@ -8,19 +8,9 @@ import { logger } from '../utils/logger';
 export class GatewayController {
   private dbService: DatabaseService;
 
-  constructor() {
-    this.dbService = new DatabaseService();
-    this.initializeDatabase();
-  }
-
-  private async initializeDatabase() {
-    try {
-      await this.dbService.connect();
-      logger.info('Gateway database service initialized');
-    } catch (error) {
-      logger.error('Failed to initialize database service', { error });
-      throw error;
-    }
+  constructor(dbService: DatabaseService) {
+    this.dbService = dbService;
+    logger.info('Gateway controller initialized');
   }
 
   executeOperation = async (req: AuthenticatedRequest, res: Response) => {

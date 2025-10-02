@@ -26,7 +26,8 @@ class DatabaseGatewayService {
     const { DatabaseService } = require('./services/database');
     this.dbService = new DatabaseService();
 
-    this.gatewayController = new GatewayController();
+    // 将 dbService 传递给 GatewayController 和 SignatureMiddleware
+    this.gatewayController = new GatewayController(this.dbService);
     this.signatureMiddleware = new SignatureMiddleware(this.dbService);
 
     this.setupMiddleware();

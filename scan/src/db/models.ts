@@ -60,23 +60,6 @@ export interface Token {
  * 区块数据访问对象
  */
 export class BlockDAO {
-  /**
-   * 插入区块
-   */
-  async insertBlock(block: Omit<Block, 'created_at' | 'updated_at'>): Promise<void> {
-    try {
-      await database.run(
-        `INSERT OR REPLACE INTO blocks 
-         (hash, parent_hash, number, timestamp, status, created_at, updated_at) 
-         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [block.hash, block.parent_hash, block.number, block.timestamp, block.status || 'confirmed']
-      );
-      logger.debug('插入区块', { hash: block.hash, number: block.number });
-    } catch (error) {
-      logger.error('插入区块失败', { block, error });
-      throw error;
-    }
-  }
 
   /**
    * 获取区块
@@ -123,78 +106,13 @@ export class BlockDAO {
     }
   }
 
-  /**
-   * 标记区块为孤块
-   */
-  async markBlockAsOrphaned(hash: string): Promise<void> {
-    try {
-      await database.run(
-        'UPDATE blocks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE hash = ?',
-        ['orphaned', hash]
-      );
-      logger.info('标记区块为孤块', { hash });
-    } catch (error) {
-      logger.error('标记区块为孤块失败', { hash, error });
-      throw error;
-    }
-  }
 }
+
 
 /**
  * 交易数据访问对象
  */
 export class TransactionDAO {
-  /**
-   * 插入交易
-   */
-  async insertTransaction(tx: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>): Promise<number> {
-    try {
-      const result = await database.run(
-        `INSERT INTO transactions 
-         (block_hash, block_no, tx_hash, from_addr, to_addr, token_addr, amount, type, status, confirmation_count, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [tx.block_hash, tx.block_no, tx.tx_hash, tx.from_addr, tx.to_addr, tx.token_addr, tx.amount, tx.type, tx.status, tx.confirmation_count || 0]
-      );
-      logger.debug('插入交易', { txHash: tx.tx_hash, id: result.lastID });
-      return result.lastID!;
-    } catch (error) {
-      logger.error('插入交易失败', { tx, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 更新交易确认数（使用网络终结性时可能不需要）
-   */
-  async updateTransactionConfirmation(txHash: string, confirmationCount: number): Promise<void> {
-    try {
-      await database.run(
-        'UPDATE transactions SET confirmation_count = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        [confirmationCount, txHash]
-      );
-      logger.debug('更新交易确认数', { txHash, confirmationCount });
-    } catch (error) {
-      logger.error('更新交易确认数失败', { txHash, confirmationCount, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 更新交易状态
-   */
-  async updateTransactionStatus(txHash: string, status: string): Promise<void> {
-    try {
-      await database.run(
-        'UPDATE transactions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE tx_hash = ?',
-        [status, txHash]
-      );
-      logger.debug('更新交易状态', { txHash, status });
-    } catch (error) {
-      logger.error('更新交易状态失败', { txHash, status, error });
-      throw error;
-    }
-  }
-
   /**
    * 获取需要进一步确认的交易
    */
@@ -211,18 +129,6 @@ export class TransactionDAO {
     }
   }
 
-  /**
-   * 根据区块哈希删除交易（重组时使用）
-   */
-  async deleteTransactionsByBlockHash(blockHash: string): Promise<void> {
-    try {
-      await database.run('DELETE FROM transactions WHERE block_hash = ?', [blockHash]);
-      logger.info('删除区块相关交易', { blockHash });
-    } catch (error) {
-      logger.error('删除区块相关交易失败', { blockHash, error });
-      throw error;
-    }
-  }
 }
 
 /**

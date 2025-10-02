@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import config from '../config';
 import { viemClient } from '../utils/viemClient';
 import { type Hash, type TransactionReceipt } from 'viem';
+import { getDbGatewayService } from './dbGatewayService';
 
 /**
  * 提现交易监控服务
@@ -13,12 +14,13 @@ import { type Hash, type TransactionReceipt } from 'viem';
  */
 export class WithdrawMonitor {
   private database: Database;
+  private dbGatewayService = getDbGatewayService();
   private isRunning: boolean = false;
   private monitorInterval: NodeJS.Timeout | null = null;
   private readonly MAX_RETRY_COUNT = 10; // 最大重试次数
-  
+
   constructor(database: Database) {
-    this.database = database;
+    this.database = database; // 只用于只读查询
   }
 
   /**
@@ -433,14 +435,9 @@ export class WithdrawMonitor {
     blockNumber: number;
     txHash: string;
   }): Promise<void> {
-    await this.database.run(`
-      UPDATE withdraws 
-      SET 
-        status = 'confirmed',
-        gas_used = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [updateData.gasUsed, withdrawId]);
+    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'confirmed', {
+      gas_used: updateData.gasUsed
+    });
   }
 
   /**
@@ -451,15 +448,10 @@ export class WithdrawMonitor {
     blockNumber?: number;
     errorMessage: string;
   }): Promise<void> {
-    await this.database.run(`
-      UPDATE withdraws 
-      SET 
-        status = 'failed',
-        gas_used = ?,
-        error_message = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [updateData.gasUsed || null, updateData.errorMessage, withdrawId]);
+    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+      gas_used: updateData.gasUsed,
+      error_message: updateData.errorMessage
+    });
   }
 
   /**
@@ -469,32 +461,23 @@ export class WithdrawMonitor {
     finalizationMethod: string;
     finalizedAt: string;
   }): Promise<void> {
-    await this.database.run(`
-      UPDATE withdraws 
-      SET 
-        status = 'finalized',
-        finalized_at = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [updateData.finalizedAt, withdrawId]);
+    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'finalized', {});
   }
 
   /**
    * 更新 credits 表状态
    */
   private async updateCreditStatus(
-    withdrawId: number, 
+    withdrawId: number,
     status: 'confirmed' | 'failed' | 'finalized',
     blockNumber?: number,
   ): Promise<void> {
-    await this.database.run(`
-      UPDATE credits 
-      SET 
-        status = ?,
-        block_number = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE reference_id = ? AND reference_type = 'withdraw'
-    `, [status, blockNumber || null, withdrawId.toString()]);
+    await this.dbGatewayService.updateCreditStatusByReferenceId(
+      withdrawId.toString(),
+      'withdraw',
+      status,
+      { block_number: blockNumber }
+    );
   }
 
   /**
@@ -511,28 +494,17 @@ export class WithdrawMonitor {
     type: string;
     status: string;
   }): Promise<void> {
-    try {
-      await this.database.run(`
-        INSERT OR IGNORE INTO transactions 
-        (tx_hash, block_hash, block_no, from_addr, to_addr, token_addr, amount, type, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `, [
-        data.txHash,
-        data.blockHash || null,
-        data.blockNumber,
-        data.fromAddr || null,
-        data.toAddr || null,
-        data.tokenAddr || null,
-        data.amount,
-        data.type,
-        data.status
-      ]);
-    } catch (error: any) {
-      // 忽略重复插入错误
-      if (!error.message?.includes('UNIQUE constraint failed')) {
-        throw error;
-      }
-    }
+    await this.dbGatewayService.createTransaction({
+      tx_hash: data.txHash,
+      block_hash: data.blockHash,
+      block_no: data.blockNumber,
+      from_addr: data.fromAddr,
+      to_addr: data.toAddr,
+      token_addr: data.tokenAddr,
+      amount: data.amount,
+      type: data.type,
+      status: data.status
+    });
   }
 
 

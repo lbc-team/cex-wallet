@@ -38,9 +38,6 @@ export class ReorgHandler {
       // 3. 回滚到共同祖先
       const reorgInfo = await this.rollbackToCommonAncestor(commonAncestor, currentBlock);
 
-      // 4. 重新同步正确链
-      await this.resyncCorrectChain(commonAncestor + 1, currentBlock);
-
       logger.info('区块链重组处理完成', reorgInfo);
       return reorgInfo;
 
@@ -226,21 +223,13 @@ export class ReorgHandler {
 
       logger.debug('回滚区块', { blockNumber, hash: dbBlock.hash });
 
-      // 1. 获取该区块的所有交易
-      const transactions = await this.dbGatewayService.getTransactionsByBlockHash(dbBlock.hash);
-
-      // 2. 回滚交易相关的余额
-      for (const tx of transactions) {
-        await this.rollbackTransaction(tx);
-      }
-
-      // 3. 删除交易记录
+      // 1. 删除交易记录
       const deleteResult = await this.dbGatewayService.deleteTransactionsByBlockHash(dbBlock.hash);
       if (!deleteResult) {
         logger.error('删除交易记录失败', { blockNumber, blockHash: dbBlock.hash });
       }
 
-      // 4. 标记区块为孤块
+      // 2. 标记区块为孤块
       const updateResult = await this.dbGatewayService.updateBlockStatus(dbBlock.hash, 'orphaned');
       if (!updateResult) {
         logger.error('更新区块状态为孤块失败', { blockNumber, blockHash: dbBlock.hash });
@@ -248,7 +237,7 @@ export class ReorgHandler {
 
       return {
         hash: dbBlock.hash,
-        transactionCount: transactions.length
+        transactionCount: deleteResult?.deletedCount || 0
       };
 
     } catch (error) {
@@ -257,129 +246,6 @@ export class ReorgHandler {
     }
   }
 
-  /**
-   * 回滚交易的余额更新
-   * 由于在 finalized 状态的交易才更新余额，通常这里是不会出现的
-   */
-  private async rollbackTransaction(tx: any): Promise<void> {
-    try {
-      if (tx.type === 'deposit') {
-        const wallet = await walletDAO.getWalletByAddress(tx.to_addr);
-        if (!wallet) {
-          return;
-        }
-
-        // 只有已经 finalized 的交易才需要回滚余额
-        // 通常不会出现 finalized 后，再回滚
-        if (tx.status === 'finalized') {
-          // 确定代币符号
-          let tokenSymbol = 'ETH';
-          if (tx.token_addr) {
-            const token = await database.get(
-              'SELECT tokens_name FROM tokens WHERE token_address = ?',
-              [tx.token_addr]
-            );
-            tokenSymbol = token ? token.tokens_name : 'UNKNOWN';
-          }
-
-          const amount = BigInt(tx.amount); // amount已经是以最小单位存储的字符串
-
-          // 获取当前余额
-          const balance = await database.get(
-            'SELECT * FROM balances WHERE user_id = ? AND address = ? AND token_symbol = ?',
-            [wallet.user_id, tx.to_addr, tokenSymbol]
-          );
-
-          if (balance) {
-            // 从 balance 中减去已经添加的金额
-            const currentBalance = BigInt(balance.balance || '0');
-            const newBalance = currentBalance - amount;
-            
-            await database.run(
-              'UPDATE balances SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND address = ? AND token_symbol = ?',
-              [newBalance.toString(), wallet.user_id, tx.to_addr, tokenSymbol]
-            );
-
-            logger.debug('回滚交易余额', {
-              txHash: tx.tx_hash,
-              address: tx.to_addr,
-              tokenSymbol,
-              amount: amount.toString(),
-              status: tx.status
-            });
-          }
-        } else {
-          logger.debug('跳过回滚未finalized的交易', {
-            txHash: tx.tx_hash,
-            status: tx.status
-          });
-        }
-      }
-    } catch (error) {
-      logger.error('回滚交易失败', { txHash: tx.tx_hash, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 4. 重新同步正确链
-   */
-  private async resyncCorrectChain(startBlock: number, endBlock: number): Promise<void> {
-    try {
-      logger.info('开始重新同步正确链', { startBlock, endBlock });
-
-      // 清理孤立区块数据， 不清理，方便追踪重组
-      // await this.cleanupOrphanedBlocks();
-
-      // 这里应该调用扫描器重新扫描这些区块
-      // 但由于这个方法是在扫描过程中调用的，我们只需要返回
-      // 让调用者知道需要重新扫描哪些区块
-
-      logger.info('正确链重新同步准备完成', {
-        blocksToRescan: endBlock - startBlock + 1
-      });
-
-    } catch (error) {
-      logger.error('重新同步正确链失败', { startBlock, endBlock, error });
-      throw error;
-    }
-  }
-
-  /**
-   * 5. 数据库清理和恢复机制
-   */
-  private async cleanupOrphanedBlocks(): Promise<void> {
-    try {
-      logger.info('开始清理孤立区块数据');
-
-      // 获取所有孤立区块
-      const orphanedBlocks = await database.all(
-        'SELECT hash FROM blocks WHERE status = "orphaned"'
-      );
-
-      // 删除孤立区块的相关数据
-      for (const block of orphanedBlocks) {
-        // 删除相关交易（如果还有的话）
-        await database.run(
-          'DELETE FROM transactions WHERE block_hash = ?',
-          [block.hash]
-        );
-      }
-
-      // 删除孤立区块记录
-      const result = await database.run(
-        'DELETE FROM blocks WHERE status = "orphaned"'
-      );
-
-      logger.info('孤立区块数据清理完成', {
-        deletedBlocks: result.changes || 0
-      });
-
-    } catch (error) {
-      logger.error('清理孤立区块数据失败', { error });
-      throw error;
-    }
-  }
 
   /**
    * 获取重组统计信息， 用于Dashboard展示 或 Debug

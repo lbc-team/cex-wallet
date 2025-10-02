@@ -170,11 +170,23 @@ export class DbGatewayService {
     });
 
     if (!riskResponse.ok) {
-      const errorData = await riskResponse.json().catch(() => ({}));
+      const errorData = await riskResponse.json().catch(() => ({})) as any;
       throw new Error(`风控评估失败: ${riskResponse.status} - ${errorData.error?.message || '评估失败'}`);
     }
 
-    const riskResult = await riskResponse.json();
+    const riskResult = await riskResponse.json() as {
+      success: boolean;
+      decision: string;
+      risk_signature: string;
+      timestamp: number;
+      db_operation?: {
+        table: string;
+        action: string;
+        data?: any;
+        conditions?: any;
+      };
+      reasons?: string[];
+    };
 
     if (!riskResult.success) {
       throw new Error(`风控评估被拒绝: ${riskResult.decision} - ${riskResult.reasons?.join(', ') || '未通过风控'}`);
@@ -825,6 +837,112 @@ export class DbGatewayService {
       console.error(`更新区块状态失败 (blockHash: ${blockHash}):`, error);
       return false;
     }
+  }
+
+  /**
+   * 更新提现状态
+   */
+  async updateWithdrawStatus(
+    withdrawId: number,
+    status: 'pending' | 'confirmed' | 'failed' | 'finalized',
+    extraData?: {
+      gas_used?: string;
+      error_message?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      const updateData: any = {
+        status,
+        updated_at: new Date().toISOString()
+      };
+
+      if (extraData?.gas_used) {
+        updateData.gas_used = extraData.gas_used;
+      }
+
+      if (extraData?.error_message) {
+        updateData.error_message = extraData.error_message;
+      }
+
+      await this.executeOperation(
+        'withdraws',
+        'update',
+        'sensitive',
+        updateData,
+        { id: withdrawId }
+      );
+
+      return true;
+    } catch (error) {
+      console.error(`更新提现状态失败 (withdrawId: ${withdrawId}):`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 根据reference_id更新Credit状态
+   */
+  async updateCreditStatusByReferenceId(
+    referenceId: string,
+    referenceType: string,
+    status: 'pending' | 'confirmed' | 'failed' | 'finalized',
+    extraData?: {
+      block_number?: number;
+    }
+  ): Promise<boolean> {
+    try {
+      const updateData: any = {
+        status,
+        updated_at: new Date().toISOString()
+      };
+
+      if (extraData?.block_number !== undefined) {
+        updateData.block_number = extraData.block_number;
+      }
+
+      await this.executeOperation(
+        'credits',
+        'update',
+        'sensitive',
+        updateData,
+        {
+          reference_id: referenceId,
+          reference_type: referenceType
+        }
+      );
+
+      return true;
+    } catch (error) {
+      console.error(`更新Credit状态失败 (referenceId: ${referenceId}):`, error);
+      return false;
+    }
+  }
+
+  /**
+   * 创建交易记录（别名方法，与insertTransaction功能相同）
+   */
+  async createTransaction(params: {
+    tx_hash: string;
+    block_hash?: string;
+    block_no?: number;
+    from_addr?: string;
+    to_addr?: string;
+    token_addr?: string | null;
+    amount: string;
+    type: string;
+    status: string;
+  }): Promise<boolean> {
+    return await this.insertTransaction({
+      block_hash: params.block_hash,
+      block_no: params.block_no,
+      tx_hash: params.tx_hash,
+      from_addr: params.from_addr,
+      to_addr: params.to_addr,
+      token_addr: params.token_addr || undefined,
+      amount: params.amount,
+      type: params.type,
+      status: params.status
+    });
   }
 }
 

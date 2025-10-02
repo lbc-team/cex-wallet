@@ -52,25 +52,6 @@ export class Database {
     }
   }
 
-  /**
-   * 执行查询
-   */
-  async run(sql: string, params: any[] = []): Promise<sqlite3.RunResult> {
-    return new Promise((resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('数据库连接未初始化'));
-        return;
-      }
-
-      this.db.run(sql, params, function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(this);
-        }
-      });
-    });
-  }
 
   /**
    * 查询单行
