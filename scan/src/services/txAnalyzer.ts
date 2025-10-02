@@ -1,6 +1,6 @@
 import { viemClient } from '../utils/viemClient';
 import { walletDAO, tokenDAO, database } from '../db/models';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';
 import config from '../config';
 import { Transaction, Block } from 'viem';
@@ -24,7 +24,7 @@ export class TransactionAnalyzer {
   private lastAddressUpdate: number = 0;
   private lastTokenUpdate: number = 0;
   private readonly CACHE_DURATION = 15 * 60 * 1000; // 15分钟缓存（有数据变化检测兜底）
-  private dbGatewayService = getDbGatewayService();
+  private dbGatewayClient = getDbGatewayClient();
 
   // 检测用户数据 或 Token 变化
   private lastUserCount = 0;
@@ -267,8 +267,8 @@ export class TransactionAnalyzer {
       
       const decimals = tokenInfo?.decimals || 18;
       
-      // 通过 dbGatewayService 保存交易记录
-      await this.dbGatewayService.insertTransactionWithSQL({
+      // 通过 dbGatewayClient 保存交易记录
+      await this.dbGatewayClient.insertTransactionWithSQL({
         block_hash: deposit.blockHash,
         block_no: deposit.blockNumber,
         tx_hash: deposit.txHash,
@@ -282,7 +282,7 @@ export class TransactionAnalyzer {
       });
 
       // 通过 db_gateway API 立即创建Credit记录（使用真实的事件索引）
-      await this.dbGatewayService.createCredit({
+      await this.dbGatewayClient.createCredit({
         user_id: deposit.userId,
         address: deposit.toAddress,
         token_id: tokenInfo.id,
@@ -633,7 +633,7 @@ export class TransactionAnalyzer {
         // 使用远程事务批量处理存款
         if (deposits.length > 0) {
           const batchData = await this.prepareBatchDepositsData(deposits);
-          const success = await this.dbGatewayService.processDepositsInTransaction(batchData);
+          const success = await this.dbGatewayClient.processDepositsInTransaction(batchData);
 
           if (success) {
             logger.debug('历史区块批次远程事务提交成功', {

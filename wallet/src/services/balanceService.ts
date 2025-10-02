@@ -8,7 +8,7 @@ import {
   Credit
 } from '../db/models/credit';
 import { normalizeBigIntString } from '../utils/numberUtils';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 
 /**
  * 余额服务 - 基于Credits流水表的余额管理
@@ -127,8 +127,8 @@ export class BalanceService {
    * 重组回滚：删除指定区块范围的Credits - 使用SQL构建方式
    */
   async rollbackByBlockRange(startBlock: number, endBlock: number): Promise<number> {
-    const dbGatewayService = getDbGatewayService();
-    return await dbGatewayService.deleteByBlockRange(startBlock, endBlock);
+    const dbGatewayClient = getDbGatewayClient();
+    return await dbGatewayClient.deleteByBlockRange(startBlock, endBlock);
   }
 
   /**

@@ -3,7 +3,7 @@ import { database } from '../db/models';
 import { transactionAnalyzer } from './txAnalyzer';
 import { reorgHandler } from './reorgHandler';
 import { confirmationManager } from './confirmationManager';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -23,7 +23,7 @@ export interface ScanProgress {
 export class BlockScanner {
   private isScanning: boolean = false;
   private intervalTimer: NodeJS.Timeout | null = null;
-  private dbGatewayService = getDbGatewayService();
+  private dbGatewayClient = getDbGatewayClient();
 
   /**
    * 启动扫描服务
@@ -239,7 +239,7 @@ export class BlockScanner {
       const depositData = await transactionAnalyzer.prepareBatchDepositsData(deposits);
 
       // 使用远程事务批量处理区块和存款
-      const success = await this.dbGatewayService.processBlocksAndDepositsInTransaction(blockData, depositData);
+      const success = await this.dbGatewayClient.processBlocksAndDepositsInTransaction(blockData, depositData);
 
       if (!success) {
         throw new Error(`批量处理区块和存款失败: ${startBlock}-${endBlock}`);
@@ -291,7 +291,7 @@ export class BlockScanner {
         }
 
         // 保存区块信息
-        await this.dbGatewayService.insertBlock({
+        await this.dbGatewayClient.insertBlock({
           hash: block.hash!,
           parent_hash: block.parentHash,
           number: block.number!.toString(),
@@ -386,7 +386,7 @@ export class BlockScanner {
 
       // 处理所有数据库写入操作
       // 1. 保存区块信息
-      await this.dbGatewayService.insertBlock({
+      await this.dbGatewayClient.insertBlock({
         hash: block.hash!,
         parent_hash: block.parentHash,
         number: block.number!.toString(),
@@ -501,7 +501,7 @@ export class BlockScanner {
     try {
       const latestBlock = await viemClient.getLatestBlockNumber();
       const lastScannedBlock = await this.getLastScannedBlock();
-      const pendingTxs = await this.dbGatewayService.getPendingTransactionsWithSQL();
+      const pendingTxs = await this.dbGatewayClient.getPendingTransactionsWithSQL();
       const reorgStats = await reorgHandler.getReorgStats();
 
       const isUpToDate = lastScannedBlock >= latestBlock;

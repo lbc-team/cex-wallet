@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Ed25519Signer, SignaturePayload } from '../utils/crypto';
+import { getRiskControlClient } from './riskControlClient';
 
 interface GatewayRequest {
   operation_id: string;
@@ -24,10 +25,11 @@ interface GatewayResponse {
   };
 }
 
-// DB Gateway Service - 封装对 db_gateway API 的调用
-export class DbGatewayService {
+// DB Gateway Client - 封装对 db_gateway API 的调用
+export class DbGatewayClient {
   private baseUrl: string;
   private signer: Ed25519Signer;
+  private riskControlClient = getRiskControlClient();
 
   constructor(baseUrl: string = 'http://localhost:3003') {
     this.baseUrl = baseUrl;
@@ -51,7 +53,7 @@ export class DbGatewayService {
 
       // 如果是敏感操作，先请求风控评估
       if (operationType === 'sensitive') {
-        const riskResult = await this.requestRiskAssessment({
+        const riskResult = await this.riskControlClient.requestRiskAssessment({
           operation_id: operationId,
           operation_type: operationType,
           table,
@@ -118,141 +120,6 @@ export class DbGatewayService {
       console.error('数据库操作失败:', error);
       throw error;
     }
-  }
-
-  /**
-   * 请求风控评估
-   * @param params 风控评估参数
-   * @returns 风控评估结果
-   */
-  private async requestRiskAssessment(params: {
-    operation_id: string;
-    operation_type: 'read' | 'write' | 'sensitive';
-    table: string;
-    action: 'select' | 'insert' | 'update' | 'delete';
-    data?: any;
-    conditions?: any;
-    timestamp: number;  // 业务层生成的时间戳
-  }): Promise<{
-    success: boolean;
-    decision: string;
-    risk_signature: string;
-    timestamp: number;  // 风控层返回相同的 timestamp
-    db_operation?: {
-      table: string;
-      action: string;
-      data?: any;
-      conditions?: any;
-    };
-    reasons?: string[];
-  }> {
-    const riskControlUrl = process.env.RISK_CONTROL_URL || 'http://localhost:3004';
-
-    const riskRequest = {
-      operation_id: params.operation_id,
-      operation_type: params.operation_type,
-      table: params.table,
-      action: params.action,
-      data: params.data,
-      conditions: params.conditions,
-      timestamp: params.timestamp,  // 传递业务层生成的 timestamp
-      // 使用 context 传递风控相关信息，更灵活
-      context: this.extractRiskContext(params.table, params.action, params.data)
-    };
-
-    // 请求风控评估
-    const riskResponse = await fetch(`${riskControlUrl}/api/assess`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(riskRequest)
-    });
-
-    if (!riskResponse.ok) {
-      const errorData = await riskResponse.json().catch(() => ({})) as any;
-      throw new Error(`风控评估失败: ${riskResponse.status} - ${errorData.error?.message || '评估失败'}`);
-    }
-
-    const riskResult = await riskResponse.json() as {
-      success: boolean;
-      decision: string;
-      risk_signature: string;
-      timestamp: number;
-      db_operation?: {
-        table: string;
-        action: string;
-        data?: any;
-        conditions?: any;
-      };
-      reasons?: string[];
-    };
-
-    if (!riskResult.success) {
-      throw new Error(`风控评估被拒绝: ${riskResult.decision} - ${riskResult.reasons?.join(', ') || '未通过风控'}`);
-    }
-
-    return riskResult;
-  }
-
-  /**
-   * 提取风控上下文信息
-   * 根据不同的表和操作类型，提取相关的风控字段
-   */
-  private extractRiskContext(table: string, action: string, data?: any): Record<string, any> {
-    if (!data) return {};
-
-    const context: Record<string, any> = {};
-
-    // 根据表类型提取不同的字段
-    if (table === 'credits') {
-      // 充值/提现/转账相关字段
-      if (data.user_id) context.user_id = data.user_id;
-      if (data.amount) context.amount = data.amount;
-      if (data.token_id) context.token_id = data.token_id;
-      if (data.token_symbol) context.token_symbol = data.token_symbol;
-      if (data.credit_type) context.credit_type = data.credit_type;
-      if (data.business_type) context.business_type = data.business_type;
-      if (data.tx_hash) context.tx_hash = data.tx_hash;
-      if (data.address) context.address = data.address;
-      if (data.chain_id) context.chain_id = data.chain_id;
-      if (data.chain_type) context.chain_type = data.chain_type;
-
-      // 从 metadata 中提取更多信息
-      if (data.metadata) {
-        try {
-          const metadata = typeof data.metadata === 'string'
-            ? JSON.parse(data.metadata)
-            : data.metadata;
-          if (metadata.from_address) context.from_address = metadata.from_address;
-          if (metadata.to_address) context.to_address = metadata.to_address;
-        } catch (error) {
-          // metadata 解析失败，忽略
-        }
-      }
-    } else if (table === 'withdraws') {
-      // 提现记录相关字段
-      if (data.user_id) context.user_id = data.user_id;
-      if (data.to_address) context.to_address = data.to_address;
-      if (data.amount) context.amount = data.amount;
-      if (data.token_id) context.token_id = data.token_id;
-    } else if (table === 'users') {
-      // 用户相关字段
-      if (data.id) context.user_id = data.id;
-      if (data.status) context.user_status = data.status;
-      if (data.kyc_status) context.kyc_status = data.kyc_status;
-    }
-
-    // 通用字段：从 data 中提取所有常见的风控字段
-    // 这样即使是其他表，也能提取到风控需要的信息
-    if (data.from_address && !context.from_address) {
-      context.from_address = data.from_address;
-    }
-    if (data.to_address && !context.to_address) {
-      context.to_address = data.to_address;
-    }
-
-    return context;
   }
 
   /**
@@ -947,14 +814,14 @@ export class DbGatewayService {
 }
 
 // 单例实例
-let dbGatewayService: DbGatewayService | null = null;
+let dbGatewayClient: DbGatewayClient | null = null;
 
 /**
- * 获取 DbGatewayService 单例实例
+ * 获取 DbGatewayClient 单例实例
  */
-export function getDbGatewayService(): DbGatewayService {
-  if (!dbGatewayService) {
-    dbGatewayService = new DbGatewayService();
+export function getDbGatewayClient(): DbGatewayClient {
+  if (!dbGatewayClient) {
+    dbGatewayClient = new DbGatewayClient();
   }
-  return dbGatewayService;
+  return dbGatewayClient;
 }

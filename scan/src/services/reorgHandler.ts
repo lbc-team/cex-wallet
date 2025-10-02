@@ -1,6 +1,6 @@
 import { viemClient } from '../utils/viemClient';
 import { blockDAO,  walletDAO, database } from '../db/models';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -13,7 +13,7 @@ export interface ReorgInfo {
 }
 
 export class ReorgHandler {
-  private dbGatewayService = getDbGatewayService();
+  private dbGatewayClient = getDbGatewayClient();
 
   /**
    * 检查区块链重组并处理
@@ -174,7 +174,7 @@ export class ReorgHandler {
       let revertedTransactions = 0;
 
       // 首先删除受影响区块的Credit记录
-      const deletedCredits = await this.dbGatewayService.deleteCreditsByBlockRange(
+      const deletedCredits = await this.dbGatewayClient.deleteCreditsByBlockRange(
         commonAncestor + 1,
         currentBlock
       );
@@ -224,13 +224,13 @@ export class ReorgHandler {
       logger.debug('回滚区块', { blockNumber, hash: dbBlock.hash });
 
       // 1. 删除交易记录
-      const deleteResult = await this.dbGatewayService.deleteTransactionsByBlockHash(dbBlock.hash);
+      const deleteResult = await this.dbGatewayClient.deleteTransactionsByBlockHash(dbBlock.hash);
       if (!deleteResult) {
         logger.error('删除交易记录失败', { blockNumber, blockHash: dbBlock.hash });
       }
 
       // 2. 标记区块为孤块
-      const updateResult = await this.dbGatewayService.updateBlockStatus(dbBlock.hash, 'orphaned');
+      const updateResult = await this.dbGatewayClient.updateBlockStatus(dbBlock.hash, 'orphaned');
       if (!updateResult) {
         logger.error('更新区块状态为孤块失败', { blockNumber, blockHash: dbBlock.hash });
       }

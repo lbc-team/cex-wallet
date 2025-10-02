@@ -3,7 +3,7 @@ import logger from '../utils/logger';
 import config from '../config';
 import { viemClient } from '../utils/viemClient';
 import { type Hash, type TransactionReceipt } from 'viem';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 
 /**
  * 提现交易监控服务
@@ -14,7 +14,7 @@ import { getDbGatewayService } from './dbGatewayService';
  */
 export class WithdrawMonitor {
   private database: Database;
-  private dbGatewayService = getDbGatewayService();
+  private dbGatewayClient = getDbGatewayClient();
   private isRunning: boolean = false;
   private monitorInterval: NodeJS.Timeout | null = null;
   private readonly MAX_RETRY_COUNT = 10; // 最大重试次数
@@ -435,7 +435,7 @@ export class WithdrawMonitor {
     blockNumber: number;
     txHash: string;
   }): Promise<void> {
-    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'confirmed', {
+    await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'confirmed', {
       gas_used: updateData.gasUsed
     });
   }
@@ -448,7 +448,7 @@ export class WithdrawMonitor {
     blockNumber?: number;
     errorMessage: string;
   }): Promise<void> {
-    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'failed', {
+    await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
       gas_used: updateData.gasUsed,
       error_message: updateData.errorMessage
     });
@@ -461,7 +461,7 @@ export class WithdrawMonitor {
     finalizationMethod: string;
     finalizedAt: string;
   }): Promise<void> {
-    await this.dbGatewayService.updateWithdrawStatus(withdrawId, 'finalized', {});
+    await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'finalized', {});
   }
 
   /**
@@ -472,7 +472,7 @@ export class WithdrawMonitor {
     status: 'confirmed' | 'failed' | 'finalized',
     blockNumber?: number,
   ): Promise<void> {
-    await this.dbGatewayService.updateCreditStatusByReferenceId(
+    await this.dbGatewayClient.updateCreditStatusByReferenceId(
       withdrawId.toString(),
       'withdraw',
       status,
@@ -494,7 +494,7 @@ export class WithdrawMonitor {
     type: string;
     status: string;
   }): Promise<void> {
-    await this.dbGatewayService.createTransaction({
+    await this.dbGatewayClient.createTransaction({
       tx_hash: data.txHash,
       block_hash: data.blockHash,
       block_no: data.blockNumber,

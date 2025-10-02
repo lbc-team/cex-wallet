@@ -1,6 +1,6 @@
 import { DatabaseConnection } from '../db/connection';
 import { SignerService } from './signerService';
-import { getDbGatewayService } from './dbGatewayService';
+import { getDbGatewayClient } from './dbGatewayClient';
 
 /**
  * 热钱包管理服务，支持高并发提现场景下的 nonce 管理
@@ -8,7 +8,7 @@ import { getDbGatewayService } from './dbGatewayService';
 export class HotWalletService {
   private db: DatabaseConnection;
   private signerService: SignerService;
-  private dbGatewayService = getDbGatewayService();
+  private dbGatewayClient = getDbGatewayClient();
 
   constructor(db: DatabaseConnection) {
     this.db = db;
@@ -48,7 +48,7 @@ export class HotWalletService {
   async markNonceUsed(address: string, chainId: number, usedNonce: number): Promise<void> {
     try {
       // 通过 db_gateway API 原子性更新nonce为已使用的nonce + 1
-      const result = await this.dbGatewayService.atomicIncrementNonce(address, chainId, usedNonce);
+      const result = await this.dbGatewayClient.atomicIncrementNonce(address, chainId, usedNonce);
 
       if (!result.success) {
         throw new Error(`Failed to mark nonce ${usedNonce} as used for wallet ${address} on chain ${chainId}`);
@@ -111,7 +111,7 @@ export class HotWalletService {
       }
 
       // 4. 通过 db_gateway API 保存到 wallets 表
-      const wallet = await this.dbGatewayService.createWallet({
+      const wallet = await this.dbGatewayClient.createWallet({
         user_id: systemUserId,
         address,
         device,
@@ -149,7 +149,7 @@ export class HotWalletService {
    * 同步 nonce 从链上
    */
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
-    return await this.dbGatewayService.syncNonceFromChain(address, chainId, chainNonce);
+    return await this.dbGatewayClient.syncNonceFromChain(address, chainId, chainNonce);
   }
 
 }

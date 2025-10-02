@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { getDbGatewayService } from '../services/dbGatewayService';
+import { getDbGatewayClient } from '../services/dbGatewayClient';
 import { HotWalletService } from '../services/hotWalletService';
 import { getDatabase } from '../db/connection';
 
@@ -12,7 +12,7 @@ const logger = {
 
 async function insertMockData() {
   try {
-    const dbGateway = getDbGatewayService();
+    const dbGateway = getDbGatewayClient();
 
     // 1. 初始化系统用户
     logger.info('初始化系统用户...');

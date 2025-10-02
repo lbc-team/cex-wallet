@@ -78,7 +78,6 @@ npm start
   "conditions": { /* 查询条件 */ },
   "business_signature": "ed25519_signature",
   "timestamp": 1640995200000,
-  "module": "wallet|scan"
 }
 ```
 
@@ -101,7 +100,6 @@ const signaturePayload = {
   data: { /* 操作数据 */ },
   conditions: null,
   timestamp: Date.now(),
-  module: "wallet"
 };
 
 const message = JSON.stringify(signaturePayload);
