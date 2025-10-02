@@ -33,7 +33,7 @@ const config: Config = {
   ethRpcUrlBackup: process.env.ETH_RPC_URL_BACKUP,
   
   // 数据库配置
-  databaseUrl: process.env.DATABASE_URL || path.join(__dirname, '../../../wallet/wallet.db'),
+  databaseUrl: process.env.WALLET_DB_PATH || '',
   
   // 扫描配置
   startBlock: parseInt(process.env.START_BLOCK || '1'),

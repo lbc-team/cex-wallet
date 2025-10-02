@@ -1,5 +1,5 @@
 import sqlite3 from 'sqlite3';
-import { join } from 'path';
+import { join, resolve, isAbsolute } from 'path';
 import { logger } from '../utils/logger';
 
 export class DatabaseService {
@@ -7,9 +7,16 @@ export class DatabaseService {
   private dbPath: string;
 
   constructor() {
-    this.dbPath = process.env.WALLET_DB_PATH
-      ? join(__dirname, process.env.WALLET_DB_PATH)
-      : join(__dirname, '../../../wallet.db');
+    // If WALLET_DB_PATH is absolute, use it directly
+    // Otherwise, treat it as relative to the project root (db_gateway directory)
+    if (process.env.WALLET_DB_PATH) {
+      this.dbPath = isAbsolute(process.env.WALLET_DB_PATH)
+        ? process.env.WALLET_DB_PATH
+        : resolve(process.cwd(), process.env.WALLET_DB_PATH);
+    } else {
+      // Default: wallet.db in db_gateway directory
+      this.dbPath = resolve(process.cwd(), 'wallet.db');
+    }
   }
 
   async connect(): Promise<void> {
@@ -181,6 +188,17 @@ export class DatabaseService {
         )
       `);
 
+      // 创建 operation_id 跟踪表（用于防重放攻击）
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS used_operation_ids (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          operation_id TEXT UNIQUE NOT NULL,
+          used_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
       // 创建提现记录表
       await this.run(`
         CREATE TABLE IF NOT EXISTS withdraws (
@@ -263,7 +281,11 @@ export class DatabaseService {
       `CREATE INDEX IF NOT EXISTS idx_withdraws_status ON withdraws(status)`,
       `CREATE INDEX IF NOT EXISTS idx_withdraws_chain ON withdraws(chain_id, chain_type)`,
       `CREATE INDEX IF NOT EXISTS idx_withdraws_tx_hash ON withdraws(tx_hash)`,
-      `CREATE INDEX IF NOT EXISTS idx_withdraws_created_at ON withdraws(created_at)`
+      `CREATE INDEX IF NOT EXISTS idx_withdraws_created_at ON withdraws(created_at)`,
+
+      // Used operation_ids 表索引
+      `CREATE INDEX IF NOT EXISTS idx_operation_ids_id ON used_operation_ids(operation_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_operation_ids_expires_at ON used_operation_ids(expires_at)`
     ];
 
     for (const indexSql of indexes) {

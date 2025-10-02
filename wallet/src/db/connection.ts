@@ -7,7 +7,8 @@ export class DatabaseConnection {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || path.join(__dirname, '../../../db_gateway/wallet.db');
+    // Use WALLET_DB_PATH from environment or default to db_gateway/wallet.db
+    this.dbPath = dbPath || process.env.WALLET_DB_PATH || '';
   }
 
   // 连接数据库

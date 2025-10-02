@@ -35,8 +35,8 @@ Wallet 模块和 scan 模块
 scan(写 credits )  
 风控给出操作建议，并签名， 业务层再次签名
 
-UUID ， 防止签名重放
-
+UUID ， 防止签名重放. 在验证签名之前就检查 operation_id，可以更早拒绝重放攻击
+ 
 ## 审计日志
 
 #### GET /api/audit/logs

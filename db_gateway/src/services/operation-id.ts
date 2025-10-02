@@ -13,39 +13,8 @@ export class OperationIdService {
 
   constructor(dbService: DatabaseService) {
     this.dbService = dbService;
-    this.initNonceTable();
-    this.startCleanupJob();
   }
 
-  /**
-   * 初始化operation_id跟踪表
-   */
-  private async initNonceTable() {
-    try {
-      await this.dbService.run(`
-        CREATE TABLE IF NOT EXISTS used_operation_ids (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          operation_id TEXT UNIQUE NOT NULL,
-          used_at INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      await this.dbService.run(`
-        CREATE INDEX IF NOT EXISTS idx_operation_ids_id ON used_operation_ids(operation_id)
-      `);
-
-      await this.dbService.run(`
-        CREATE INDEX IF NOT EXISTS idx_operation_ids_expires_at ON used_operation_ids(expires_at)
-      `);
-
-      logger.info('Operation ID tracking table initialized');
-    } catch (error) {
-      logger.error('Failed to initialize operation ID tracking table', { error });
-      throw error;
-    }
-  }
 
   /**
    * 验证并记录operation_id（作为nonce使用）
@@ -114,52 +83,8 @@ export class OperationIdService {
     );
 
     return !!existing;
-  }
+  } 
 
-  /**
-   * 清理过期的operation_id记录
-   */
-  private async cleanupExpiredNonces() {
-    try {
-      const now = Date.now();
-
-      // 清理数据库中的过期记录
-      const result = await this.dbService.run(
-        'DELETE FROM used_operation_ids WHERE expires_at < ?',
-        [now]
-      );
-
-      // 清理内存缓存中的过期记录
-      let memoryCleanedCount = 0;
-      for (const [operationId, expiresAt] of this.memoryCache.entries()) {
-        if (expiresAt < now) {
-          this.memoryCache.delete(operationId);
-          memoryCleanedCount++;
-        }
-      }
-
-      if (result.changes > 0 || memoryCleanedCount > 0) {
-        logger.info('Cleaned up expired operation IDs', {
-          dbRecords: result.changes,
-          memoryRecords: memoryCleanedCount
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to cleanup expired operation IDs', { error });
-    }
-  }
-
-  /**
-   * 启动定期清理任务
-   */
-  private startCleanupJob() {
-    // 每分钟清理一次过期operation_id
-    setInterval(() => {
-      this.cleanupExpiredNonces();
-    }, 60 * 1000);
-
-    logger.info('Operation ID cleanup job started');
-  }
 
   /**
    * 获取operation_id统计信息
