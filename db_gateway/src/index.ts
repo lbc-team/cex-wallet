@@ -181,7 +181,15 @@ class DatabaseGatewayService {
     }
   }
 
-  public start() {
+  public async start() {
+    // 先连接数据库
+    try {
+      await this.dbService.connect();
+    } catch (error) {
+      logger.error('Failed to connect to database', { error });
+      process.exit(1);
+    }
+
     this.app.listen(this.port, '0.0.0.0', () => {
       logger.info('Database Gateway Service started', {
         port: this.port,

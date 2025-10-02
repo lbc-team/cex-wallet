@@ -8,13 +8,10 @@ import { logger } from '../utils/logger';
  */
 export class OperationIdService {
   private dbService: DatabaseService;
-  private memoryCache: Map<string, number> = new Map();
-  private readonly NONCE_EXPIRY_MS = 5 * 60 * 1000; // 5分钟过期
 
   constructor(dbService: DatabaseService) {
     this.dbService = dbService;
   }
-
 
   /**
    * 验证并记录operation_id（作为nonce使用）
@@ -27,40 +24,29 @@ export class OperationIdService {
     timestamp: number
   ): Promise<boolean> {
     try {
-      // 1. 检查内存缓存（快速路径）
-      if (this.memoryCache.has(operationId)) {
-        logger.warn('Operation ID already used (memory cache)', { operationId });
-        return false;
-      }
-
-      // 2. 检查数据库
+      // 检查数据库中是否已存在
       const existing = await this.dbService.queryOne<{ operation_id: string }>(
         'SELECT operation_id FROM used_operation_ids WHERE operation_id = ?',
         [operationId]
       );
 
       if (existing) {
-        logger.warn('Operation ID already used (database)', { operationId });
+        logger.warn('Operation ID already used', { operationId });
         return false;
       }
 
-      // 3. 记录operation_id到数据库
+      // 记录operation_id到数据库
       const usedAt = Date.now();
-      const expiresAt = usedAt + this.NONCE_EXPIRY_MS;
-
       await this.dbService.run(
         `INSERT INTO used_operation_ids (operation_id, used_at, expires_at)
          VALUES (?, ?, ?)`,
-        [operationId, usedAt, expiresAt]
+        [operationId, usedAt, usedAt]
       );
-
-      // 4. 添加到内存缓存
-      this.memoryCache.set(operationId, expiresAt);
 
       logger.info('Operation ID validated and recorded', { operationId });
       return true;
     } catch (error) {
-      logger.error('Operation ID validation failed', { operationId, error });
+      logger.error('Operation ID validation failed', { operationId, error, stack: error instanceof Error ? error.stack : undefined });
       return false;
     }
   }
@@ -71,32 +57,24 @@ export class OperationIdService {
    * @returns 如果已使用返回true
    */
   async isOperationIdUsed(operationId: string): Promise<boolean> {
-    // 先检查内存缓存
-    if (this.memoryCache.has(operationId)) {
-      return true;
-    }
-
-    // 再检查数据库
     const existing = await this.dbService.queryOne<{ operation_id: string }>(
       'SELECT operation_id FROM used_operation_ids WHERE operation_id = ?',
       [operationId]
     );
 
     return !!existing;
-  } 
-
+  }
 
   /**
    * 获取operation_id统计信息
    */
-  async getStats(): Promise<{ dbCount: number; memoryCount: number }> {
+  async getStats(): Promise<{ dbCount: number }> {
     const result = await this.dbService.queryOne<{ count: number }>(
       'SELECT COUNT(*) as count FROM used_operation_ids'
     );
 
     return {
-      dbCount: result?.count || 0,
-      memoryCount: this.memoryCache.size
+      dbCount: result?.count || 0
     };
   }
 }

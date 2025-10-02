@@ -2,4 +2,6 @@ sqlite3 wallet.db "SELECT from_addr, to_addr, token_addr, amount, type, status F
 
 sqlite3 wallet.db "SELECT * FROM users;"
 
+sqlite3 wallet.db "SELECT * FROM used_operation_ids;"
+
 sqlite3 wallet.db "SELECT user_id, address FROM wallets;"

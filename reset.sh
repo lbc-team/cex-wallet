@@ -8,3 +8,8 @@ rm -rf db_gateway/wallet.db
 rm -rf db_gateway/wallet.db-shm
 rm -rf db_gateway/wallet.db-wal
 rm -rf signer/signer.db
+
+rm -rf scan/logs
+rm -rf db_gateway/logs
+
+
