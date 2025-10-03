@@ -237,23 +237,12 @@ export class DatabaseConnection {
 
 
   // ========== Nonce 管理相关方法 ==========
-
-  // 获取钱包 nonce
-  async getWalletNonce(walletId: number, chainId: number): Promise<number> {
-    const result = await this.queryOne(
-      'SELECT nonce FROM wallet_nonces WHERE wallet_id = ? AND chain_id = ?',
-      [walletId, chainId]
-    );
-    return result?.nonce || 0;
-  }
-
   // 通过地址获取 nonce
   async getCurrentNonce(address: string, chainId: number): Promise<number> {
     const result = await this.queryOne(`
-      SELECT wn.nonce 
-      FROM wallet_nonces wn
-      JOIN wallets w ON wn.wallet_id = w.id
-      WHERE w.address = ? AND wn.chain_id = ?
+      SELECT nonce
+      FROM wallet_nonces
+      WHERE address = ? AND chain_id = ?
     `, [address, chainId]);
     return result?.nonce || -1;
   }
@@ -314,15 +303,15 @@ export class DatabaseConnection {
   }[]> {
     // 关联查询 wallets 和 wallet_nonces，按 last_used_at 排序， 确保优先选择最久未使用的热钱包，提升负载均衡。
     const sql = `
-      SELECT 
+      SELECT
         w.address,
         w.device,
         COALESCE(wn.nonce, 0) as nonce,
         wn.last_used_at
       FROM wallets w
-      LEFT JOIN wallet_nonces wn ON w.id = wn.wallet_id AND wn.chain_id = ?
+      LEFT JOIN wallet_nonces wn ON w.address = wn.address AND wn.chain_id = ?
       WHERE w.chain_type = ? AND w.wallet_type = 'hot' AND w.is_active = 1
-      ORDER BY 
+      ORDER BY
         CASE WHEN wn.last_used_at IS NULL THEN 0 ELSE 1 END,
         wn.last_used_at ASC
     `;

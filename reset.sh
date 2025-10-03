@@ -3,11 +3,7 @@
 echo "Resetting db_gateway, wallet, scan, and signer databases..."
 
 
-pkill -f "wallet.*ts-node" 
-pkill -f "scan.*ts-node" 
-pkill -f "signer.*ts-node" 
-pkill -f "db_gateway.*ts-node" 
-pkill -f "risk_control.*ts-node"
+pkill -f "wallet.*ts-node" && pkill -f "scan.*ts-node" && pkill -f "signer.*ts-node"  && pkill -f "db_gateway.*ts-node" && pkill -f "risk_control.*ts-node"
 
 
 rm -rf db_gateway/wallet.db
