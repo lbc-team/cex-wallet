@@ -142,7 +142,7 @@ class WithdrawTester {
 
     // 4. 测试 OPS 提现
     console.log('\n--- 测试 OPS 提现 ---');
-    const opsAmount = '3'; // 示例：3 OPS（当前模拟 withdraw_fee 为 2 OPS）
+    const opsAmount = '20'; // 示例：20 OPS（当前模拟 withdraw_fee 为 2 OPS）
     console.log('提现金额:', opsAmount, 'OPS');
     const withdrawRequestOps: WithdrawRequest = {
       userId: CONFIG.USER_ID,

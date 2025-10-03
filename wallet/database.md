@@ -58,12 +58,20 @@ node dist/scripts/createTables.js
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键，自增 |
-| wallet_id | INTEGER | 关联 wallets.id |
+| address | TEXT | 钱包地址（避免二次查询，直接使用地址而非wallet_id） |
 | chain_id | INTEGER | 链ID |
 | nonce | INTEGER | 当前 nonce 值，用于交易排序 |
 | last_used_at | DATETIME | 最后使用时间 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+
+**约束**:
+- `UNIQUE(address, chain_id)` - 每个钱包在每个链上只有一个nonce记录
+
+**索引**:
+- `idx_wallet_nonces_address` - 钱包地址索引
+- `idx_wallet_nonces_chain` - 链ID索引
+- `idx_wallet_nonces_last_used` - 最后使用时间索引
 
 ### 已使用操作ID表 (used_operation_ids) - 防止重放攻击
 | 字段 | 类型 | 说明 |

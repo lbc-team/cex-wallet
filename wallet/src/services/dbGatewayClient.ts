@@ -431,7 +431,7 @@ export class DbGatewayClient {
     newNonce: number;
   }> {
     try {
-      // 先查询当前nonce
+      // 查询当前nonce
       const currentRecords = await this.executeOperation(
         'wallet_nonces',
         'select',
@@ -495,7 +495,7 @@ export class DbGatewayClient {
    */
   async syncNonceFromChain(address: string, chainId: number, chainNonce: number): Promise<boolean> {
     try {
-      // 先查询记录是否存在
+      // 查询 nonce 记录是否存在
       const existingRecords = await this.executeOperation(
         'wallet_nonces',
         'select',

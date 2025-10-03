@@ -177,14 +177,13 @@ export class DatabaseService {
       await this.run(`
         CREATE TABLE IF NOT EXISTS wallet_nonces (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          wallet_id INTEGER NOT NULL,        -- 关联 wallets.id
+          address TEXT NOT NULL,            -- 钱包地址
           chain_id INTEGER NOT NULL,        -- 链ID
           nonce INTEGER NOT NULL DEFAULT 0,  -- 当前 nonce 值
           last_used_at DATETIME,            -- 最后使用时间
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (wallet_id) REFERENCES wallets(id),
-          UNIQUE(wallet_id, chain_id)       -- 每个钱包在每个链上只有一个nonce记录
+          UNIQUE(address, chain_id)         -- 每个钱包在每个链上只有一个nonce记录
         )
       `);
 
@@ -272,7 +271,7 @@ export class DatabaseService {
       `CREATE INDEX IF NOT EXISTS idx_wallets_user_type ON wallets(user_id, wallet_type)`,
 
       // Wallet nonces 表索引
-      `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_address ON wallet_nonces(address)`,
       `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_chain ON wallet_nonces(chain_id)`,
       `CREATE INDEX IF NOT EXISTS idx_wallet_nonces_last_used ON wallet_nonces(last_used_at)`,
 
