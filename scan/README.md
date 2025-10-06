@@ -79,7 +79,7 @@ ETH_RPC_URL=https://eth-mainnet.alchemyapi.io/v2/YOUR_API_KEY
 ETH_RPC_URL_BACKUP=https://mainnet.infura.io/v3/YOUR_PROJECT_ID
 
 # 数据库文件路径 (必需)
-DATABASE_URL=../wallet/wallet.db
+WALLET_DB_PATH=/Users/emmett/openspace_code/cex-wallet/db_gateway/wallet.db
 
 # 扫描起始区块 (可选，默认为 1)
 START_BLOCK=1

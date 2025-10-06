@@ -6,6 +6,8 @@ sqlite3 wallet.db "SELECT * FROM blocks;"
 
 sqlite3 wallet.db "SELECT * FROM credits;"
 
+sqlite3 wallet.db "SELECT user_id, address, credit_type, business_type, reference_id, status  FROM credits;"
+
 sqlite3 wallet.db "SELECT * FROM withdraws;"
 
 sqlite3 wallet.db "SELECT * FROM used_operation_ids;"

@@ -1,0 +1,1 @@
+sqlite3 risk_control.db "select * from address_risk_list"

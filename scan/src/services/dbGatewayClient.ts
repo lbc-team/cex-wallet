@@ -476,8 +476,7 @@ export class DbGatewayClient {
   }
 
   /**
-   * 批量处理存款（在事务中）
-   * 注意：当前改为串行执行
+   * 批量处理存款 
    */
   async processDepositsInTransaction(deposits: Array<{
     transaction: {

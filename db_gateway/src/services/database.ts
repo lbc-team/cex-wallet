@@ -312,7 +312,7 @@ export class DatabaseService {
             ELSE 0
           END) as available_balance,
           SUM(CASE
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized')
+            WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
             THEN ABS(CAST(c.amount AS REAL))
             ELSE 0
           END) as frozen_balance,
@@ -333,7 +333,7 @@ export class DatabaseService {
             ELSE 0
           END) / POWER(10, t.decimals)) as available_balance_formatted,
           PRINTF('%.6f', SUM(CASE
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized')
+            WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
             THEN ABS(CAST(c.amount AS REAL))
             ELSE 0
           END) / POWER(10, t.decimals)) as frozen_balance_formatted,
@@ -369,7 +369,7 @@ export class DatabaseService {
             ELSE 0
           END) as total_available_balance,
           SUM(CASE
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized')
+            WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
             THEN ABS(CAST(c.amount AS REAL))
             ELSE 0
           END) as total_frozen_balance,
@@ -390,7 +390,7 @@ export class DatabaseService {
             ELSE 0
           END) / POWER(10, t.decimals)) as total_available_formatted,
           PRINTF('%.6f', SUM(CASE
-            WHEN c.credit_type = 'freeze' AND c.status IN ('confirmed', 'finalized')
+            WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
             THEN ABS(CAST(c.amount AS REAL))
             ELSE 0
           END) / POWER(10, t.decimals)) as total_frozen_formatted,

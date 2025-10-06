@@ -34,8 +34,8 @@
 2. 启动数据库: cd db_gateway && npm run dev （自动创建数据库表）
   1. 生成密钥对: curl -X POST http://localhost:3003/generate-keypair
   2. 配置环境变量: 将公钥配置到数据库网关，私钥配置到Wallet/Scan/risk_control模块
-3. 启动 risk_control 服务
-4. 启动 wallet 服务
+3. 启动 risk_control 服务 (cd risk_control && npm run dev)
+4. 启动 wallet 服务  (cd wallet && npm run dev)
 5. 启动 signer 服务（配置 .env 的助记词）
 6. 执行 wallet 模块下的 mock.ts 填充一些测试数据。
 7. 执行 scan 服务， 扫描存款入账

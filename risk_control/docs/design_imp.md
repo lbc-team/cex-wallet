@@ -788,7 +788,7 @@ PORT=3004
 # 风控私钥（Ed25519）
 RISK_PRIVATE_KEY=your_private_key_here
 
-# 数据库路径（可选，默认 data/risk_control.db）
+# 数据库路径（可选，默认 risk_control.db）
 DB_PATH=data/risk_control.db
 
 # 日志级别

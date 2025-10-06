@@ -41,3 +41,7 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+
+# 数据库文件
+*.db

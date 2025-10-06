@@ -1,5 +1,12 @@
 # 钱包系统 API 使用说明
 
+各服务默认端口：
+
+- **Risk Control**: `http://localhost:3004`
+- **DB Gateway**: `http://localhost:3003`
+- **Scan**: `http://localhost:3002`
+- **Wallet**: `http://localhost:3001`
+
 ## API 接口
 
 ### 1. 获取用户钱包地址
@@ -414,6 +421,9 @@ curl -X PUT "http://localhost:3000/api/withdraws/1/status" \
     "gasUsed": "21000"
   }'
 ```
+
+
+
 
 ## 注意事项
 

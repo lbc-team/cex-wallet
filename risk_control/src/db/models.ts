@@ -76,7 +76,7 @@ export class RiskAssessmentModel {
   /**
    * 创建风控评估记录
    */
-  create(data: Omit<RiskAssessment, 'id' | 'created_at' | 'updated_at'>): number {
+  async create(data: Omit<RiskAssessment, 'id' | 'created_at' | 'updated_at'>): Promise<number> {
     const sql = `
       INSERT INTO risk_assessments (
         operation_id, table_name, record_id, action, user_id,
@@ -103,7 +103,7 @@ export class RiskAssessmentModel {
       data.expires_at ?? null
     ];
 
-    const id = this.db.insert(sql, params);
+    const id = await this.db.insert(sql, params);
     logger.info('Risk assessment created', { id, operation_id: data.operation_id });
     return id;
   }
@@ -111,23 +111,23 @@ export class RiskAssessmentModel {
   /**
    * 根据 operation_id 查找评估记录
    */
-  findByOperationId(operationId: string): RiskAssessment | null {
+  async findByOperationId(operationId: string): Promise<RiskAssessment | null> {
     const sql = 'SELECT * FROM risk_assessments WHERE operation_id = ?';
-    return this.db.queryOne<RiskAssessment>(sql, [operationId]);
+    return await this.db.queryOne<RiskAssessment>(sql, [operationId]);
   }
 
   /**
    * 根据 ID 查找评估记录
    */
-  findById(id: number): RiskAssessment | null {
+  async findById(id: number): Promise<RiskAssessment | null> {
     const sql = 'SELECT * FROM risk_assessments WHERE id = ?';
-    return this.db.queryOne<RiskAssessment>(sql, [id]);
+    return await this.db.queryOne<RiskAssessment>(sql, [id]);
   }
 
   /**
    * 查询待人工审核的记录
    */
-  findPendingReviews(limit: number = 50): RiskAssessment[] {
+  async findPendingReviews(limit: number = 50): Promise<RiskAssessment[]> {
     const sql = `
       SELECT * FROM risk_assessments
       WHERE decision = 'manual_review'
@@ -135,47 +135,47 @@ export class RiskAssessmentModel {
       ORDER BY created_at DESC
       LIMIT ?
     `;
-    return this.db.query<RiskAssessment>(sql, [limit]);
+    return await this.db.query<RiskAssessment>(sql, [limit]);
   }
 
   /**
    * 查询已批准的记录（用于通知业务层）
    */
-  findApproved(limit: number = 100): RiskAssessment[] {
+  async findApproved(limit: number = 100): Promise<RiskAssessment[]> {
     const sql = `
       SELECT * FROM risk_assessments
       WHERE approval_status = 'approved'
       ORDER BY created_at ASC
       LIMIT ?
     `;
-    return this.db.query<RiskAssessment>(sql, [limit]);
+    return await this.db.query<RiskAssessment>(sql, [limit]);
   }
 
   /**
    * 更新审批状态
    */
-  updateApprovalStatus(
+  async updateApprovalStatus(
     operationId: string,
     status: 'approved' | 'rejected'
-  ): number {
+  ): Promise<number> {
     const sql = `
       UPDATE risk_assessments
       SET approval_status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE operation_id = ?
     `;
-    return this.db.run(sql, [status, operationId]);
+    return await this.db.run(sql, [status, operationId]);
   }
 
   /**
    * 更新 record_id (业务记录创建后关联)
    */
-  updateRecordId(operationId: string, recordId: number): number {
+  async updateRecordId(operationId: string, recordId: number): Promise<number> {
     const sql = `
       UPDATE risk_assessments
       SET record_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE operation_id = ?
     `;
-    return this.db.run(sql, [recordId, operationId]);
+    return await this.db.run(sql, [recordId, operationId]);
   }
 }
 
@@ -188,7 +188,7 @@ export class RiskManualReviewModel {
   /**
    * 创建审批记录
    */
-  create(data: Omit<RiskManualReview, 'id' | 'created_at'>): number {
+  async create(data: Omit<RiskManualReview, 'id' | 'created_at'>): Promise<number> {
     const sql = `
       INSERT INTO risk_manual_reviews (
         assessment_id, operation_id, approver_user_id, approver_username,
@@ -208,7 +208,7 @@ export class RiskManualReviewModel {
       data.user_agent ?? null
     ];
 
-    const id = this.db.insert(sql, params);
+    const id = await this.db.insert(sql, params);
     logger.info('Manual review created', { id, operation_id: data.operation_id });
     return id;
   }
@@ -216,25 +216,25 @@ export class RiskManualReviewModel {
   /**
    * 根据 operation_id 查找审批记录
    */
-  findByOperationId(operationId: string): RiskManualReview[] {
+  async findByOperationId(operationId: string): Promise<RiskManualReview[]> {
     const sql = `
       SELECT * FROM risk_manual_reviews
       WHERE operation_id = ?
       ORDER BY created_at DESC
     `;
-    return this.db.query<RiskManualReview>(sql, [operationId]);
+    return await this.db.query<RiskManualReview>(sql, [operationId]);
   }
 
   /**
    * 根据 assessment_id 查找审批记录
    */
-  findByAssessmentId(assessmentId: number): RiskManualReview[] {
+  async findByAssessmentId(assessmentId: number): Promise<RiskManualReview[]> {
     const sql = `
       SELECT * FROM risk_manual_reviews
       WHERE assessment_id = ?
       ORDER BY created_at DESC
     `;
-    return this.db.query<RiskManualReview>(sql, [assessmentId]);
+    return await this.db.query<RiskManualReview>(sql, [assessmentId]);
   }
 }
 
@@ -247,7 +247,7 @@ export class AddressRiskModel {
   /**
    * 添加风险地址
    */
-  create(data: Omit<AddressRisk, 'id' | 'created_at' | 'updated_at'>): number {
+  async create(data: Omit<AddressRisk, 'id' | 'created_at' | 'updated_at'>): Promise<number> {
     const sql = `
       INSERT INTO address_risk_list (
         address, chain_type, risk_type, risk_level, reason, source, enabled
@@ -264,7 +264,7 @@ export class AddressRiskModel {
       data.enabled
     ];
 
-    const id = this.db.insert(sql, params);
+    const id = await this.db.insert(sql, params);
     logger.info('Address risk added', { id, address: data.address });
     return id;
   }
@@ -272,20 +272,20 @@ export class AddressRiskModel {
   /**
    * 检查地址是否在风险列表中
    */
-  checkAddress(address: string, chainType: string): AddressRisk | null {
+  async checkAddress(address: string, chainType: string): Promise<AddressRisk | null> {
     const sql = `
       SELECT * FROM address_risk_list
       WHERE LOWER(address) = LOWER(?)
       AND chain_type = ?
       AND enabled = 1
     `;
-    return this.db.queryOne<AddressRisk>(sql, [address, chainType]);
+    return await this.db.queryOne<AddressRisk>(sql, [address, chainType]);
   }
 
   /**
    * 根据风险类型查询地址
    */
-  findByRiskType(riskType: string, chainType?: string): AddressRisk[] {
+  async findByRiskType(riskType: string, chainType?: string): Promise<AddressRisk[]> {
     let sql = `
       SELECT * FROM address_risk_list
       WHERE risk_type = ? AND enabled = 1
@@ -299,26 +299,26 @@ export class AddressRiskModel {
 
     sql += ' ORDER BY created_at DESC';
 
-    return this.db.query<AddressRisk>(sql, params);
+    return await this.db.query<AddressRisk>(sql, params);
   }
 
   /**
    * 启用/禁用地址风险
    */
-  toggleEnabled(id: number, enabled: 0 | 1): number {
+  async toggleEnabled(id: number, enabled: 0 | 1): Promise<number> {
     const sql = `
       UPDATE address_risk_list
       SET enabled = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `;
-    return this.db.run(sql, [enabled, id]);
+    return await this.db.run(sql, [enabled, id]);
   }
 
   /**
    * 删除地址风险
    */
-  delete(id: number): number {
+  async delete(id: number): Promise<number> {
     const sql = 'DELETE FROM address_risk_list WHERE id = ?';
-    return this.db.run(sql, [id]);
+    return await this.db.run(sql, [id]);
   }
 }

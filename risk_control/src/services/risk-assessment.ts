@@ -49,7 +49,7 @@ export class RiskAssessmentService {
       const timestamp = request.timestamp;
 
       // 2. 执行风控规则检查
-      const riskCheck = this.checkRiskRules(request);
+      const riskCheck = await this.checkRiskRules(request);
 
       // 3. 根据决策修改数据（如 freeze）
       const dbOperation = this.prepareDbOperation(request, riskCheck.decision);
@@ -69,7 +69,7 @@ export class RiskAssessmentService {
       const risk_signature = this.signer.sign(signaturePayload);
 
       // 6. 保存风控评估记录到数据库
-      const assessmentId = this.assessmentModel.create({
+      const assessmentId = await this.assessmentModel.create({
         operation_id,
         table_name: request.table,
         action: request.action,
@@ -161,25 +161,44 @@ export class RiskAssessmentService {
   /**
    * 检查风控规则
    */
-  private checkRiskRules(request: RiskAssessmentRequest): {
+  private async checkRiskRules(request: RiskAssessmentRequest): Promise<{
     decision: RiskDecision;
     risk_level: 'low' | 'medium' | 'high' | 'critical';
     reasons: string[];
     suggestData?: any;
     suggestReason?: string;
-  } {
+  }> {
     const reasons: string[] = [];
     const ctx = request.context || {};
     let suggestData: any = undefined;
     let suggestReason: string | undefined = undefined;
 
-    // 规则1: 检查黑名单地址 - 直接拒绝
+    // 规则1: 检查黑名单地址
     const fromAddress = ctx.from_address || request.data?.from_address;
+    const creditType = ctx.credit_type || request.data?.credit_type;
+
+    console.log('fromAddress', fromAddress);
+    console.log('creditType', creditType);
+
+    // 检查 from_address（主要用于存款场景）
     if (fromAddress) {
       const chainType = ctx.chain_type || 'evm';
-      const riskInfo = this.addressRiskModel.checkAddress(fromAddress, chainType);
+      const riskInfo = await this.addressRiskModel.checkAddress(fromAddress, chainType);
       if (riskInfo && riskInfo.risk_type === 'blacklist') {
         reasons.push(`From address is blacklisted: ${riskInfo.reason || 'Unknown reason'}`);
+
+        // 如果是存款，冻结而不是拒绝（允许记录但冻结资金）
+        if (creditType === 'deposit') {
+          return {
+            decision: 'freeze',
+            risk_level: 'critical',
+            reasons,
+            suggestData,
+            suggestReason
+          };
+        }
+
+        // 其他情况直接拒绝
         return {
           decision: 'reject',
           risk_level: 'critical',
@@ -190,12 +209,14 @@ export class RiskAssessmentService {
       }
     }
 
+    // 检查 to_address（主要用于提现场景）
     const toAddress = ctx.to_address || request.data?.to_address;
     if (toAddress) {
       const chainType = ctx.chain_type || 'evm';
-      const riskInfo = this.addressRiskModel.checkAddress(toAddress, chainType);
+      const riskInfo = await this.addressRiskModel.checkAddress(toAddress, chainType);
       if (riskInfo && riskInfo.risk_type === 'blacklist') {
         reasons.push(`To address is blacklisted: ${riskInfo.reason || 'Unknown reason'}`);
+        // 提现到黑名单地址，直接拒绝
         return {
           decision: 'reject',
           risk_level: 'critical',

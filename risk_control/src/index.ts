@@ -175,7 +175,12 @@ class RiskControlService {
     }
   }
 
-  public start() {
+  public async start() {
+    // 连接数据库
+    const { riskControlDB } = await import('./db/connection');
+    await riskControlDB.connect();
+    logger.info('Database connected successfully');
+
     this.app.listen(this.port, '0.0.0.0', () => {
       logger.info('Risk Control Service started', {
         port: this.port,
@@ -192,5 +197,14 @@ class RiskControlService {
 }
 
 // 启动服务
-const service = new RiskControlService();
-service.start();
+async function main() {
+  try {
+    const service = new RiskControlService();
+    await service.start();
+  } catch (error) {
+    logger.error('Failed to start Risk Control Service', { error });
+    process.exit(1);
+  }
+}
+
+main();

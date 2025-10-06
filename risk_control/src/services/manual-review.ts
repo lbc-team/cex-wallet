@@ -39,7 +39,7 @@ export class ManualReviewService {
   async submitReview(request: ManualReviewRequest): Promise<ManualReviewResponse> {
     try {
       // 1. 查找评估记录
-      const assessment = this.assessmentModel.findByOperationId(request.operation_id);
+      const assessment = await this.assessmentModel.findByOperationId(request.operation_id);
       if (!assessment) {
         return {
           success: false,
@@ -75,9 +75,9 @@ export class ManualReviewService {
       const approvalStatus = request.approved ? 'approved' : 'rejected';
 
       // 4. 使用事务保证一致性
-      riskControlDB.transaction(() => {
+      await riskControlDB.transaction(async () => {
         // 4.1 创建审核记录
-        this.reviewModel.create({
+        await this.reviewModel.create({
           assessment_id: assessment.id!,
           operation_id: request.operation_id,
           approver_user_id: request.approver_user_id,
@@ -90,7 +90,7 @@ export class ManualReviewService {
         });
 
         // 4.2 更新评估记录的审批状态
-        this.assessmentModel.updateApprovalStatus(request.operation_id, approvalStatus);
+        await this.assessmentModel.updateApprovalStatus(request.operation_id, approvalStatus);
       });
 
       logger.info('Manual review submitted', {
@@ -123,7 +123,7 @@ export class ManualReviewService {
    */
   async getPendingReviews(limit: number = 50) {
     try {
-      const pendingReviews = this.assessmentModel.findPendingReviews(limit);
+      const pendingReviews = await this.assessmentModel.findPendingReviews(limit);
       return {
         success: true,
         data: pendingReviews.map(review => ({
@@ -156,7 +156,7 @@ export class ManualReviewService {
    */
   async getReviewHistory(operationId: string) {
     try {
-      const reviews = this.reviewModel.findByOperationId(operationId);
+      const reviews = await this.reviewModel.findByOperationId(operationId);
       return {
         success: true,
         data: reviews.map(review => ({

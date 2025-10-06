@@ -102,8 +102,11 @@ export class RiskControlClient {
           const metadata = typeof data.metadata === 'string'
             ? JSON.parse(data.metadata)
             : data.metadata;
+          // 支持两种命名方式：下划线和驼峰
           if (metadata.from_address) context.from_address = metadata.from_address;
+          if (metadata.fromAddress) context.from_address = metadata.fromAddress;
           if (metadata.to_address) context.to_address = metadata.to_address;
+          if (metadata.toAddress) context.to_address = metadata.toAddress;
         } catch (error) {
           // metadata 解析失败，忽略
         }

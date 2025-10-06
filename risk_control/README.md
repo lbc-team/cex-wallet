@@ -57,6 +57,7 @@ cp .env.example .env
 PORT=3004
 NODE_ENV=development
 RISK_PRIVATE_KEY=<生成的私钥>
+RISK_CONTROL_DB_PATH=/absolute/path/to/risk_control.db
 ```
 
 ### 4. 启动服务
