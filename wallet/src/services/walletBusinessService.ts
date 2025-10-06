@@ -456,19 +456,30 @@ export class WalletBusinessService {
         };
       }
 
-      // 9. 创建提现记录（状态：user_withdraw_request）
-      const withdrawId = await this.dbGatewayClient.createWithdrawRequest({
+      // 9. 创建提现记录（内部会进行风控检查）
+      console.log('🛡️ 创建提现请求并进行风控检查...');
+      const withdrawResult = await this.dbGatewayClient.createWithdrawRequest({
         user_id: params.userId,
         to_address: params.to,
         token_id: tokenInfo.id,
         amount: requestedAmountBigInt.toString(),
         fee: withdrawFee,
         chain_id: params.chainId,
-        chain_type: params.chainType,
-        status: 'user_withdraw_request'
+        chain_type: params.chainType
       });
 
+      withdrawId = withdrawResult.withdrawId;
 
+      // 如果风控拒绝，返回错误
+      if (withdrawResult.rejected) {
+        console.log('❌ 提现被风控拒绝:', withdrawResult.rejectReason);
+        return {
+          success: false,
+          error: `提现被拒绝: ${withdrawResult.rejectReason}`
+        };
+      }
+
+      console.log('✅ 风控检查通过，提现记录已创建:', withdrawId);
 
       // 10. 选择热钱包
       let gasEstimation;

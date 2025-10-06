@@ -37,40 +37,19 @@ export class DbGatewayClient {
   }
 
   /**
-   * 通用数据库操作执行方法
+   * 通用数据库操作执行方法（使用传入的 operationId 和 timestamp）
    */
-  private async executeOperation(
+  private async executeOperationWithContext(
+    operationId: string,
+    timestamp: number,
     table: string,
     action: 'select' | 'insert' | 'update' | 'delete',
     operationType: 'read' | 'write' | 'sensitive',
     data?: any,
-    conditions?: any
+    conditions?: any,
+    riskSignature?: string
   ): Promise<any> {
     try {
-      const operationId = uuidv4();
-      const timestamp = Date.now();  // 业务层生成 timestamp
-      let riskSignature: string | undefined;
-
-      // 如果是敏感操作，先请求风控评估
-      if (operationType === 'sensitive') {
-        const riskResult = await this.riskControlClient.requestRiskAssessment({
-          operation_id: operationId,
-          operation_type: operationType,
-          table,
-          action,
-          data,
-          conditions,
-          timestamp  // 传递业务层的 timestamp 给风控
-        });
-
-        // 使用风控返回的签名（风控使用相同的 timestamp 签名）
-        riskSignature = riskResult.risk_signature;
-
-        // 如果风控修改了数据（如冻结状态），使用风控返回的数据
-        if (riskResult.db_operation?.data) {
-          data = riskResult.db_operation.data;
-        }
-      }
 
       const signaturePayload: SignaturePayload = {
         operation_id: operationId,
@@ -120,6 +99,52 @@ export class DbGatewayClient {
       console.error('数据库操作失败:', error);
       throw error;
     }
+  }
+
+  /**
+   * 通用数据库操作执行方法（自动生成 operationId 和 timestamp）
+   */
+  private async executeOperation(
+    table: string,
+    action: 'select' | 'insert' | 'update' | 'delete',
+    operationType: 'read' | 'write' | 'sensitive',
+    data?: any,
+    conditions?: any
+  ): Promise<any> {
+    const operationId = uuidv4();
+    const timestamp = Date.now();
+    let riskSignature: string | undefined;
+
+    // 如果是敏感操作，先请求风控评估
+    if (operationType === 'sensitive') {
+      const riskResult = await this.riskControlClient.requestRiskAssessment({
+        operation_id: operationId,
+        operation_type: operationType,
+        table,
+        action,
+        data,
+        conditions,
+        timestamp
+      });
+
+      riskSignature = riskResult.risk_signature;
+
+      // 如果风控修改了数据（如冻结状态），使用风控返回的数据
+      if (riskResult.db_operation?.data) {
+        data = riskResult.db_operation.data;
+      }
+    }
+
+    return this.executeOperationWithContext(
+      operationId,
+      timestamp,
+      table,
+      action,
+      operationType,
+      data,
+      conditions,
+      riskSignature
+    );
   }
 
   /**
@@ -338,10 +363,18 @@ export class DbGatewayClient {
     fee: string;
     chain_id: number;
     chain_type: string;
-    status?: string;
-  }): Promise<number> {
+  }): Promise<{
+    withdrawId: number;
+    status: string;
+    rejected: boolean;
+    rejectReason?: string;
+  }> {
     try {
-      const data = {
+      const operationId = uuidv4();
+      const timestamp = Date.now();
+
+      // 准备初始数据，包含默认 status 和时间戳
+      const requestData = {
         user_id: params.user_id,
         to_address: params.to_address,
         token_id: params.token_id,
@@ -349,14 +382,61 @@ export class DbGatewayClient {
         fee: params.fee,
         chain_id: params.chain_id,
         chain_type: params.chain_type,
-        status: params.status || 'user_withdraw_request',
+        status: 'user_withdraw_request', // 业务层期望的初始状态
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
-      // withdraws 表的插入操作是敏感操作，需要风控评估和双签名
-      const result = await this.executeOperation('withdraws', 'insert', 'sensitive', data);
-      return result.lastID;
+      // 调用风控检查
+      const riskResult = await this.riskControlClient.requestRiskAssessment({
+        operation_id: operationId,
+        operation_type: 'sensitive',
+        table: 'withdraws',
+        action: 'insert',
+        data: requestData,
+        timestamp
+      });
+
+      // 风控可能通过 prepareDbOperation 修改数据（例如：reject 时修改 status 为 rejected）
+      // 使用风控返回的数据（可能已修改 status）
+      const finalData = riskResult.db_operation?.data || requestData;
+
+      // 使用相同的 operationId 和 timestamp，以及风控签名
+      const result = await this.executeOperationWithContext(
+        operationId,
+        timestamp,
+        'withdraws',
+        'insert',
+        'sensitive',
+        finalData,
+        undefined,
+        riskResult.risk_signature
+      );
+
+      const withdrawId = result.lastID;
+      const status = finalData.status;
+      const rejected = (status === 'rejected');
+
+      // 如果被拒绝，更新错误信息
+      if (rejected) {
+        const rejectReason = riskResult.reasons?.join(', ') || '未通过风控检查';
+        await this.updateWithdrawStatus(withdrawId, 'rejected', {
+          error_message: `风控拒绝: ${rejectReason}`
+        });
+
+        return {
+          withdrawId,
+          status,
+          rejected,
+          rejectReason
+        };
+      }
+
+      return {
+        withdrawId,
+        status,
+        rejected
+      };
     } catch (error) {
       throw new Error(`创建提现请求失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }

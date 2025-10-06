@@ -59,18 +59,20 @@ export class RiskControlClient {
       body: JSON.stringify(riskRequest)
     });
 
-    if (!riskResponse.ok) {
-      const errorData = await riskResponse.json().catch(() => ({})) as any;
-      throw new Error(`风控评估失败: ${riskResponse.status} - ${errorData.error?.message || '评估失败'}`);
+    // 风控服务会根据决策返回不同的状态码：
+    // - 200: approve/freeze
+    // - 202: manual_review
+    // - 403: reject
+    // 都需要解析响应体获取评估结果
+    const riskResult = await riskResponse.json() as any;
+
+    // 只在服务器错误（5xx）或真正的客户端错误（4xx，但排除403和202）时抛出异常
+    if (!riskResponse.ok && riskResponse.status !== 403 && riskResponse.status !== 202) {
+      const errorMessage = riskResult.error?.message || riskResult.message || '评估失败';
+      throw new Error(`风控评估失败: ${riskResponse.status} - ${errorMessage}`);
     }
 
-    const riskResult = await riskResponse.json() as RiskAssessmentResponse;
-
-    if (!riskResult.success) {
-      throw new Error(`风控评估被拒绝: ${riskResult.decision} - ${riskResult.reasons?.join(', ') || '未通过风控'}`);
-    }
-
-    return riskResult;
+    return riskResult as RiskAssessmentResponse;
   }
 
   /**
@@ -95,7 +97,7 @@ export class RiskControlClient {
       if (data.user_id) context.user_id = data.user_id;
       if (data.amount) context.amount = data.amount;
       if (data.to_address) context.to_address = data.to_address;
-      if (data.from_address) context.from_address = data.from_address;
+      // from_address 不需要提取，因为提现时资金是从热钱包出，不是用户钱包
       context.credit_type = 'withdraw';
     }
 

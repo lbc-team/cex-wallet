@@ -88,17 +88,17 @@ export class RiskAssessmentService {
 
       // 7. 如果被拒绝，返回错误（但可能包含建议数据）
       if (riskCheck.decision === 'reject') {
-        // 准备响应数据（优先使用建议数据）
-        const responseData = riskCheck.suggestData || request.data;
+        // 通过 prepareDbOperation 处理数据（会修改 status 等字段）
+        const dbOperation = this.prepareDbOperation(request, riskCheck.decision);
 
-        // 创建签名负载（对建议数据签名）
+        // 创建签名负载（对修改后的数据签名）
         const rejectSignaturePayload: SignaturePayload = {
           operation_id,
           operation_type: request.operation_type,
-          table: request.table,
-          action: request.action,
-          data: responseData,
-          conditions: request.conditions,
+          table: dbOperation.table,
+          action: dbOperation.action,
+          data: dbOperation.data,
+          conditions: dbOperation.conditions,
           timestamp
         };
 
@@ -108,12 +108,7 @@ export class RiskAssessmentService {
           success: false,
           decision: 'reject',
           operation_id,
-          db_operation: {
-            table: request.table,
-            action: request.action,
-            data: responseData,
-            conditions: request.conditions
-          },
+          db_operation: dbOperation,
           suggest_operation_data: riskCheck.suggestData ? riskCheck.suggestData : undefined,
           suggest_reason: riskCheck.suggestReason,
           risk_signature: rejectSignature,
@@ -316,7 +311,7 @@ export class RiskAssessmentService {
       conditions: request.conditions
     };
 
-    // 如果是冻结决策，修改 status 字段
+    // 如果是冻结决策，修改 status 字段（针对 credits 表的 deposit）
     if (decision === 'freeze' && dbOperation.data) {
       dbOperation.data.status = 'frozen';
       dbOperation.data.credit_type = dbOperation.data.credit_type || 'deposit';
@@ -335,6 +330,11 @@ export class RiskAssessmentService {
       dbOperation.data.metadata.risk_decision = 'frozen';
       dbOperation.data.metadata.risk_reason = 'Blacklist address detected';
       dbOperation.data.metadata = JSON.stringify(dbOperation.data.metadata);
+    }
+
+    // 如果是拒绝决策，修改 status 字段（针对 withdraws 表）
+    if (decision === 'reject' && request.table === 'withdraws' && dbOperation.data) {
+      dbOperation.data.status = 'rejected';
     }
 
     // 如果是批准决策，确保 status 正确
