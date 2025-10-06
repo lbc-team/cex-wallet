@@ -26,13 +26,17 @@ export interface RiskAssessmentResponse {
   decision: RiskDecision;
   operation_id: string;  // 原样返回业务层传入的 operation_id
 
-  // 数据库操作（如果批准）
+  // 数据库操作（如果批准或有建议数据）
   db_operation: {
     table: string;
     action: 'select' | 'insert' | 'update' | 'delete';
     data?: any;
     conditions?: any;
   };
+
+  // 风控建议（可选，用于 deny 决策时提供修改建议）
+  suggest_operation_data?: any;
+  suggest_reason?: string;
 
   // 风控签名
   risk_signature: string;

@@ -86,9 +86,13 @@ class RiskControlService {
       });
     });
 
-
     // 风控评估端点
     this.app.post('/api/assess', this.riskController.assessRisk);
+
+    // 人工审核相关端点
+    this.app.post('/api/manual-review', this.riskController.submitManualReview);
+    this.app.get('/api/pending-reviews', this.riskController.getPendingReviews);
+    this.app.get('/api/review-history/:operation_id', this.riskController.getReviewHistory);
 
     // 密钥生成端点（仅开发环境）
     if (process.env.NODE_ENV === 'development') {

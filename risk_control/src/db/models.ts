@@ -1,0 +1,324 @@
+import { RiskControlDB } from './connection';
+import { logger } from '../utils/logger';
+
+/**
+ * 风控评估记录
+ */
+export interface RiskAssessment {
+  id?: number;
+  operation_id: string;
+  table_name: string;
+  record_id?: number;
+  action: string;
+  user_id?: number;
+
+  operation_data: string;
+  suggest_operation_data?: string;
+  suggest_reason?: string;
+
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  decision: 'auto_approve' | 'manual_review' | 'deny';
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  reasons?: string;
+
+  risk_signature?: string;
+  expires_at?: string;
+
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * 人工审批记录
+ */
+export interface RiskManualReview {
+  id?: number;
+  assessment_id: number;
+  operation_id: string;
+
+  approver_user_id: number;
+  approver_username?: string;
+  approved: 0 | 1;
+
+  modified_data?: string;
+  comment?: string;
+  ip_address?: string;
+  user_agent?: string;
+
+  created_at?: string;
+}
+
+/**
+ * 地址风险记录
+ */
+export interface AddressRisk {
+  id?: number;
+  address: string;
+  chain_type: 'evm' | 'btc' | 'solana';
+
+  risk_type: 'blacklist' | 'whitelist' | 'suspicious' | 'sanctioned';
+  risk_level: 'low' | 'medium' | 'high';
+  reason?: string;
+  source: 'manual' | 'auto' | 'chainalysis' | 'ofac';
+
+  enabled: 0 | 1;
+
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * 风控评估模型
+ */
+export class RiskAssessmentModel {
+  constructor(private db: RiskControlDB) {}
+
+  /**
+   * 创建风控评估记录
+   */
+  create(data: Omit<RiskAssessment, 'id' | 'created_at' | 'updated_at'>): number {
+    const sql = `
+      INSERT INTO risk_assessments (
+        operation_id, table_name, record_id, action, user_id,
+        operation_data, suggest_operation_data, suggest_reason,
+        risk_level, decision, approval_status, reasons,
+        risk_signature, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+      data.operation_id,
+      data.table_name,
+      data.record_id ?? null,
+      data.action,
+      data.user_id ?? null,
+      data.operation_data,
+      data.suggest_operation_data ?? null,
+      data.suggest_reason ?? null,
+      data.risk_level,
+      data.decision,
+      data.approval_status ?? null,
+      data.reasons ?? null,
+      data.risk_signature ?? null,
+      data.expires_at ?? null
+    ];
+
+    const id = this.db.insert(sql, params);
+    logger.info('Risk assessment created', { id, operation_id: data.operation_id });
+    return id;
+  }
+
+  /**
+   * 根据 operation_id 查找评估记录
+   */
+  findByOperationId(operationId: string): RiskAssessment | null {
+    const sql = 'SELECT * FROM risk_assessments WHERE operation_id = ?';
+    return this.db.queryOne<RiskAssessment>(sql, [operationId]);
+  }
+
+  /**
+   * 根据 ID 查找评估记录
+   */
+  findById(id: number): RiskAssessment | null {
+    const sql = 'SELECT * FROM risk_assessments WHERE id = ?';
+    return this.db.queryOne<RiskAssessment>(sql, [id]);
+  }
+
+  /**
+   * 查询待人工审核的记录
+   */
+  findPendingReviews(limit: number = 50): RiskAssessment[] {
+    const sql = `
+      SELECT * FROM risk_assessments
+      WHERE decision = 'manual_review'
+      AND approval_status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT ?
+    `;
+    return this.db.query<RiskAssessment>(sql, [limit]);
+  }
+
+  /**
+   * 查询已批准的记录（用于通知业务层）
+   */
+  findApproved(limit: number = 100): RiskAssessment[] {
+    const sql = `
+      SELECT * FROM risk_assessments
+      WHERE approval_status = 'approved'
+      ORDER BY created_at ASC
+      LIMIT ?
+    `;
+    return this.db.query<RiskAssessment>(sql, [limit]);
+  }
+
+  /**
+   * 更新审批状态
+   */
+  updateApprovalStatus(
+    operationId: string,
+    status: 'approved' | 'rejected'
+  ): number {
+    const sql = `
+      UPDATE risk_assessments
+      SET approval_status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE operation_id = ?
+    `;
+    return this.db.run(sql, [status, operationId]);
+  }
+
+  /**
+   * 更新 record_id (业务记录创建后关联)
+   */
+  updateRecordId(operationId: string, recordId: number): number {
+    const sql = `
+      UPDATE risk_assessments
+      SET record_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE operation_id = ?
+    `;
+    return this.db.run(sql, [recordId, operationId]);
+  }
+}
+
+/**
+ * 人工审批模型
+ */
+export class RiskManualReviewModel {
+  constructor(private db: RiskControlDB) {}
+
+  /**
+   * 创建审批记录
+   */
+  create(data: Omit<RiskManualReview, 'id' | 'created_at'>): number {
+    const sql = `
+      INSERT INTO risk_manual_reviews (
+        assessment_id, operation_id, approver_user_id, approver_username,
+        approved, modified_data, comment, ip_address, user_agent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+      data.assessment_id,
+      data.operation_id,
+      data.approver_user_id,
+      data.approver_username ?? null,
+      data.approved,
+      data.modified_data ?? null,
+      data.comment ?? null,
+      data.ip_address ?? null,
+      data.user_agent ?? null
+    ];
+
+    const id = this.db.insert(sql, params);
+    logger.info('Manual review created', { id, operation_id: data.operation_id });
+    return id;
+  }
+
+  /**
+   * 根据 operation_id 查找审批记录
+   */
+  findByOperationId(operationId: string): RiskManualReview[] {
+    const sql = `
+      SELECT * FROM risk_manual_reviews
+      WHERE operation_id = ?
+      ORDER BY created_at DESC
+    `;
+    return this.db.query<RiskManualReview>(sql, [operationId]);
+  }
+
+  /**
+   * 根据 assessment_id 查找审批记录
+   */
+  findByAssessmentId(assessmentId: number): RiskManualReview[] {
+    const sql = `
+      SELECT * FROM risk_manual_reviews
+      WHERE assessment_id = ?
+      ORDER BY created_at DESC
+    `;
+    return this.db.query<RiskManualReview>(sql, [assessmentId]);
+  }
+}
+
+/**
+ * 地址风险模型
+ */
+export class AddressRiskModel {
+  constructor(private db: RiskControlDB) {}
+
+  /**
+   * 添加风险地址
+   */
+  create(data: Omit<AddressRisk, 'id' | 'created_at' | 'updated_at'>): number {
+    const sql = `
+      INSERT INTO address_risk_list (
+        address, chain_type, risk_type, risk_level, reason, source, enabled
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+      data.address,
+      data.chain_type,
+      data.risk_type,
+      data.risk_level,
+      data.reason ?? null,
+      data.source,
+      data.enabled
+    ];
+
+    const id = this.db.insert(sql, params);
+    logger.info('Address risk added', { id, address: data.address });
+    return id;
+  }
+
+  /**
+   * 检查地址是否在风险列表中
+   */
+  checkAddress(address: string, chainType: string): AddressRisk | null {
+    const sql = `
+      SELECT * FROM address_risk_list
+      WHERE LOWER(address) = LOWER(?)
+      AND chain_type = ?
+      AND enabled = 1
+    `;
+    return this.db.queryOne<AddressRisk>(sql, [address, chainType]);
+  }
+
+  /**
+   * 根据风险类型查询地址
+   */
+  findByRiskType(riskType: string, chainType?: string): AddressRisk[] {
+    let sql = `
+      SELECT * FROM address_risk_list
+      WHERE risk_type = ? AND enabled = 1
+    `;
+    const params: any[] = [riskType];
+
+    if (chainType) {
+      sql += ' AND chain_type = ?';
+      params.push(chainType);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    return this.db.query<AddressRisk>(sql, params);
+  }
+
+  /**
+   * 启用/禁用地址风险
+   */
+  toggleEnabled(id: number, enabled: 0 | 1): number {
+    const sql = `
+      UPDATE address_risk_list
+      SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `;
+    return this.db.run(sql, [enabled, id]);
+  }
+
+  /**
+   * 删除地址风险
+   */
+  delete(id: number): number {
+    const sql = 'DELETE FROM address_risk_list WHERE id = ?';
+    return this.db.run(sql, [id]);
+  }
+}
