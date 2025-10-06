@@ -282,7 +282,4 @@ A: 在 `checkRiskRules` 方法中添加逻辑，累加 `risk_score`，返回相�
 
 ## 服务端口
 
-- **Risk Control**: `http://localhost:3004`
-- **DB Gateway**: `http://localhost:3003`
-- **Scan**: `http://localhost:3002`
-- **Wallet**: `http://localhost:3001`
+

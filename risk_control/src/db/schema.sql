@@ -111,20 +111,3 @@ CREATE TABLE IF NOT EXISTS risk_rules (
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_risk_rules_enabled ON risk_rules(enabled);
 CREATE INDEX IF NOT EXISTS idx_risk_rules_table ON risk_rules(table_name);
-
-
--- 5. 风控事件日志表 (risk_event_logs)
-CREATE TABLE IF NOT EXISTS risk_event_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  operation_id TEXT NOT NULL,            -- 关联操作ID
-  event_type TEXT NOT NULL,              -- assessed/reviewed/approved/rejected/executed
-  event_data TEXT,                       -- JSON: 事件数据
-  user_id INTEGER,                       -- 相关用户ID
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- 索引
-CREATE INDEX IF NOT EXISTS idx_risk_event_logs_operation ON risk_event_logs(operation_id);
-CREATE INDEX IF NOT EXISTS idx_risk_event_logs_type ON risk_event_logs(event_type);
-CREATE INDEX IF NOT EXISTS idx_risk_event_logs_created ON risk_event_logs(created_at);

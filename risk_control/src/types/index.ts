@@ -44,7 +44,6 @@ export interface RiskAssessmentResponse {
 
   // 风控评估详情
   risk_level?: 'low' | 'medium' | 'high' | 'critical';
-  risk_score?: number;
   reasons?: string[];
 
   // 错误信息（如果失败）

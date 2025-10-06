@@ -49,6 +49,16 @@ export class RiskControlDB {
       this.db.exec(schema);
 
       logger.info('Risk Control Database schema initialized');
+
+      // 测试环境下插入模拟黑名单数据
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        const mockBlacklistPath = path.join(__dirname, 'init_mock_backlist.sql');
+        if (fs.existsSync(mockBlacklistPath)) {
+          const mockBlacklistSql = fs.readFileSync(mockBlacklistPath, 'utf-8');
+          this.db.exec(mockBlacklistSql);
+          logger.info('Mock blacklist data initialized for testing');
+        }
+      }
     } catch (error) {
       logger.error('Failed to initialize database schema', { error });
       throw error;

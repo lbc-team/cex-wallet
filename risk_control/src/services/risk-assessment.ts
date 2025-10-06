@@ -119,7 +119,6 @@ export class RiskAssessmentService {
           risk_signature: rejectSignature,
           timestamp,
           risk_level: riskCheck.risk_level,
-          risk_score: riskCheck.risk_score,
           reasons: riskCheck.reasons,
           error: {
             code: 'RISK_CONTROL_REJECTED',
@@ -140,7 +139,6 @@ export class RiskAssessmentService {
         risk_signature,
         timestamp,
         risk_level: riskCheck.risk_level,
-        risk_score: riskCheck.risk_score,
         reasons: riskCheck.reasons
       };
 
@@ -148,7 +146,6 @@ export class RiskAssessmentService {
         operation_id,
         decision: riskCheck.decision,
         risk_level: riskCheck.risk_level,
-        risk_score: riskCheck.risk_score,
         has_suggestion: !!riskCheck.suggestData,
         assessment_id: assessmentId
       });
@@ -167,23 +164,29 @@ export class RiskAssessmentService {
   private checkRiskRules(request: RiskAssessmentRequest): {
     decision: RiskDecision;
     risk_level: 'low' | 'medium' | 'high' | 'critical';
-    risk_score: number;
     reasons: string[];
     suggestData?: any;
     suggestReason?: string;
   } {
     const reasons: string[] = [];
-    let risk_score = 0;
     const ctx = request.context || {};
+    let suggestData: any = undefined;
+    let suggestReason: string | undefined = undefined;
 
-    // 规则1: 检查黑名单地址（从数据库读取）
+    // 规则1: 检查黑名单地址 - 直接拒绝
     const fromAddress = ctx.from_address || request.data?.from_address;
     if (fromAddress) {
       const chainType = ctx.chain_type || 'evm';
       const riskInfo = this.addressRiskModel.checkAddress(fromAddress, chainType);
       if (riskInfo && riskInfo.risk_type === 'blacklist') {
         reasons.push(`From address is blacklisted: ${riskInfo.reason || 'Unknown reason'}`);
-        risk_score += 100;
+        return {
+          decision: 'reject',
+          risk_level: 'critical',
+          reasons,
+          suggestData,
+          suggestReason
+        };
       }
     }
 
@@ -193,28 +196,38 @@ export class RiskAssessmentService {
       const riskInfo = this.addressRiskModel.checkAddress(toAddress, chainType);
       if (riskInfo && riskInfo.risk_type === 'blacklist') {
         reasons.push(`To address is blacklisted: ${riskInfo.reason || 'Unknown reason'}`);
-        risk_score += 100;
+        return {
+          decision: 'reject',
+          risk_level: 'critical',
+          reasons,
+          suggestData,
+          suggestReason
+        };
       }
     }
 
-    // 规则2: 检查高风险用户
+    // 规则2: 检查高风险用户 - 人工审核
     const userId = ctx.user_id || request.data?.user_id;
     if (userId && this.highRiskUsers.has(userId)) {
       reasons.push('User is marked as high risk');
-      risk_score += 50;
+      reasons.push('Manual review required');
+      return {
+        decision: 'manual_review',
+        risk_level: 'high',
+        reasons,
+        suggestData,
+        suggestReason
+      };
     }
 
-    // 规则3: 检查大额交易
+    // 规则3: 检查大额交易 - 人工审核
     const amount = ctx.amount || request.data?.amount;
-    let suggestData: any = undefined;
-    let suggestReason: string | undefined = undefined;
-
     if (amount) {
       try {
         const amountBigInt = BigInt(amount);
         if (amountBigInt > this.LARGE_AMOUNT_THRESHOLD) {
           reasons.push(`Large amount transaction: ${amount}`);
-          risk_score += 30;
+          reasons.push('Manual review required');
 
           // 生成建议数据：建议减少金额到阈值以下
           const suggestedAmount = (this.LARGE_AMOUNT_THRESHOLD / BigInt(2)).toString();
@@ -223,55 +236,40 @@ export class RiskAssessmentService {
             amount: suggestedAmount
           };
           suggestReason = `建议金额过大，建议分批提现，单次建议金额: ${suggestedAmount}`;
+
+          return {
+            decision: 'manual_review',
+            risk_level: 'high',
+            reasons,
+            suggestData,
+            suggestReason
+          };
         }
       } catch (error) {
         logger.warn('Failed to parse amount', { amount });
       }
     }
 
-    // 规则4: 敏感操作加分
+    // 规则4: 敏感操作 - 人工审核
     if (request.operation_type === 'sensitive') {
-      risk_score += 20;
+      reasons.push('Sensitive operation requires manual review');
+      return {
+        decision: 'manual_review',
+        risk_level: 'medium',
+        reasons,
+        suggestData,
+        suggestReason
+      };
     }
 
-    // 规则5: 提现操作加分（从 context 中读取）
-    const creditType = ctx.credit_type || request.data?.credit_type;
-    if (creditType === 'withdraw') {
-      risk_score += 10;
-    }
-
-    // 决策逻辑
-    let decision: RiskDecision;
-    let risk_level: 'low' | 'medium' | 'high' | 'critical';
-
-    if (risk_score >= 100) {
-      // 高风险：直接拒绝（黑名单地址）
-      decision = 'reject';
-      risk_level = 'critical';
-      reasons.push('Transaction rejected due to critical risk');
-    } else if (risk_score >= 70) {
-      // 中高风险：人工审核
-      decision = 'manual_review';
-      risk_level = 'high';
-      reasons.push('Manual review required');
-    } else if (risk_score >= 40) {
-      // 中风险：批准但标记
-      decision = 'approve';
-      risk_level = 'medium';
-      reasons.push('Transaction approved with monitoring');
-    } else {
-      // 低风险：直接批准
-      decision = 'approve';
-      risk_level = 'low';
-      if (reasons.length === 0) {
-        reasons.push('Normal transaction');
-      }
+    // 默认：批准
+    if (reasons.length === 0) {
+      reasons.push('Normal transaction');
     }
 
     return {
-      decision,
-      risk_level,
-      risk_score,
+      decision: 'approve',
+      risk_level: 'low',
       reasons,
       suggestData,
       suggestReason

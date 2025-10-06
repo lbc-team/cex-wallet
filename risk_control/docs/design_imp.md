@@ -215,15 +215,16 @@ CREATE TABLE address_risk_list (
 - 检查黑名单地址
 - 检查高风险用户
 - 检查大额交易
-- 计算风险分数
+- 检查敏感操作
 - 返回风控决策
 
-**风控规则**：
+**风控规则**（按优先级）：
 ```typescript
-risk_score >= 100  → deny (直接拒绝，黑名单)
-risk_score >= 70   → manual_review (人工审核，高风险)
-risk_score >= 40   → approve (批准但监控，中风险)
-risk_score < 40    → approve (直接批准，低风险)
+1. 黑名单地址          → deny (critical)
+2. 高风险用户          → manual_review (high)
+3. 大额交易            → manual_review (high)
+4. 敏感操作            → manual_review (medium)
+5. 默认                → approve (low)
 ```
 
 #### 3.2.2 ManualReviewService (人工审核服务)
@@ -235,7 +236,6 @@ risk_score < 40    → approve (直接批准，低风险)
 - 查询待审核列表
 - 查询审核历史
 
----
 
 ## 4. 工作流程
 
@@ -246,7 +246,7 @@ risk_score < 40    → approve (直接批准，低风险)
     ↓
 wallet 服务调用风控评估
     ↓
-风控服务评估（risk_score < 40）
+风控服务评估（未触发任何规则）
     ↓
 返回 decision: approve
     ↓
@@ -262,7 +262,7 @@ wallet 服务直接执行提现
     ↓
 wallet 服务调用风控评估
     ↓
-风控服务评估（risk_score >= 70）
+风控服务评估（触发大额交易规则）
     ↓
 返回 decision: manual_review
     ↓
@@ -292,13 +292,13 @@ wallet 服务继续执行提现
     ↓
 wallet 服务调用风控评估
     ↓
-风控服务检测到黑名单地址（risk_score >= 100）
+风控服务检测到黑名单地址
     ↓
 返回 decision: deny
     ↓
 wallet 服务拒绝提现
     ↓
-返回错误给用户
+返回错误给用户（可能包含建议）
 ```
 
 ---
@@ -339,7 +339,6 @@ wallet 服务拒绝提现
   "risk_signature": "...",
   "timestamp": 1234567890,
   "risk_level": "low",
-  "risk_score": 10,
   "reasons": ["Normal transaction"]
 }
 ```
@@ -360,7 +359,6 @@ wallet 服务拒绝提现
   "risk_signature": "...",
   "timestamp": 1234567890,
   "risk_level": "high",
-  "risk_score": 80,
   "reasons": ["Large amount transaction: 10000000000000000000", "Manual review required"]
 }
 ```
@@ -389,7 +387,6 @@ wallet 服务拒绝提现
   "risk_signature": "...",
   "timestamp": 1234567890,
   "risk_level": "critical",
-  "risk_score": 100,
   "reasons": ["To address is blacklisted: Known scammer"],
   "error": {
     "code": "RISK_CONTROL_REJECTED",
