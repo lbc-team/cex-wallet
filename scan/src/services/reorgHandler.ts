@@ -212,6 +212,30 @@ export class ReorgHandler {
   }
 
   /**
+   * 获取可回滚的交易（排除有frozen credit的交易）
+   * 直接查询数据库以提高性能
+   */
+  private async getRollbackableTransactions(blockHash: string): Promise<any[]> {
+    try {
+      // 直接查询数据库，排除有frozen credit的交易
+      const sql = `
+        SELECT DISTINCT t.*
+        FROM transactions t
+        LEFT JOIN credits c ON t.tx_hash = c.tx_hash
+        WHERE t.block_hash = ?
+        AND (c.status IS NULL OR c.status != 'frozen')
+      `;
+
+      const transactions = await database.all(sql, [blockHash]);
+      logger.debug('获取可回滚交易', { blockHash, count: transactions.length });
+      return transactions;
+    } catch (error) {
+      logger.error('获取可回滚交易失败', { blockHash, error });
+      return [];
+    }
+  }
+
+  /**
    * 回滚单个区块
    */
   private async rollbackBlock(blockNumber: number): Promise<{ hash: string; transactionCount: number } | null> {
@@ -223,13 +247,36 @@ export class ReorgHandler {
 
       logger.debug('回滚区块', { blockNumber, hash: dbBlock.hash });
 
-      // 1. 删除交易记录
-      const deleteResult = await this.dbGatewayClient.deleteTransactionsByBlockHash(dbBlock.hash);
-      if (!deleteResult) {
-        logger.error('删除交易记录失败', { blockNumber, blockHash: dbBlock.hash });
+      // 1. 获取可回滚的交易（排除frozen的）- 直接查询数据库
+      const rollbackableTransactions = await this.getRollbackableTransactions(dbBlock.hash);
+
+      if (rollbackableTransactions.length === 0) {
+        logger.info('该区块没有可回滚的交易', { blockNumber, blockHash: dbBlock.hash });
+        // 即使没有可回滚的交易，仍然标记区块为孤块
+        await this.dbGatewayClient.updateBlockStatus(dbBlock.hash, 'orphaned');
+        return {
+          hash: dbBlock.hash,
+          transactionCount: 0
+        };
       }
 
-      // 2. 标记区块为孤块
+      // 2. 通过dbGatewayClient删除可回滚的交易
+      let deletedCount = 0;
+      for (const tx of rollbackableTransactions) {
+        const result = await this.dbGatewayClient.deleteTransaction(tx.tx_hash);
+        if (result) {
+          deletedCount++;
+        }
+      }
+
+      logger.info('回滚交易完成', {
+        blockNumber,
+        blockHash: dbBlock.hash,
+        totalTransactions: rollbackableTransactions.length,
+        deletedCount
+      });
+
+      // 3. 标记区块为孤块
       const updateResult = await this.dbGatewayClient.updateBlockStatus(dbBlock.hash, 'orphaned');
       if (!updateResult) {
         logger.error('更新区块状态为孤块失败', { blockNumber, blockHash: dbBlock.hash });
@@ -237,7 +284,7 @@ export class ReorgHandler {
 
       return {
         hash: dbBlock.hash,
-        transactionCount: deleteResult?.deletedCount || 0
+        transactionCount: deletedCount
       };
 
     } catch (error) {

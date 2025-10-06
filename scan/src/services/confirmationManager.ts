@@ -1,6 +1,7 @@
 import { viemClient } from '../utils/viemClient';
 import { walletDAO, tokenDAO } from '../db/models';
 import { creditDAO } from '../db/creditDAO';
+import { database } from '../db/connection';
 import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';
 import config from '../config';
@@ -49,11 +50,36 @@ export class ConfirmationManager {
   }
 
   /**
+   * 获取待确认的交易（直接查询数据库，排除 frozen 状态的 credits）
+   */
+  private async getPendingTransactions(): Promise<any[]> {
+    try {
+      // 查询 confirmed 和 safe 状态的交易，但排除有 frozen credit 的交易
+      const sql = `
+        SELECT DISTINCT t.*
+        FROM transactions t
+        LEFT JOIN credits c ON t.tx_hash = c.tx_hash
+        WHERE t.status IN ('confirmed', 'safe')
+        AND (c.status IS NULL OR c.status != 'frozen')
+        ORDER BY t.block_no ASC
+      `;
+
+      const transactions = await database.all(sql);
+      logger.debug('获取待确认交易', { count: transactions.length });
+      return transactions;
+    } catch (error) {
+      logger.error('获取待确认交易失败', { error });
+      return [];
+    }
+  }
+
+  /**
    * 处理交易确认（混合策略: POS 网络终结性 和 区块确认数）
    */
   async processConfirmations(): Promise<void> {
     try {
-      const pendingTransactions = await this.dbGatewayClient.getPendingTransactionsWithSQL();
+      // 直接查询数据库，排除 frozen 状态的交易
+      const pendingTransactions = await this.getPendingTransactions();
       
       if (pendingTransactions.length === 0) {
         return;

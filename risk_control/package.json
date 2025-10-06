@@ -4,10 +4,11 @@
   "description": "Risk Control Service for CEX Wallet",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "ts-node src/index.ts",
+    "dev:watch": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "generate-keypair": "tsx src/scripts/generate-keypair.ts"
+    "generate-keypair": "ts-node src/scripts/generate-keypair.ts"
   },
   "keywords": ["risk-control", "signature", "security"],
   "author": "",
@@ -27,7 +28,8 @@
     "@types/cors": "^2.8.17",
     "@types/node": "^20.10.6",
     "@types/uuid": "^9.0.7",
-    "tsx": "^4.7.0",
+    "ts-node": "^10.9.2",
+    "nodemon": "^3.1.10",
     "typescript": "^5.3.3"
   }
 }

@@ -613,72 +613,21 @@ export class DbGatewayClient {
   }
 
   /**
-   * 获取待确认的交易
+   * 删除单个交易（用于区块回滚）
    */
-  async getPendingTransactionsWithSQL(): Promise<any[]> {
+  async deleteTransaction(txHash: string): Promise<boolean> {
     try {
-      const result = await this.executeOperation(
-        'transactions',
-        'select',
-        'read',
-        undefined,
-        {
-          status: ['confirmed', 'safe']
-        }
-      );
-
-      return result || [];
-    } catch (error) {
-      console.error('获取待确认交易失败:', error);
-      return [];
-    }
-  }
-
-  /**
-   * 获取区块的所有交易（用于区块回滚）
-   */
-  async getTransactionsByBlockHash(blockHash: string): Promise<any[]> {
-    try {
-      const result = await this.executeOperation(
-        'transactions',
-        'select',
-        'read',
-        undefined,
-        { block_hash: blockHash }
-      );
-
-      return result || [];
-    } catch (error) {
-      console.error(`获取交易记录失败 (blockHash: ${blockHash}):`, error);
-      return [];
-    }
-  }
-
-  /**
-   * 删除区块的所有交易（用于区块回滚）
-   */
-  async deleteTransactionsByBlockHash(blockHash: string): Promise<{ deletedCount: number; transactionCount: number } | null> {
-    try {
-      // 先查询交易数量
-      const transactions = await this.getTransactionsByBlockHash(blockHash);
-      const transactionCount = transactions.length;
-
-      // 执行删除
       const result = await this.executeOperation(
         'transactions',
         'delete',
         'write',
         undefined,
-        { block_hash: blockHash }
+        { tx_hash: txHash }
       );
-
-      return {
-        deletedCount: result.changes || 0,
-        transactionCount: transactionCount
-      };
+      return result && result.changes > 0;
     } catch (error) {
-      console.error(`删除交易记录失败 (blockHash: ${blockHash}):`, error);
-      return null;
+      console.error(`删除交易记录失败 (txHash: ${txHash}):`, error);
+      return false;
     }
   }
 

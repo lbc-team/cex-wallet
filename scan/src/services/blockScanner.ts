@@ -501,8 +501,15 @@ export class BlockScanner {
     try {
       const latestBlock = await viemClient.getLatestBlockNumber();
       const lastScannedBlock = await this.getLastScannedBlock();
-      const pendingTxs = await this.dbGatewayClient.getPendingTransactionsWithSQL();
       const reorgStats = await reorgHandler.getReorgStats();
+
+      // 获取待确认交易数量（confirmed 和 safe 状态的交易）
+      const pendingTxResult = await database.get(`
+        SELECT COUNT(*) as count
+        FROM transactions
+        WHERE status IN ('confirmed', 'safe')
+      `);
+      const pendingTransactions = pendingTxResult?.count || 0;
 
       const isUpToDate = lastScannedBlock >= latestBlock;
 
@@ -511,7 +518,7 @@ export class BlockScanner {
         latestBlock,
         isUpToDate,
         scannedBlocks: lastScannedBlock,
-        pendingTransactions: pendingTxs.length,
+        pendingTransactions,
         reorgStats
       };
 
