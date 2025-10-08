@@ -3,7 +3,6 @@ import { RiskAssessmentService } from '../services/risk-assessment';
 import { ManualReviewService } from '../services/manual-review';
 import { RiskAssessmentRequest } from '../types';
 import { logger } from '../utils/logger';
-import { Ed25519Signer } from '../utils/crypto';
 import { riskControlDB } from '../db/connection';
 import { RiskAssessmentModel, AddressRiskModel } from '../db/models';
 
@@ -52,7 +51,14 @@ export class RiskController {
       return res.status(200).json(assessment);
 
     } catch (error) {
-      logger.error('Risk assessment endpoint error', { error, body: req.body });
+      logger.error('Risk assessment endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error),
+        body: req.body
+      });
       return res.status(500).json({
         success: false,
         error: {
@@ -100,7 +106,14 @@ export class RiskController {
       return res.status(200).json(result);
 
     } catch (error) {
-      logger.error('Submit manual review endpoint error', { error, body: req.body });
+      logger.error('Submit manual review endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error),
+        body: req.body
+      });
       return res.status(500).json({
         success: false,
         error: {
@@ -123,7 +136,13 @@ export class RiskController {
       return res.status(200).json(result);
 
     } catch (error) {
-      logger.error('Get pending reviews endpoint error', { error });
+      logger.error('Get pending reviews endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error)
+      });
       return res.status(500).json({
         success: false,
         error: {
@@ -157,7 +176,13 @@ export class RiskController {
       return res.status(200).json(result);
 
     } catch (error) {
-      logger.error('Get review history endpoint error', { error });
+      logger.error('Get review history endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error)
+      });
       return res.status(500).json({
         success: false,
         error: {
@@ -277,13 +302,7 @@ export class RiskController {
         });
       }
 
-      // 通过风控检查，生成签名
-      const privateKey = process.env.RISK_CONTROL_PRIVATE_KEY;
-      if (!privateKey) {
-        throw new Error('RISK_CONTROL_PRIVATE_KEY not configured');
-      }
-
-      const signer = new Ed25519Signer(privateKey);
+      // 通过风控检查，生成签名（复用 RiskAssessmentService 的 signer）
       const signPayload = JSON.stringify({
         operation_id,
         from,
@@ -295,7 +314,7 @@ export class RiskController {
         timestamp
       });
 
-      const riskSignature = signer.signMessage(signPayload);
+      const riskSignature = this.riskService.signMessage(signPayload);
 
       // 记录到数据库
       // 计算签名过期时间（5分钟后）
@@ -339,13 +358,20 @@ export class RiskController {
       });
 
     } catch (error) {
-      logger.error('Withdraw risk assessment endpoint error', { error, body: req.body });
+      logger.error('Withdraw risk assessment endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error),
+        body: req.body
+      });
       return res.status(500).json({
         success: false,
         error: {
           code: 'INTERNAL_ERROR',
           message: 'Internal server error',
-          details: error instanceof Error ? error.message : 'Unknown error'
+          details: error instanceof Error ? error.message : String(error)
         }
       });
     }

@@ -356,6 +356,13 @@ export class RiskAssessmentService {
   }
 
   /**
+   * 对消息进行签名（供 Controller 使用）
+   */
+  signMessage(message: string): string {
+    return this.signer.signMessage(message);
+  }
+
+  /**
    * 获取评估模型（用于其他服务）
    */
   getAssessmentModel(): RiskAssessmentModel {

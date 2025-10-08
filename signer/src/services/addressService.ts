@@ -16,9 +16,13 @@ export class AddressService {
   };
 
   private password: string; // 从命令行传入的密码（必需）
-  
+
   // 数据库连接
   private db: DatabaseConnection;
+
+  // 公钥配置（用于签名验证）
+  private riskPublicKey: string;
+  private walletPublicKey: string;
 
   constructor(password: string) {
     if (!password) {
@@ -27,6 +31,17 @@ export class AddressService {
     this.password = password;
     // 初始化数据库连接
     this.db = new DatabaseConnection();
+
+    // 加载公钥配置
+    const riskPublicKey = process.env.RISK_PUBLIC_KEY;
+    const walletPublicKey = process.env.WALLET_PUBLIC_KEY;
+
+    if (!riskPublicKey || !walletPublicKey) {
+      throw new Error('签名验证配置缺失: RISK_PUBLIC_KEY 和 WALLET_PUBLIC_KEY 必须配置');
+    }
+
+    this.riskPublicKey = riskPublicKey;
+    this.walletPublicKey = walletPublicKey;
   }
 
   /**
@@ -333,20 +348,7 @@ export class AddressService {
 
       console.log('✅ 时间戳验证通过');
 
-      // 从环境变量获取公钥
-      const riskPublicKey = process.env.RISK_CONTROL_PUBLIC_KEY;
-      const walletPublicKey = process.env.WALLET_SERVICE_PUBLIC_KEY;
-
-      if (!riskPublicKey || !walletPublicKey) {
-        const error = '签名验证失败: 公钥配置缺失';
-        console.error('❌', error);
-        return {
-          success: false,
-          error
-        };
-      }
-
-      // 验证风控签名
+      // 验证风控签名（使用构造函数中加载的公钥）
       const riskSignValid = SignatureValidator.verifyRiskSignature(
         request.operation_id,
         request.address,
@@ -357,7 +359,7 @@ export class AddressService {
         request.nonce,
         request.timestamp,
         request.risk_signature,
-        riskPublicKey
+        this.riskPublicKey
       );
 
       if (!riskSignValid) {
@@ -371,7 +373,7 @@ export class AddressService {
 
       console.log('✅ 风控签名验证通过');
 
-      // 验证 wallet 服务签名
+      // 验证 wallet 服务签名（使用构造函数中加载的公钥）
       const walletSignValid = SignatureValidator.verifyWalletSignature(
         request.operation_id,
         request.address,
@@ -382,7 +384,7 @@ export class AddressService {
         request.nonce,
         request.timestamp,
         request.wallet_signature,
-        walletPublicKey
+        this.walletPublicKey
       );
 
       if (!walletSignValid) {
