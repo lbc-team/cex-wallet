@@ -23,7 +23,7 @@ npm install
 
 ### 2. 配置环境变量
 
-复制环境变量模板：
+复制环境变量模板，配置三个公钥
 ```bash
 cp .env.example .env
 ```
@@ -40,7 +40,7 @@ npm run dev
 curl -X POST http://localhost:3003/generate-keypair
 ```
 
-将生成的公钥配置到 `.env` 文件中的 `WALLET_PUBLIC_KEY` 和 `SCAN_PUBLIC_KEY`。
+将生成的公钥配置到 `.env` 文件中的 `WALLET_PUBLIC_KEY`  `SCAN_PUBLIC_KEY` 和 `RISK_PUBLIC_KEY`。
 
 ### 4. 配置模块私钥
 
@@ -77,6 +77,7 @@ npm start
   "data": { /* 操作数据 */ },
   "conditions": { /* 查询条件 */ },
   "business_signature": "ed25519_signature",
+  "risk_signature": "ed25519_signature",
   "timestamp": 1640995200000,
 }
 ```
@@ -85,6 +86,22 @@ npm start
 - `read`: 读操作，只需要模块身份验证
 - `write`: 一般写操作，需要模块签名
 - `sensitive`: 敏感操作，需要业务签名 + 风控评估
+
+
+业务签名和风控签名必须对**完全相同**的数据进行签名：
+
+敏感操作强制规则 **DB Gateway 强制要求以下表的写操作必须经过风控评估：**
+
+| 表名 | 敏感操作 | 原因 |
+|------|---------|------|
+| `credits` | INSERT, UPDATE, DELETE | 包含用户余额信息 |
+
+**规则：**
+1. 对敏感表的写操作，`operation_type` 必须为 `'sensitive'`
+2. 必须包含有效的 `risk_signature`（风控签名）
+3. 必须包含有效的 `business_signature`（业务签名）
+4. 如果违反规则，请求会被拒绝
+
 
 
 ## 签名机制
@@ -137,4 +154,19 @@ const response = await fetch('/api/database/execute', {
 
 1. **时间戳验证**: 防重放攻击，5分钟时间窗口
 2. **签名验证**: Ed25519数字签名确保请求来源
-4. **权限隔离**: 模块无法绕过网关直接访问数据库
+3. **权限隔离**: 模块无法绕过网关直接访问数据库
+4. **日志记录**
+   - 记录所有敏感操作的双签名信息
+   - 便于审计和问题追踪
+
+5. **密钥管理**
+   - 私钥必须安全存储（使用环境变量或密钥管理服务）
+   - 公钥可以公开配置
+   - 定期轮换密钥对
+
+## 相关文件
+
+- `/db_gateway/src/services/operation-id.ts` - Operation ID 管理服务（防重放攻击）
+- `/db_gateway/src/middleware/signature.ts` - 双签名验证中间件
+- `/db_gateway/src/utils/crypto.ts` - 加密工具类
+- `/db_gateway/src/types/index.ts` - 类型定义

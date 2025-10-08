@@ -1,12 +1,11 @@
 # Risk Control Service
 
-风控服务 - 为 CEX 钱包系统提供风险评估和签名授权。
+风控服务 - 一个独立的微服务，负责对钱包系统的关键操作（如提现、充值等）进行风险评估和人工审核。评估通过后签名授权。
 
-## 功能特性
+## 功能
 
 - ✅ **风险评估** - 对存款、提现等操作进行风控检查
-- ✅ **黑名单检测** - 检查地址是否在黑名单中
-- ✅ **大额交易监控** - 对超过阈值的交易进行特殊处理
+- ✅ **简单风控黑名单检测** - 检查地址是否在黑名单中
 - ✅ **风控签名** - 使用 Ed25519 对批准的操作进行签名
 - ✅ **灵活决策** - 支持批准、冻结、拒绝、人工审核等决策
 
@@ -24,6 +23,151 @@
                        └──────────────┘
                          3.验证双签名
 ```
+
+## 2. 数据库设计
+
+### 2.1 risk_assessments (风控评估记录表)
+
+存储所有风控评估记录，包括自动批准、人工审核、拒绝等。
+
+```sql
+CREATE TABLE risk_assessments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  operation_id TEXT UNIQUE NOT NULL,     -- 操作ID (由业务层生成的UUID)
+  table_name TEXT,                       -- 业务表名 (withdrawals/credits) ，提现评估时为空
+  record_id INTEGER,                     -- 业务表记录ID (双向关联)
+  action TEXT NOT NULL,                  -- 操作类型 (insert/update/delete)
+  user_id INTEGER,                       -- 关联用户ID
+
+  -- 操作数据
+  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据, 如果是提现保存交易信息
+  suggest_operation_data TEXT,           -- JSON: 风控建议的操作数据
+  suggest_reason TEXT,                   -- 建议原因说明
+
+  -- 风控结果
+  risk_level TEXT NOT NULL,              -- low/medium/high/critical
+  decision TEXT NOT NULL,                -- auto_approve/manual_review/deny
+  approval_status TEXT,                  -- pending/approved/rejected (仅用于manual_review)
+  reasons TEXT,                          -- JSON: 风险原因数组
+
+  -- 签名和过期
+  risk_signature TEXT,                   -- 风控签名
+  expires_at DATETIME,                   -- 签名过期时间
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**关键字段说明**：
+
+- `operation_id`: 由业务层生成的UUID，用于关联业务记录
+- `record_id`: 业务表的记录ID，用于双向关联
+- `decision`: 风控决策
+  - `auto_approve`: 自动批准（低风险）
+  - `manual_review`: 需要人工审核（中高风险）
+  - `deny`: 直接拒绝（高风险，如黑名单地址）
+- `approval_status`: 审批状态（仅用于 manual_review）
+  - `pending`: 等待审核
+  - `approved`: 审核通过
+  - `rejected`: 审核拒绝
+
+
+### 2.2 risk_manual_reviews (人工审批记录表)
+
+记录所有人工审核操作，包括审核员信息、审核结果等。
+
+```sql
+CREATE TABLE risk_manual_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assessment_id INTEGER NOT NULL,        -- 关联 risk_assessments.id
+  operation_id TEXT NOT NULL,            -- 关联 operation_id
+
+  approver_user_id INTEGER NOT NULL,     -- 审核员用户ID
+  approver_username TEXT,                -- 审核员用户名
+  approved INTEGER NOT NULL,             -- 0=拒绝, 1=批准
+
+  modified_data TEXT,                    -- JSON: 审核员修改后的数据
+  comment TEXT,                          -- 审核意见
+  ip_address TEXT,                       -- 审核员IP
+  user_agent TEXT,                       -- 用户代理
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (assessment_id) REFERENCES risk_assessments(id)
+);
+```
+
+### 2.3 address_risk_list (地址风险表)
+
+管理风险地址，包括黑名单、白名单等。
+
+```sql
+CREATE TABLE address_risk_list (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  address TEXT NOT NULL,                 -- 地址
+  chain_type TEXT NOT NULL,              -- evm/btc/solana
+
+  risk_type TEXT NOT NULL,               -- blacklist/whitelist/suspicious/sanctioned
+  risk_level TEXT DEFAULT 'medium',      -- low/medium/high
+  reason TEXT,                           -- 风险原因
+  source TEXT DEFAULT 'manual',          -- manual/auto/chainalysis/ofac
+
+  enabled INTEGER DEFAULT 1,             -- 是否启用
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE(address, chain_type)
+);
+```
+
+### 2.4 数据库关联关系
+
+```
+┌─────────────────────┐
+│  wallet.db          │
+│  ┌────────────────┐ │
+│  │ withdrawals    │ │
+│  │  - id          │ │
+│  │  - operation_id│─┼─────┐
+│  │  - status      │ │     │
+│  └────────────────┘ │     │
+│  ┌────────────────┐ │     │
+│  │ credits        │ │     │
+│  │  - id          │ │     │
+│  │  - operation_id│─┼─────┤
+│  └────────────────┘ │     │
+└─────────────────────┘     │
+                            │
+                            ↓
+┌──────────────────────────────────────┐
+│  risk_control.db                     │
+│  ┌─────────────────────────────────┐ │
+│  │ risk_assessments                │ │
+│  │  - operation_id (UNIQUE)        │ │
+│  │  - record_id                    │ │
+│  │  - decision                     │ │
+│  │  - approval_status              │ │
+│  └─────────────────────────────────┘ │
+│           ↓                           │
+│  ┌─────────────────────────────────┐ │
+│  │ risk_manual_reviews             │ │
+│  │  - assessment_id (FK)           │ │
+│  │  - operation_id                 │ │
+│  │  - approved                     │ │
+│  └─────────────────────────────────┘ │
+└──────────────────────────────────────┘
+```
+
+## 技术栈
+
+- **语言**: TypeScript
+- **运行时**: Node.js
+- **框架**: Express.js
+- **数据库**: SQLite (risk_control.db)
+- **签名**: Ed25519 
+
 
 ## 快速开始
 
@@ -73,7 +217,7 @@ npm start
 
 服务将在 `http://localhost:3004` 启动。
 
-## API 端点
+## API 接口
 
 ### 1. 健康检查
 
@@ -156,92 +300,67 @@ POST /api/assess
 }
 ```
 
+
+1. 提现风险评估接口
+
+**端点**: `POST /api/withdraw-risk-assessment`
+
+**请求参数**:
+```typescript
+{
+  operation_id: string;    // UUID，由 wallet 服务生成
+  transaction: {
+    from: string;          // 热钱包地址
+    to: string;            // 提现目标地址
+    amount: string;        // 提现金额（最小单位）
+    tokenAddress?: string; // 代币合约地址（可选）
+    chainId: number;       // 链ID
+    nonce: number;         // 交易 nonce
+  };
+  timestamp: number;       // 时间戳
+}
+```
+
+**响应**:
+
+成功（200）:
+```typescript
+{
+  success: true;
+  risk_signature: string;                                    // 风控签名
+  decision: 'approve' | 'manual_review';                     // 风控决策
+  timestamp: number;                                         // 时间戳
+  reasons?: string[];                                        // 风险原因
+}
+```
+
+拒绝（403）:
+```typescript
+{
+  success: false;
+  decision: 'reject';
+  timestamp: number;
+  reasons: string[];                                         // 拒绝原因
+  error: {
+    code: 'RISK_REJECTED';
+    message: '提现被风控拒绝';
+    details: string;                                         // 详细原因
+  }
+}
+```
+
+
 ## 风控规则
 
-
-系统内置以下风控规则：
+已实现风控规则：黑名单控制， 未来考虑加入：
 
 1. **大额提现**: 超过阈值的提现需要人工审核
 2. **频繁提现**: 短时间内多次提现
 3. **新地址提现**: 向未知地址提现
 4. **Credit操作**: 大额余额变更
 
-### 风险等级
-
-- **Low (0-30分)**: 自动通过
-- **Medium (31-70分)**: 需要1个审批
-- **High (71-90分)**: 需要2个审批
-- **Critical (91+分)**: 直接拒绝
-
-当前实现的风控规则（模拟）：
-
-### 1. 黑名单检测（100分）
-- 检查 `from_address` 和 `to_address`
-- 命中黑名单直接冻结
-
-### 2. 高风险用户（50分）
-- 检查 `user_id` 是否在高风险列表
-
-### 3. 大额交易（30分）
-- 单笔金额超过 10 ETH
-
-### 4. 敏感操作（20分）
-- `operation_type === 'sensitive'`
-
-### 5. 提现操作（10分）
-- `event_type === 'withdraw'`
-
-### 决策逻辑
-
-- **≥100分** → `freeze`（冻结）
-- **70-99分** → `manual_review`（人工审核）
-- **40-69分** → `approve`（批准，中等风险）
-- **<40分** → `approve`（批准，低风险）
-
-## 测试
-
-### 测试正常存款
-
-```bash
-curl -X POST http://localhost:3004/api/assess \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation_id": "550e8400-e29b-41d4-a716-446655440001",
-    "event_type": "deposit",
-    "operation_type": "sensitive",
-    "table": "credits",
-    "action": "insert",
-    "user_id": 123,
-    "amount": "1000000000000000000",
-    "from_address": "0xnormal",
-    "data": {
-      "user_id": 123,
-      "amount": "1000000000000000000",
-      "status": "confirmed"
-    }
-  }'
-```
-
-### 测试黑名单地址（会被冻结）
-
-```bash
-curl -X POST http://localhost:3004/api/assess \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation_id": "550e8400-e29b-41d4-a716-446655440002",
-    "event_type": "deposit",
-    "operation_type": "sensitive",
-    "table": "credits",
-    "action": "insert",
-    "user_id": 123,
-    "amount": "1000000000000000000",
-    "from_address": "0xBlacklistAddress",
-    "data": {
-      "user_id": 123,
-      "amount": "1000000000000000000"
-    }
-  }'
-```
+  
+ 
 
 ## 与 DB Gateway 集成
 
@@ -267,23 +386,6 @@ curl -X POST http://localhost:3004/api/assess \
    DB Gateway → 验证双签名 → 检查 operation_id 未使用 → 执行数据库操作
    ```
 
-## 开发
-
-### 项目结构
-
-```
-risk_control/
-├── src/
-│   ├── controllers/      # API 控制器
-│   ├── services/         # 业务逻辑
-│   ├── utils/            # 工具类
-│   ├── types/            # 类型定义
-│   ├── scripts/          # 脚本
-│   └── index.ts          # 入口文件
-├── package.json
-├── tsconfig.json
-└── README.md
-```
 
 ### 添加新的风控规则
 
