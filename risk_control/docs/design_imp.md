@@ -40,13 +40,13 @@
 CREATE TABLE risk_assessments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   operation_id TEXT UNIQUE NOT NULL,     -- 操作ID (由业务层生成的UUID)
-  table_name TEXT NOT NULL,              -- 业务表名 (withdrawals/credits)
+  table_name TEXT,                       -- 业务表名 (withdrawals/credits) ，提现评估时为空
   record_id INTEGER,                     -- 业务表记录ID (双向关联)
   action TEXT NOT NULL,                  -- 操作类型 (insert/update/delete)
   user_id INTEGER,                       -- 关联用户ID
 
   -- 操作数据
-  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据
+  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据, 如果是提现保存交易信息
   suggest_operation_data TEXT,           -- JSON: 风控建议的操作数据
   suggest_reason TEXT,                   -- 建议原因说明
 
@@ -446,6 +446,57 @@ GET /api/pending-reviews?limit=50
       "created_at": "2025-10-05T10:00:00.000Z"
     }
   ]
+}
+```
+
+
+## 核心功能
+
+### 1. 提现风险评估接口
+
+**端点**: `POST /api/withdraw-risk-assessment`
+
+**请求参数**:
+```typescript
+{
+  operation_id: string;    // UUID，由 wallet 服务生成
+  transaction: {
+    from: string;          // 热钱包地址
+    to: string;            // 提现目标地址
+    amount: string;        // 提现金额（最小单位）
+    tokenAddress?: string; // 代币合约地址（可选）
+    chainId: number;       // 链ID
+    nonce: number;         // 交易 nonce
+  };
+  timestamp: number;       // 时间戳
+}
+```
+
+**响应**:
+
+成功（200）:
+```typescript
+{
+  success: true;
+  risk_signature: string;                                    // 风控签名
+  decision: 'approve' | 'manual_review';                     // 风控决策
+  timestamp: number;                                         // 时间戳
+  reasons?: string[];                                        // 风险原因
+}
+```
+
+拒绝（403）:
+```typescript
+{
+  success: false;
+  decision: 'reject';
+  timestamp: number;
+  reasons: string[];                                         // 拒绝原因
+  error: {
+    code: 'RISK_REJECTED';
+    message: '提现被风控拒绝';
+    details: string;                                         // 详细原因
+  }
 }
 ```
 

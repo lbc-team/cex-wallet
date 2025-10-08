@@ -28,6 +28,29 @@ export interface RiskAssessmentResponse {
   reasons?: string[];
 }
 
+// 交易签名请求
+export interface TransactionSignRequest {
+  operation_id: string;
+  transaction: {
+    from: string;
+    to: string;
+    amount: string;
+    tokenAddress?: string;
+    chainId: number;
+    nonce: number;
+  };
+  timestamp: number;
+}
+
+// 交易签名响应
+export interface TransactionSignResponse {
+  success: boolean;
+  risk_signature: string;
+  decision: 'approve' | 'freeze' | 'reject' | 'manual_review';
+  timestamp: number;
+  reasons?: string[];
+}
+
 export class RiskControlClient {
   private riskControlUrl: string;
 
@@ -102,6 +125,36 @@ export class RiskControlClient {
     }
 
     return context;
+  }
+
+  /**
+   * 请求风控对提现进行风险评估并签名
+   */
+  async requestWithdrawRiskAssessment(params: TransactionSignRequest): Promise<TransactionSignResponse> {
+    try {
+      const response = await fetch(`${this.riskControlUrl}/api/withdraw-risk-assessment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
+      });
+
+      const result = await response.json() as any;
+
+      // 处理风控拒绝（403）
+      if (response.status === 403) {
+        throw new Error(`风控拒绝: ${result.error?.details || result.reasons?.join('; ') || '未知原因'}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(`风控签名失败: ${response.status} - ${result.error?.message || result.message || '未知错误'}`);
+      }
+
+      return result as TransactionSignResponse;
+    } catch (error) {
+      throw new Error(`请求风控签名失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
   }
 
   /**

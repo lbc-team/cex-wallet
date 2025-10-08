@@ -5,13 +5,13 @@
 CREATE TABLE IF NOT EXISTS risk_assessments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   operation_id TEXT UNIQUE NOT NULL,     -- 操作ID (UUID，由业务层生成)
-  table_name TEXT NOT NULL,              -- 业务表名 (withdrawals/credits等)
+  table_name TEXT,                       -- 业务表名 (withdrawals/credits等)，可为空用于非数据库操作
   record_id INTEGER,                     -- 业务表记录ID (双向关联)
-  action TEXT NOT NULL,                  -- 操作类型 (insert/update/delete)
+  action TEXT NOT NULL,                  -- 操作类型 (insert/update/delete/withdraw等)
   user_id INTEGER,                       -- 关联用户ID
 
   -- 操作数据
-  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据
+  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据, 如果是提现保存交易信息
   suggest_operation_data TEXT,           -- JSON: 风控建议的操作数据
   suggest_reason TEXT,                   -- 建议原因说明
 

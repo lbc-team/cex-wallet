@@ -1,4 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
+import * as nacl from 'tweetnacl';
+import { v4 as uuidv4 } from 'uuid';
+import { getRiskControlClient, TransactionSignRequest } from './riskControlClient';
 
 // Signer 模块的响应接口
 interface SignerApiResponse<T = any> {
@@ -63,11 +66,50 @@ interface AddressListResponse {
   total: number;
 }
 
-export class SignerService {
+export class SignerClient {
   private signerBaseUrl: string;
+  private privateKey: Uint8Array;
+  private publicKey: Uint8Array;
+  private riskControlClient = getRiskControlClient();
 
   constructor() {
     this.signerBaseUrl = process.env.SIGNER_BASE_URL || 'http://localhost:3001';
+
+    // 从环境变量加载私钥
+    const privateKeyHex = process.env.WALLET_SERVICE_PRIVATE_KEY;
+    if (!privateKeyHex) {
+      throw new Error('WALLET_SERVICE_PRIVATE_KEY 未配置');
+    }
+
+    this.privateKey = this.hexToUint8Array(privateKeyHex);
+    this.publicKey = this.privateKey.slice(32, 64);
+  }
+
+  private hexToUint8Array(hex: string): Uint8Array {
+    if (hex.startsWith('0x')) {
+      hex = hex.slice(2);
+    }
+
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    }
+    return bytes;
+  }
+
+  private uint8ArrayToHex(array: Uint8Array): string {
+    return Array.from(array)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  /**
+   * 对消息进行签名
+   */
+  private signMessage(message: string): string {
+    const messageBytes = new TextEncoder().encode(message);
+    const signature = nacl.sign.detached(messageBytes, this.privateKey);
+    return this.uint8ArrayToHex(signature);
   }
 
   /**
@@ -127,30 +169,79 @@ export class SignerService {
   }
 
   /**
-   * 请求 Signer 模块签名交易
+   * 请求 Signer 模块签名交易（带双重签名）
    */
   async signTransaction(request: SignTransactionRequest): Promise<SignTransactionData> {
-    console.log('📥 SignerService: 请求参数:', JSON.stringify(request, null, 2));
-    console.log('🌐 SignerService: 请求URL:', `${this.signerBaseUrl}/api/signer/sign-transaction`);
-    
+    console.log('📥 SignerClient: 请求参数:', JSON.stringify(request, null, 2));
+
     try {
+      // 1. 生成 operation_id 和 timestamp
+      const operationId = uuidv4();
+      const timestamp = Date.now();
+
+      // 2. 请求风控签名
+      console.log('🛡️ SignerClient: 请求风控签名...');
+      const riskSignRequest: TransactionSignRequest = {
+        operation_id: operationId,
+        transaction: {
+          from: request.address,
+          to: request.to,
+          amount: request.amount,
+          tokenAddress: request.tokenAddress,
+          chainId: request.chainId,
+          nonce: request.nonce
+        },
+        timestamp
+      };
+
+      const riskSignResult = await this.riskControlClient.requestWithdrawRiskAssessment(riskSignRequest);
+
+      // 检查风控决策
+      if (riskSignResult.decision !== 'approve') {
+        throw new Error(`风控拒绝交易: ${riskSignResult.decision}, 原因: ${riskSignResult.reasons?.join(', ')}`);
+      }
+
+      console.log('✅ SignerClient: 风控签名获取成功');
+
+      // 3. 生成 wallet 服务自己的签名
+      const signPayload = JSON.stringify({
+        operation_id: operationId,
+        from: request.address,
+        to: request.to,
+        amount: request.amount,
+        tokenAddress: request.tokenAddress || null,
+        chainId: request.chainId,
+        nonce: request.nonce,
+        timestamp
+      });
+
+      const walletSignature = this.signMessage(signPayload);
+      console.log('✅ SignerClient: Wallet 服务签名生成成功');
+
+      // 4. 请求 Signer 签名交易，携带双重签名
+      console.log('🌐 SignerClient: 请求 Signer 服务签名交易');
       const response: AxiosResponse<SignerApiResponse<SignTransactionData>> = await axios.post(
         `${this.signerBaseUrl}/api/signer/sign-transaction`,
-        request,
+        {
+          ...request,
+          operation_id: operationId,
+          timestamp,
+          risk_signature: riskSignResult.risk_signature,
+          wallet_signature: walletSignature
+        },
         {
           headers: {
             'Content-Type': 'application/json'
           },
-          timeout: 30000 // 30秒超时，签名可能需要更长时间
+          timeout: 30000
         }
       );
 
-      console.log('📋 SignerService: 响应状态:', response.status);
-      console.log('📄 SignerService: 响应数据:', JSON.stringify(response.data, null, 2));
+      console.log('📋 SignerClient: 响应状态:', response.status);
 
       if (!response.data.success) {
         const errorMsg = response.data.error || '签名交易失败';
-        console.error('❌ SignerService: 签名失败:', errorMsg);
+        console.error('❌ SignerClient: 签名失败:', errorMsg);
         throw new Error(errorMsg);
       }
 
@@ -158,27 +249,20 @@ export class SignerService {
         throw new Error('Signer 模块返回的数据为空');
       }
 
-      console.log('✅ SignerService: 签名成功');
+      console.log('✅ SignerClient: 交易签名成功');
       return response.data.data;
     } catch (error) {
-      console.error('❌ SignerService: 请求异常:');
-      console.error('📍 错误详情:', error);
-      
+      console.error('❌ SignerClient: 请求异常:', error);
+
       if (axios.isAxiosError(error)) {
-        console.error('🌐 Axios错误类型');
         if (error.response) {
-          console.error('📨 响应错误:');
-          console.error('   状态码:', error.response.status);
-          console.error('   响应数据:', error.response.data);
           throw new Error(`Signer 模块错误: ${error.response.data?.error || error.message}`);
         } else if (error.request) {
-          console.error('📡 请求错误: 无法连接到 Signer 模块');
           throw new Error('无法连接到 Signer 模块');
         }
       }
-      
+
       const errorMessage = error instanceof Error ? error.message : '未知错误';
-      console.error('❌ 最终错误:', errorMessage);
       throw new Error(`签名交易失败: ${errorMessage}`);
     }
   }

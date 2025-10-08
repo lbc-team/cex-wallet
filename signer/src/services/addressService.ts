@@ -6,6 +6,7 @@ import { createWalletClient, parseEther, parseUnits, encodeAbiParameters, keccak
 import { mainnet } from 'viem/chains';
 import { Wallet, CreateWalletResponse, DerivationPath, SignTransactionRequest, SignTransactionResponse } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
+import { SignatureValidator } from '../utils/signatureValidator';
 
 export class AddressService {
   private defaultDerivationPaths: DerivationPath = {
@@ -292,7 +293,7 @@ export class AddressService {
    */
   async signTransaction(request: SignTransactionRequest): Promise<SignTransactionResponse> {
     console.log('📥 签名参数:', JSON.stringify(request, null, 2));
-    
+
     try {
       // 1. 验证请求参数
       if (!request.address || !request.to || !request.amount) {
@@ -303,6 +304,98 @@ export class AddressService {
           error
         };
       }
+
+      // 2. 验证双重签名（必须项）
+      if (!request.operation_id || !request.timestamp || !request.risk_signature || !request.wallet_signature) {
+        const error = '缺少必需的签名参数: operation_id, timestamp, risk_signature, wallet_signature';
+        console.error('❌', error);
+        return {
+          success: false,
+          error
+        };
+      }
+
+      console.log('🔐 开始验证双重签名...');
+
+      // 验证时间戳有效性（5分钟内）
+      const currentTime = Date.now();
+      const timeDiff = Math.abs(currentTime - request.timestamp);
+      const maxTimeDiff = 5 * 60 * 1000; // 5分钟
+
+      if (timeDiff > maxTimeDiff) {
+        const error = `签名已过期: 时间差 ${Math.floor(timeDiff / 1000)} 秒 (最大允许 ${maxTimeDiff / 1000} 秒)`;
+        console.error('❌', error);
+        return {
+          success: false,
+          error
+        };
+      }
+
+      console.log('✅ 时间戳验证通过');
+
+      // 从环境变量获取公钥
+      const riskPublicKey = process.env.RISK_CONTROL_PUBLIC_KEY;
+      const walletPublicKey = process.env.WALLET_SERVICE_PUBLIC_KEY;
+
+      if (!riskPublicKey || !walletPublicKey) {
+        const error = '签名验证失败: 公钥配置缺失';
+        console.error('❌', error);
+        return {
+          success: false,
+          error
+        };
+      }
+
+      // 验证风控签名
+      const riskSignValid = SignatureValidator.verifyRiskSignature(
+        request.operation_id,
+        request.address,
+        request.to,
+        request.amount,
+        request.tokenAddress,
+        request.chainId,
+        request.nonce,
+        request.timestamp,
+        request.risk_signature,
+        riskPublicKey
+      );
+
+      if (!riskSignValid) {
+        const error = '风控签名验证失败';
+        console.error('❌', error);
+        return {
+          success: false,
+          error
+        };
+      }
+
+      console.log('✅ 风控签名验证通过');
+
+      // 验证 wallet 服务签名
+      const walletSignValid = SignatureValidator.verifyWalletSignature(
+        request.operation_id,
+        request.address,
+        request.to,
+        request.amount,
+        request.tokenAddress,
+        request.chainId,
+        request.nonce,
+        request.timestamp,
+        request.wallet_signature,
+        walletPublicKey
+      );
+
+      if (!walletSignValid) {
+        const error = 'Wallet 服务签名验证失败';
+        console.error('❌', error);
+        return {
+          success: false,
+          error
+        };
+      }
+
+      console.log('✅ Wallet 服务签名验证通过');
+      console.log('✅ 双重签名验证全部通过');
 
       // 2. 查找地址对应的路径信息
       const addressInfo = await this.db.findAddressByAddress(request.address);

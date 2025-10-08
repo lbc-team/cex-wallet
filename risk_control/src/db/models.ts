@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 export interface RiskAssessment {
   id?: number;
   operation_id: string;
-  table_name: string;
+  table_name?: string;  // 可为空，用于非数据库操作（如提现）
   record_id?: number;
   action: string;
   user_id?: number;
@@ -88,7 +88,7 @@ export class RiskAssessmentModel {
 
     const params = [
       data.operation_id,
-      data.table_name,
+      data.table_name ?? null,  // 允许为 null
       data.record_id ?? null,
       data.action,
       data.user_id ?? null,

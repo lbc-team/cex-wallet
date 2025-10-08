@@ -71,10 +71,13 @@ export function createSignerRoutes(addressService: AddressService): Router {
       const signRequest: SignTransactionRequest = req.body;
 
       // 验证必需参数
-      if (!signRequest.address || !signRequest.to || !signRequest.amount || signRequest.nonce === undefined || !signRequest.chainId || !signRequest.chainType) {
+      if (!signRequest.address || !signRequest.to || !signRequest.amount ||
+          signRequest.nonce === undefined || !signRequest.chainId || !signRequest.chainType ||
+          !signRequest.operation_id || !signRequest.timestamp ||
+          !signRequest.risk_signature || !signRequest.wallet_signature) {
         const response: ApiResponse = {
           success: false,
-          error: '缺少必需参数: address, to, amount, nonce, chainId, chainType'
+          error: '缺少必需参数: address, to, amount, nonce, chainId, chainType, operation_id, timestamp, risk_signature, wallet_signature'
         };
         return res.status(400).json(response);
       }
