@@ -1,5 +1,15 @@
 ## 数据库结构
 
+### db/schema.sql
+数据库结构定义文件，包含所有表、索引和视图的创建语句。
+
+**使用方式**：
+1. **自动加载**：`DatabaseService` 在初始化时会自动读取并执行此文件
+2. **手动执行**：可使用 SQLite 客户端直接执行
+   ```bash
+   sqlite3 wallet.db < src/db/schema.sql
+   ```
+   
 
 ## 数据库设计
 
@@ -12,6 +22,7 @@ wallet 服务启动时会自动检查并创建所需的数据库表，包括：
 - `credits` - 资金流水表
 - `withdraws` - 提现记录表
 - `blocks` - 区块表（scan 服务使用）
+- `used_operation_ids`
 
 如需手动创建表，可运行：
 ```bash
@@ -77,20 +88,26 @@ node dist/scripts/createTables.js
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键，自增 |
-| operation_id | TEXT | 操作ID 唯一 |
+| operation_id | TEXT | 操作ID（UUID），唯一 |
 | used_at | INTEGER | 使用时间戳（毫秒） |
 | expires_at | INTEGER | 过期时间戳（毫秒） |
 | created_at | DATETIME | 创建时间 |
 
+**约束**:
+- `UNIQUE(operation_id)` - 操作ID唯一约束
+
 **索引**:
-- `idx_nonces_nonce` - 操作ID索引
-- `idx_nonces_expires_at` - 过期时间索引
+- `idx_operation_ids_id` - 操作ID索引，用于快速查找
+- `idx_operation_ids_expires_at` - 过期时间索引，用于定期清理
 
 **说明**：
-- 用于DB Gateway服务，防止API重放攻击
-- 每个操作ID只能使用一次，默认5分钟后过期
-- 系统每分钟自动清理过期记录
-- 使用内存缓存+数据库双重验证机制
+- 用于 DB Gateway 服务，防止 API 重放攻击
+- 每个操作ID（operation_id）只能使用一次，保证操作的幂等性
+- 操作ID由客户端（如 wallet 服务）生成，通常使用 UUID v4
+- 默认5分钟后过期（expires_at = used_at + 5 * 60 * 1000）
+- 系统定期（每分钟）自动清理过期记录，释放存储空间
+- 使用内存缓存 + 数据库双重验证机制，提高验证性能
+- 适用场景：敏感操作（创建钱包、更新 nonce、创建提现等）
 
 
 ### 区块表 (blocks)
