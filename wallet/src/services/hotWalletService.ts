@@ -1,5 +1,5 @@
 import { DatabaseConnection } from '../db/connection';
-import { SignerService } from './signerService';
+import { SignerClient } from './signerClient';
 import { getDbGatewayClient } from './dbGatewayClient';
 
 /**
@@ -7,12 +7,12 @@ import { getDbGatewayClient } from './dbGatewayClient';
  */
 export class HotWalletService {
   private db: DatabaseConnection;
-  private signerService: SignerService;
+  private signerClient: SignerClient;
   private dbGatewayClient = getDbGatewayClient();
 
   constructor(db: DatabaseConnection) {
     this.db = db;
-    this.signerService = new SignerService();
+    this.signerClient = new SignerClient();
   }
 
   /**
@@ -96,7 +96,7 @@ export class HotWalletService {
       }
 
       // 2. 通过 SignerService 创建钱包
-      const signerResult = await this.signerService.createWallet(params.chainType);
+      const signerResult = await this.signerClient.createWallet(params.chainType);
 
       if (!signerResult) {
         throw new Error('签名机创建钱包失败: 返回结果为空');

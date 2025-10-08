@@ -34,15 +34,17 @@ interface SignTransactionRequest {
   amount: string;         // 转账金额（最小单位）
   tokenAddress?: string;  // ERC20代币合约地址（可选，为空则为ETH转账）
   gas?: string;          // Gas限制（可选）
-  
+
   // EIP-1559 gas 参数（推荐使用）
   maxFeePerGas?: string;        // 最大费用（包含基础费用和优先费用）
   maxPriorityFeePerGas?: string; // 最大优先费用（矿工小费）
-  
+
   // Legacy gas 参数（向后兼容）
   gasPrice?: string;     // Gas价格（仅用于 Legacy 交易）
-  
-  nonce?: number;        // 交易nonce（可选）
+
+  nonce: number;         // 交易nonce（必需）
+  chainId: number;       // 链ID（必需）
+  chainType: 'evm' | 'btc' | 'solana'; // 链类型（必需）
   type?: 0 | 2;         // 交易类型：0=Legacy, 2=EIP-1559（可选，默认为2）
 }
 
@@ -76,9 +78,9 @@ export class SignerClient {
     this.signerBaseUrl = process.env.SIGNER_BASE_URL || 'http://localhost:3001';
 
     // 从环境变量加载私钥
-    const privateKeyHex = process.env.WALLET_SERVICE_PRIVATE_KEY;
+    const privateKeyHex = process.env.WALLET_PRIVATE_KEY;
     if (!privateKeyHex) {
-      throw new Error('WALLET_SERVICE_PRIVATE_KEY 未配置');
+      throw new Error('WALLET_PRIVATE_KEY 未配置');
     }
 
     this.privateKey = this.hexToUint8Array(privateKeyHex);
@@ -187,7 +189,7 @@ export class SignerClient {
           from: request.address,
           to: request.to,
           amount: request.amount,
-          tokenAddress: request.tokenAddress,
+          ...(request.tokenAddress && { tokenAddress: request.tokenAddress }),
           chainId: request.chainId,
           nonce: request.nonce
         },

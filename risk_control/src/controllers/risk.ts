@@ -235,7 +235,7 @@ export class RiskController {
         // 记录到数据库
         await this.riskAssessmentModel.create({
           operation_id,
-          table_name: null,
+          table_name: undefined,
           action: 'withdraw',
           operation_data: JSON.stringify({
             from,
@@ -248,9 +248,9 @@ export class RiskController {
           }),
           risk_level: riskLevel,
           decision: 'deny',
-          reasons: reasons.length > 0 ? JSON.stringify(reasons) : null,
-          risk_signature: null,  // 不生成签名
-          expires_at: null
+          reasons: reasons.length > 0 ? JSON.stringify(reasons) : undefined,
+          risk_signature: undefined,  // 不生成签名
+          expires_at: undefined
         });
 
         logger.info('Withdraw risk assessment completed - REJECTED', {
@@ -303,7 +303,7 @@ export class RiskController {
 
       await this.riskAssessmentModel.create({
         operation_id,
-        table_name: null,  // 提现不对应具体数据库表
+        table_name: undefined,  // 提现不对应具体数据库表
         action: 'withdraw',
         operation_data: JSON.stringify({
           from,
@@ -316,7 +316,7 @@ export class RiskController {
         }),
         risk_level: riskLevel,
         decision: decision === 'approve' ? 'auto_approve' : 'manual_review',
-        reasons: reasons.length > 0 ? JSON.stringify(reasons) : null,
+        reasons: reasons.length > 0 ? JSON.stringify(reasons) : undefined,
         risk_signature: riskSignature,
         expires_at: expiresAt
       });
