@@ -226,6 +226,57 @@ export class RiskController {
         });
       }
 
+      // 检查该 operation_id 是否已存在评估记录（人工审核通过的情况）
+      const existingAssessment = await this.riskAssessmentModel.findByOperationId(operation_id);
+
+      if (existingAssessment) {
+        // 如果已经存在评估记录，且审批状态为 approved（人工审核通过）
+        if (existingAssessment.approval_status === 'approved') {
+          logger.info('Operation already approved by manual review, reusing signature', {
+            operation_id,
+            decision: existingAssessment.decision,
+            approval_status: existingAssessment.approval_status
+          });
+
+          // 重新生成签名（因为现在有了 from 和 nonce）
+          const signPayload = JSON.stringify({
+            operation_id,
+            from,
+            to,
+            amount,
+            tokenAddress: tokenAddress || null,
+            chainId,
+            nonce,
+            timestamp
+          });
+
+          const riskSignature = this.riskService.signMessage(signPayload);
+
+          // 更新评估记录，添加新的签名
+          await this.riskAssessmentModel.update(existingAssessment.id!, {
+            operation_data: JSON.stringify({
+              from,
+              to,
+              amount,
+              tokenAddress: tokenAddress || null,
+              chainId,
+              nonce,
+              timestamp
+            }),
+            risk_signature: riskSignature,
+            expires_at: new Date(timestamp + 5 * 60 * 1000).toISOString()
+          });
+
+          return res.status(200).json({
+            success: true,
+            risk_signature: riskSignature,
+            decision: 'approve',
+            timestamp,
+            reasons: ['Manual review approved']
+          });
+        }
+      }
+
       // 风控检查
       let decision: 'approve' | 'freeze' | 'reject' | 'manual_review' = 'approve'; // 默认批准
       const reasons: string[] = [];

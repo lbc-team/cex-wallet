@@ -177,6 +177,51 @@ export class RiskAssessmentModel {
     `;
     return await this.db.run(sql, [recordId, operationId]);
   }
+
+  /**
+   * 通用更新方法
+   */
+  async update(id: number, data: Partial<Omit<RiskAssessment, 'id' | 'created_at' | 'updated_at'>>): Promise<number> {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    // 动态构建 SET 子句
+    if (data.operation_data !== undefined) {
+      fields.push('operation_data = ?');
+      values.push(data.operation_data);
+    }
+    if (data.risk_signature !== undefined) {
+      fields.push('risk_signature = ?');
+      values.push(data.risk_signature);
+    }
+    if (data.expires_at !== undefined) {
+      fields.push('expires_at = ?');
+      values.push(data.expires_at);
+    }
+    if (data.approval_status !== undefined) {
+      fields.push('approval_status = ?');
+      values.push(data.approval_status);
+    }
+    if (data.decision !== undefined) {
+      fields.push('decision = ?');
+      values.push(data.decision);
+    }
+
+    if (fields.length === 0) {
+      return 0; // 没有字段需要更新
+    }
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(id);
+
+    const sql = `
+      UPDATE risk_assessments
+      SET ${fields.join(', ')}
+      WHERE id = ?
+    `;
+
+    return await this.db.run(sql, values);
+  }
 }
 
 /**

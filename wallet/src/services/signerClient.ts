@@ -173,12 +173,15 @@ export class SignerClient {
   /**
    * 请求 Signer 模块签名交易（带双重签名）
    */
-  async signTransaction(request: SignTransactionRequest): Promise<SignTransactionData> {
+  async signTransaction(
+    request: SignTransactionRequest,
+    existingOperationId?: string
+  ): Promise<SignTransactionData> {
     console.log('📥 SignerClient: 请求参数:', JSON.stringify(request, null, 2));
 
     try {
-      // 1. 生成 operation_id 和 timestamp
-      const operationId = uuidv4();
+      // 1. 生成 operation_id 和 timestamp（如果提供了 existingOperationId 则使用它）
+      const operationId = existingOperationId || uuidv4();
       const timestamp = Date.now();
 
       // 2. 请求风控签名

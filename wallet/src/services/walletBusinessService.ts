@@ -794,9 +794,9 @@ export class WalletBusinessService {
         signRequest.tokenAddress = tokenInfo.token_address;
       }
 
-      // 7. 请求签名交易（会重新请求风控签名，因为现在有了 from 和 nonce）
-      console.log('🔐 请求签名交易...');
-      const signResult = await this.signerClient.signTransaction(signRequest);
+      // 7. 请求签名交易（复用 operation_id，风控会检查人工审核状态）
+      console.log('🔐 请求签名交易（复用 operation_id）...', withdraw.operation_id);
+      const signResult = await this.signerClient.signTransaction(signRequest, withdraw.operation_id);
       console.log('✅ 签名成功，交易哈希:', signResult.transactionHash);
 
       // 8. 发送交易到区块链网络
