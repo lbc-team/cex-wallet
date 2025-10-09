@@ -470,12 +470,12 @@ export class WalletBusinessService {
 
       withdrawId = withdrawResult.withdrawId;
 
-      // 如果风控拒绝，返回错误
-      if (withdrawResult.rejected) {
-        console.log('❌ 提现被风控拒绝:', withdrawResult.rejectReason);
+      // 如果风控拒绝或需要人工审核，直接返回
+      if (withdrawResult.rejected || withdrawResult.needsReview) {
+        console.log(withdrawResult.rejected ? '❌ 提现被风控拒绝:' : '⏸️  提现需要人工审核:', withdrawResult.rejectReason);
         return {
           success: false,
-          error: `提现被拒绝: ${withdrawResult.rejectReason}`
+          error: withdrawResult.rejected ? `提现被拒绝: ${withdrawResult.rejectReason}` : `提现需要人工审核: ${withdrawResult.rejectReason}`
         };
       }
 

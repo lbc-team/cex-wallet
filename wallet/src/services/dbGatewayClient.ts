@@ -367,14 +367,16 @@ export class DbGatewayClient {
     withdrawId: number;
     status: string;
     rejected: boolean;
+    needsReview: boolean;
     rejectReason?: string;
   }> {
     try {
       const operationId = uuidv4();
       const timestamp = Date.now();
 
-      // 准备初始数据，包含默认 status 和时间戳
+      // 准备初始数据，包含 operation_id、默认 status 和时间戳
       const requestData = {
+        operation_id: operationId,
         user_id: params.user_id,
         to_address: params.to_address,
         token_id: params.token_id,
@@ -416,14 +418,16 @@ export class DbGatewayClient {
       const withdrawId = result.lastID;
       const status = finalData.status;
       const rejected = (status === 'rejected');
+      const needsReview = (riskResult.decision === 'manual_review');
 
-      // 如果被拒绝，返回拒绝原因（error_message 已经在风控返回的 finalData 中设置好了）
-      if (rejected) {
-        const rejectReason = riskResult.reasons?.join(', ') || '未通过风控检查';
+      // 如果被拒绝或需要人工审核，返回相应信息
+      if (rejected || needsReview) {
+        const rejectReason = riskResult.reasons?.join(', ') || (rejected ? '未通过风控检查' : '需要人工审核');
         return {
           withdrawId,
           status,
           rejected,
+          needsReview,
           rejectReason
         };
       }
@@ -431,7 +435,8 @@ export class DbGatewayClient {
       return {
         withdrawId,
         status,
-        rejected
+        rejected,
+        needsReview
       };
     } catch (error) {
       throw new Error(`创建提现请求失败: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -790,8 +795,8 @@ export class DbGatewayClient {
         { operation_id: operationId }
       );
 
-      if (result.data && result.data.length > 0) {
-        return result.data[0];
+      if (result && result.length > 0) {
+        return result[0];
       }
 
       return null;

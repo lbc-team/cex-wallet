@@ -12,7 +12,7 @@ const CONFIG = {
   WALLET_SERVICE_URL: 'http://localhost:3000',
   USER_ID: 2,
   TO_ADDRESS: '0x1f35B7b2CaB4b3dFEA7AE56F40D6c7B531940f40', // 测试地址
-  AMOUNT: '1.5', // 大额提现需要 Review
+  AMOUNT: '0.6', // 大额提现需要 Review
   TOKEN_SYMBOL: 'ETH',
   CHAIN_ID: 31337,
   CHAIN_TYPE: 'evm'

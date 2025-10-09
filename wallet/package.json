@@ -13,6 +13,7 @@
     "mock:init": "ts-node src/scripts/mock.ts",
     "mock:withdraw": "ts-node src/scripts/requestWithdraw.ts",
     "mock:withdraw:black": "ts-node src/scripts/requestWithdrawToBlackAddr.ts",
+    "mock:withdraw:needReview": "ts-node src/scripts/requestWithdrawNeedReview.ts",
     "mock:approveReview": "ts-node src/scripts/mockApproveReview.ts"
   },
   "keywords": [],

@@ -16,8 +16,8 @@ export class RiskAssessmentService {
   private assessmentModel: RiskAssessmentModel;
   private addressRiskModel: AddressRiskModel;
 
-  // 大额交易阈值（单位：wei，测试设置为 1 ETH， 应该用数据库定义规则）
-  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('1000000000000000000');
+  // 大额交易阈值（单位：wei，测试设置为 0.5 ETH， 应该用数据库定义规则）
+  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('500000000000000000');
 
   // 高风险用户列表（模拟，后续可以移到数据库）
   private highRiskUsers: Set<number> = new Set([666, 999]);
@@ -257,7 +257,7 @@ export class RiskAssessmentService {
           reasons.push('Manual review required');
 
           // 生成建议数据：建议减少金额到阈值以下
-          const suggestedAmount = (this.LARGE_AMOUNT_THRESHOLD / BigInt(2)).toString();
+          const suggestedAmount = this.LARGE_AMOUNT_THRESHOLD.toString();
           suggestData = {
             ...request.data,
             amount: suggestedAmount
@@ -335,6 +335,14 @@ export class RiskAssessmentService {
     // 如果是拒绝决策，修改 status 和 error_message 字段（针对 withdraws 表）
     if (decision === 'reject' && request.table === 'withdraws' && dbOperation.data) {
       dbOperation.data.status = 'rejected';
+      if (reasons && reasons.length > 0) {
+        dbOperation.data.error_message = reasons.join(', ');
+      }
+    }
+
+    // 如果是人工审核决策，修改 status 字段（针对 withdraws 表）
+    if (decision === 'manual_review' && request.table === 'withdraws' && dbOperation.data) {
+      dbOperation.data.status = 'manual_review';
       if (reasons && reasons.length > 0) {
         dbOperation.data.error_message = reasons.join(', ');
       }

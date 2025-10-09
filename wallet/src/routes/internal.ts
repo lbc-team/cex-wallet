@@ -54,15 +54,15 @@ export function internalRoutes(dbService: DatabaseReader): Router {
       });
 
       // 3. 检查状态是否正确
-      if (withdraw.status !== 'manual_reviewing') {
+      if (withdraw.status !== 'manual_review') {
         console.warn('⚠️ 提现状态不正确', {
           withdraw_id: withdraw.id,
           current_status: withdraw.status,
-          expected_status: 'manual_reviewing'
+          expected_status: 'manual_review'
         });
         return res.status(400).json({
           success: false,
-          error: `Withdraw status is ${withdraw.status}, expected manual_reviewing`
+          error: `Withdraw status is ${withdraw.status}, expected manual_review`
         });
       }
 
