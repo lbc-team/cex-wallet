@@ -90,24 +90,3 @@ CREATE INDEX IF NOT EXISTS idx_address_risk_address ON address_risk_list(address
 CREATE INDEX IF NOT EXISTS idx_address_risk_chain_type ON address_risk_list(chain_type);
 CREATE INDEX IF NOT EXISTS idx_address_risk_type ON address_risk_list(risk_type);
 CREATE INDEX IF NOT EXISTS idx_address_risk_enabled ON address_risk_list(enabled);
-
-
--- 4. 风控规则配置表 (risk_rules)
-CREATE TABLE IF NOT EXISTS risk_rules (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  rule_name TEXT UNIQUE NOT NULL,        -- 规则名称
-  rule_type TEXT NOT NULL,               -- amount_limit/address_check/frequency_limit
-  table_name TEXT NOT NULL,              -- 适用的表名
-  action TEXT NOT NULL,                  -- 适用的操作 (insert/update/delete)
-
-  config TEXT NOT NULL,                  -- JSON: 规则配置
-  enabled INTEGER DEFAULT 1,             -- 是否启用
-  priority INTEGER DEFAULT 0,            -- 规则优先级 (数字越大优先级越高)
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- 索引
-CREATE INDEX IF NOT EXISTS idx_risk_rules_enabled ON risk_rules(enabled);
-CREATE INDEX IF NOT EXISTS idx_risk_rules_table ON risk_rules(table_name);

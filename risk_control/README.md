@@ -91,7 +91,7 @@ wallet.db (withdraws)           risk_control.db (risk_assessments)
 | user_agent | TEXT | | 用户代理 |
 | created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
-### 2.3 address_risk_list (地址风险表)
+### 2.3 address_risk_list (风险地址表)
 
 管理风险地址，包括黑名单、白名单等。
 
@@ -107,7 +107,11 @@ wallet.db (withdraws)           risk_control.db (risk_assessments)
 | enabled | INTEGER | DEFAULT 1 | 是否启用 |
 | created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | updated_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
-| - | - | UNIQUE(address, chain_type) | 地址和链类型组合唯一 |
+
+ UNIQUE(address, chain_type) | 地址和链类型组合唯一 
+
+
+
 
 ### 2.4 数据库关联关系
 

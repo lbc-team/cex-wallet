@@ -71,12 +71,3 @@ export interface BlacklistAddress {
   reason: string;
   added_at: number;
 }
-
-// 风控规则（模拟）
-export interface RiskRule {
-  id: string;
-  name: string;
-  type: 'blacklist' | 'amount_limit' | 'frequency_limit' | 'custom';
-  enabled: boolean;
-  config: any;
-}
