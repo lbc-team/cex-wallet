@@ -16,8 +16,8 @@ export class RiskAssessmentService {
   private assessmentModel: RiskAssessmentModel;
   private addressRiskModel: AddressRiskModel;
 
-  // 大额交易阈值（单位：wei，这里设置为 10 ETH）
-  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('10000000000000000000');
+  // 大额交易阈值（单位：wei，测试设置为 1 ETH， 应该用数据库定义规则）
+  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('1000000000000000000');
 
   // 高风险用户列表（模拟，后续可以移到数据库）
   private highRiskUsers: Set<number> = new Set([666, 999]);

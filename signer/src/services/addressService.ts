@@ -332,10 +332,10 @@ export class AddressService {
 
       console.log('🔐 开始验证双重签名...');
 
-      // 验证时间戳有效性（5分钟内）
+      // 验证时间戳有效性（1分钟内）
       const currentTime = Date.now();
       const timeDiff = Math.abs(currentTime - request.timestamp);
-      const maxTimeDiff = 5 * 60 * 1000; // 5分钟
+      const maxTimeDiff = 60 * 1000; // 60秒
 
       if (timeDiff > maxTimeDiff) {
         const error = `签名已过期: 时间差 ${Math.floor(timeDiff / 1000)} 秒 (最大允许 ${maxTimeDiff / 1000} 秒)`;

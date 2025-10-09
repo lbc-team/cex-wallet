@@ -12,7 +12,8 @@
     "test:wallet": "ts-node tests/wallet.test.ts",
     "mock:init": "ts-node src/scripts/mock.ts",
     "mock:withdraw": "ts-node src/scripts/requestWithdraw.ts",
-    "mock:withdraw:black": "ts-node src/scripts/requestWithdrawToBlackAddr.ts"
+    "mock:withdraw:black": "ts-node src/scripts/requestWithdrawToBlackAddr.ts",
+    "mock:approveReview": "ts-node src/scripts/mockApproveReview.ts"
   },
   "keywords": [],
   "author": "",

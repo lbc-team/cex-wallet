@@ -8,6 +8,7 @@
 2. [签名机与用户账户生成的方案](https://learnblockchain.cn/article/20693) 
 3. [用户充值](https://learnblockchain.cn/article/20925)
 4. [用户提现](https://learnblockchain.cn/article/21061)
+5. [风控设计](https://learnblockchain.cn/article/21233)
 
 
 ## 主要模块

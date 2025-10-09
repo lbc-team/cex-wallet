@@ -63,11 +63,11 @@ export class SignatureMiddleware {
         }
       }
 
-      // 验证时间戳（5分钟窗口）
+      // 验证时间戳（1分钟窗口）
       const now = Date.now();
       const requestTime = gatewayRequest.timestamp;
       const timeDiff = Math.abs(now - requestTime);
-      const maxTimeDiff = 5 * 60 * 1000; // 5 minutes
+      const maxTimeDiff = 60 * 1000; // 60 seconds
 
       if (timeDiff > maxTimeDiff) {
         return res.status(400).json({
@@ -323,11 +323,11 @@ export class SignatureMiddleware {
         }
       }
 
-      // 验证时间戳（5分钟窗口）
+      // 验证时间戳（1 分钟窗口）
       const now = Date.now();
       const requestTime = batchRequest.timestamp;
       const timeDiff = Math.abs(now - requestTime);
-      const maxTimeDiff = 5 * 60 * 1000; // 5 minutes
+      const maxTimeDiff = 60 * 1000; // 60 seconds
 
       if (timeDiff > maxTimeDiff) {
         return res.status(400).json({
