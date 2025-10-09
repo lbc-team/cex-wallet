@@ -64,15 +64,8 @@ export class DatabaseService {
       const schemaPath = resolve(__dirname, '../db/schema.sql');
       const schemaSql = readFileSync(schemaPath, 'utf-8');
 
-      // 将 SQL 语句按分号分割并执行
-      const statements = schemaSql
-        .split(';')
-        .map(stmt => stmt.trim())
-        .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
-
-      for (const statement of statements) {
-        await this.run(statement);
-      }
+      // 使用 exec 方法一次性执行所有 SQL 语句
+      await this.exec(schemaSql);
 
       logger.info('数据库表初始化完成');
 
@@ -80,6 +73,27 @@ export class DatabaseService {
       logger.error('数据库表初始化失败', { error });
       throw error;
     }
+  }
+
+  /**
+   * 执行多个 SQL 语句（不返回结果）
+   */
+  async exec(sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+
+      this.db.exec(sql, (err) => {
+        if (err) {
+          logger.error('Database exec failed', { sql: sql.substring(0, 200), error: err.message });
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
 

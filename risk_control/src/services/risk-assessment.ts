@@ -236,13 +236,15 @@ export class RiskAssessmentService {
       };
     }
 
-    // 规则3: 检查大额交易 - 人工审核
+    // 规则3: 检查大额提现 - 人工审核（只检查提现，不检查存款）
     const amount = ctx.amount || request.data?.amount;
-    if (amount) {
+    const isWithdraw = creditType === 'withdraw' || request.table === 'withdraws';
+
+    if (amount && isWithdraw) {
       try {
         const amountBigInt = BigInt(amount);
         if (amountBigInt > this.LARGE_AMOUNT_THRESHOLD) {
-          reasons.push(`Large amount transaction: ${amount}`);
+          reasons.push(`Large amount withdrawal: ${amount}`);
           reasons.push('Manual review required');
 
           // 生成建议数据：建议减少金额到阈值以下
@@ -264,18 +266,6 @@ export class RiskAssessmentService {
       } catch (error) {
         logger.warn('Failed to parse amount', { amount });
       }
-    }
-
-    // 规则4: 敏感操作 - 人工审核
-    if (request.operation_type === 'sensitive') {
-      reasons.push('Sensitive operation requires manual review');
-      return {
-        decision: 'manual_review',
-        risk_level: 'medium',
-        reasons,
-        suggestData,
-        suggestReason
-      };
     }
 
     // 默认：批准
