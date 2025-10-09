@@ -713,11 +713,10 @@ export class WalletBusinessService {
   /**
    * 人工审核通过后继续提现流程
    */
-  async continueWithdrawAfterReview(withdraw: any, riskSignature: string): Promise<void> {
+  async continueWithdrawAfterReview(withdraw: any): Promise<void> {
     console.log('📝 继续提现流程（人工审核通过）', {
       withdraw_id: withdraw.id,
-      operation_id: withdraw.operation_id,
-      risk_signature: riskSignature ? `${riskSignature.substring(0, 16)}...` : 'missing'
+      operation_id: withdraw.operation_id
     });
 
     try {
@@ -795,15 +794,9 @@ export class WalletBusinessService {
         signRequest.tokenAddress = tokenInfo.token_address;
       }
 
-      // 7. 使用已有的风控签名请求签名交易
-      console.log('🔐 使用风控签名请求签名交易...');
-      const timestamp = Date.now();
-      const signResult = await this.signerClient.signTransactionWithRiskSignature(
-        signRequest,
-        withdraw.operation_id,
-        riskSignature,
-        timestamp
-      );
+      // 7. 请求签名交易（会重新请求风控签名，因为现在有了 from 和 nonce）
+      console.log('🔐 请求签名交易...');
+      const signResult = await this.signerClient.signTransaction(signRequest);
       console.log('✅ 签名成功，交易哈希:', signResult.transactionHash);
 
       // 8. 发送交易到区块链网络

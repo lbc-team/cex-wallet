@@ -104,7 +104,7 @@ export class ManualReviewService {
       });
 
       // 5. 回调 Wallet 服务（异步，不阻塞响应）
-      this.notifyWalletService(request.operation_id, approvalStatus, assessment.action)
+      this.notifyWalletService(request.operation_id, approvalStatus, assessment.action, assessment.operation_data)
         .catch(error => {
           logger.error('Failed to notify wallet service', {
             operation_id: request.operation_id,
@@ -201,7 +201,8 @@ export class ManualReviewService {
   private async notifyWalletService(
     operationId: string,
     decision: 'approved' | 'rejected',
-    action: string
+    action: string,
+    operationData: string
   ): Promise<void> {
     const walletServiceUrl = process.env.WALLET_SERVICE_URL || 'http://localhost:3001';
 
@@ -213,18 +214,6 @@ export class ManualReviewService {
     });
 
     try {
-      // 生成签名消息
-      const timestamp = Date.now();
-      const signatureMessage = JSON.stringify({
-        operation_id: operationId,
-        decision,
-        action,
-        timestamp
-      });
-
-      // 使用风控私钥签名
-      const riskSignature = this.riskAssessmentService.signMessage(signatureMessage);
-
       const response = await fetch(`${walletServiceUrl}/api/internal/manual-review-callback`, {
         method: 'POST',
         headers: {
@@ -234,8 +223,7 @@ export class ManualReviewService {
           operation_id: operationId,
           decision,
           action,
-          timestamp,
-          risk_signature: riskSignature
+          timestamp: Date.now()
         }),
         timeout: 5000 // 5秒超时
       });

@@ -8,7 +8,6 @@ interface ManualReviewCallbackRequest {
   decision: 'approved' | 'rejected';
   action: string;
   timestamp: number;
-  risk_signature: string;
 }
 
 export function internalRoutes(dbService: DatabaseReader): Router {
@@ -21,21 +20,20 @@ export function internalRoutes(dbService: DatabaseReader): Router {
    */
   router.post('/manual-review-callback', async (req: Request, res: Response) => {
     try {
-      const { operation_id, decision, action, timestamp, risk_signature } = req.body as ManualReviewCallbackRequest;
+      const { operation_id, decision, action, timestamp } = req.body as ManualReviewCallbackRequest;
 
       console.log('📞 收到人工审核回调', {
         operation_id,
         decision,
         action,
-        timestamp,
-        risk_signature: risk_signature ? `${risk_signature.substring(0, 16)}...` : 'missing'
+        timestamp
       });
 
       // 1. 验证参数
-      if (!operation_id || !decision || !action || !risk_signature) {
+      if (!operation_id || !decision || !action) {
         return res.status(400).json({
           success: false,
-          error: 'Missing required parameters: operation_id, decision, action, risk_signature'
+          error: 'Missing required parameters: operation_id, decision, action'
         });
       }
 
@@ -75,8 +73,8 @@ export function internalRoutes(dbService: DatabaseReader): Router {
 
         await dbGatewayClient.updateWithdrawStatus(withdraw.id, 'signing');
 
-        // 异步处理签名和发送交易（不阻塞响应），传递风控签名
-        walletBusinessService.continueWithdrawAfterReview(withdraw, risk_signature)
+        // 异步处理签名和发送交易（不阻塞响应）
+        walletBusinessService.continueWithdrawAfterReview(withdraw)
           .then(() => {
             console.log('✅ 提现处理成功', { withdraw_id: withdraw.id });
           })
