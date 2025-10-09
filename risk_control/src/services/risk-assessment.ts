@@ -89,7 +89,7 @@ export class RiskAssessmentService {
       // 7. 如果被拒绝，返回错误（但可能包含建议数据）
       if (riskCheck.decision === 'reject') {
         // 通过 prepareDbOperation 处理数据（会修改 status 等字段）
-        const dbOperation = this.prepareDbOperation(request, riskCheck.decision);
+        const dbOperation = this.prepareDbOperation(request, riskCheck.decision, riskCheck.reasons);
 
         // 创建签名负载（对修改后的数据签名）
         const rejectSignaturePayload: SignaturePayload = {
@@ -103,6 +103,15 @@ export class RiskAssessmentService {
         };
 
         const rejectSignature = this.signer.sign(rejectSignaturePayload);
+
+        logger.info('Risk assessment completed - REJECTED', {
+          operation_id,
+          decision: 'reject',
+          risk_level: riskCheck.risk_level,
+          reasons: riskCheck.reasons,
+          has_suggestion: !!riskCheck.suggestData,
+          assessment_id: assessmentId
+        });
 
         return {
           success: false,
@@ -287,7 +296,8 @@ export class RiskAssessmentService {
    */
   private prepareDbOperation(
     request: RiskAssessmentRequest,
-    decision: RiskDecision
+    decision: RiskDecision,
+    reasons?: string[]
   ): {
     table: string;
     action: 'select' | 'insert' | 'update' | 'delete';
@@ -322,9 +332,12 @@ export class RiskAssessmentService {
       dbOperation.data.metadata = JSON.stringify(dbOperation.data.metadata);
     }
 
-    // 如果是拒绝决策，修改 status 字段（针对 withdraws 表）
+    // 如果是拒绝决策，修改 status 和 error_message 字段（针对 withdraws 表）
     if (decision === 'reject' && request.table === 'withdraws' && dbOperation.data) {
       dbOperation.data.status = 'rejected';
+      if (reasons && reasons.length > 0) {
+        dbOperation.data.error_message = reasons.join(', ');
+      }
     }
 
     // 如果是批准决策，确保 status 正确

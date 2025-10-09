@@ -214,14 +214,14 @@ export function walletRoutes(dbService: DatabaseReader): Router {
     });
     
     if (result.success) {
-      const successResponse: ApiResponse = { 
+      const successResponse: ApiResponse = {
         message: '提现签名成功',
         data: result.data
       };
       res.json(successResponse);
     } else {
       const errorResponse: ApiResponse = { error: result.error || '提现失败' };
-      
+
       // 根据错误类型设置不同的状态码
       if (result.error?.includes('余额不足')) {
         res.status(400).json(errorResponse);
@@ -231,6 +231,9 @@ export function walletRoutes(dbService: DatabaseReader): Router {
         res.status(503).json(errorResponse);
       } else if (result.error?.includes('不支持的代币')) {
         res.status(400).json(errorResponse);
+      } else if (result.error?.includes('提现被拒绝')) {
+        // 风控拒绝 - 返回 403 Forbidden
+        res.status(403).json(errorResponse);
       } else {
         res.status(500).json(errorResponse);
       }

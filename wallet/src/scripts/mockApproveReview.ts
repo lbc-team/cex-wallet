@@ -189,6 +189,11 @@ class MockReviewApprover {
 
     // 2. 获取最新的待审核记录（第一个）
     const latestReview = pendingResponse.data[0];
+    if (!latestReview) {
+      console.log('❌ 待审核列表为空');
+      return;
+    }
+
     console.log(`✅ 找到 ${pendingResponse.data.length} 条待审核记录，处理最新的一条:`);
     this.displayPendingReview(latestReview);
 

@@ -417,13 +417,9 @@ export class DbGatewayClient {
       const status = finalData.status;
       const rejected = (status === 'rejected');
 
-      // 如果被拒绝，更新错误信息
+      // 如果被拒绝，返回拒绝原因（error_message 已经在风控返回的 finalData 中设置好了）
       if (rejected) {
         const rejectReason = riskResult.reasons?.join(', ') || '未通过风控检查';
-        await this.updateWithdrawStatus(withdrawId, 'rejected', {
-          error_message: `风控拒绝: ${rejectReason}`
-        });
-
         return {
           withdrawId,
           status,
