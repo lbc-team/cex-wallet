@@ -39,34 +39,25 @@ wallet.db (withdraws)           risk_control.db (risk_assessments)
 
 存储所有风控评估记录，包括自动批准、人工审核、拒绝等。
 
-```sql
-CREATE TABLE risk_assessments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  operation_id TEXT UNIQUE NOT NULL,     -- 操作ID (由业务层生成的UUID)
-  table_name TEXT,                       -- 业务表名 (withdrawals/credits) ，提现评估时为空
-  record_id INTEGER,                     -- 业务表记录ID (双向关联)
-  action TEXT NOT NULL,                  -- 操作类型 (insert/update/delete)
-  user_id INTEGER,                       -- 关联用户ID
-
-  -- 操作数据
-  operation_data TEXT NOT NULL,          -- JSON: 原始操作数据, 如果是提现保存交易信息
-  suggest_operation_data TEXT,           -- JSON: 风控建议的操作数据
-  suggest_reason TEXT,                   -- 建议原因说明
-
-  -- 风控结果
-  risk_level TEXT NOT NULL,              -- low/medium/high/critical
-  decision TEXT NOT NULL,                -- auto_approve/manual_review/deny
-  approval_status TEXT,                  -- pending/approved/rejected (仅用于manual_review)
-  reasons TEXT,                          -- JSON: 风险原因数组
-
-  -- 签名和过期
-  risk_signature TEXT,                   -- 风控签名
-  expires_at DATETIME,                   -- 签名过期时间
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| id | INTEGER | PRIMARY KEY AUTOINCREMENT | 主键ID |
+| operation_id | TEXT | UNIQUE NOT NULL | 操作ID (由业务层生成的UUID) |
+| table_name | TEXT | | 业务表名 (withdrawals/credits)，提现评估时为空 |
+| record_id | INTEGER | | 业务表记录ID (双向关联) |
+| action | TEXT | NOT NULL | 操作类型 (insert/update/delete) |
+| user_id | INTEGER | | 关联用户ID |
+| operation_data | TEXT | NOT NULL | JSON: 原始操作数据，如果是提现保存交易信息 |
+| suggest_operation_data | TEXT | | JSON: 风控建议的操作数据 |
+| suggest_reason | TEXT | | 建议原因说明 |
+| risk_level | TEXT | NOT NULL | 风险级别: low/medium/high/critical |
+| decision | TEXT | NOT NULL | 决策: auto_approve/manual_review/deny |
+| approval_status | TEXT | | 审批状态: pending/approved/rejected (仅用于manual_review) |
+| reasons | TEXT | | JSON: 风险原因数组 |
+| risk_signature | TEXT | | 风控签名 |
+| expires_at | DATETIME | | 签名过期时间 |
+| created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| updated_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 **关键字段说明**：
 
@@ -86,50 +77,37 @@ CREATE TABLE risk_assessments (
 
 记录所有人工审核操作，包括审核员信息、审核结果等。
 
-```sql
-CREATE TABLE risk_manual_reviews (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  assessment_id INTEGER NOT NULL,        -- 关联 risk_assessments.id
-  operation_id TEXT NOT NULL,            -- 关联 operation_id
-
-  approver_user_id INTEGER NOT NULL,     -- 审核员用户ID
-  approver_username TEXT,                -- 审核员用户名
-  approved INTEGER NOT NULL,             -- 0=拒绝, 1=批准
-
-  modified_data TEXT,                    -- JSON: 审核员修改后的数据
-  comment TEXT,                          -- 审核意见
-  ip_address TEXT,                       -- 审核员IP
-  user_agent TEXT,                       -- 用户代理
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-  FOREIGN KEY (assessment_id) REFERENCES risk_assessments(id)
-);
-```
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| id | INTEGER | PRIMARY KEY AUTOINCREMENT | 主键ID |
+| assessment_id | INTEGER | NOT NULL, FOREIGN KEY | 关联 risk_assessments.id |
+| operation_id | TEXT | NOT NULL | 关联 operation_id |
+| approver_user_id | INTEGER | NOT NULL | 审核员用户ID |
+| approver_username | TEXT | | 审核员用户名 |
+| approved | INTEGER | NOT NULL | 审核结果: 0=拒绝, 1=批准 |
+| modified_data | TEXT | | JSON: 审核员修改后的数据 |
+| comment | TEXT | | 审核意见 |
+| ip_address | TEXT | | 审核员IP |
+| user_agent | TEXT | | 用户代理 |
+| created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
 ### 2.3 address_risk_list (地址风险表)
 
 管理风险地址，包括黑名单、白名单等。
 
-```sql
-CREATE TABLE address_risk_list (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  address TEXT NOT NULL,                 -- 地址
-  chain_type TEXT NOT NULL,              -- evm/btc/solana
-
-  risk_type TEXT NOT NULL,               -- blacklist/whitelist/suspicious/sanctioned
-  risk_level TEXT DEFAULT 'medium',      -- low/medium/high
-  reason TEXT,                           -- 风险原因
-  source TEXT DEFAULT 'manual',          -- manual/auto/chainalysis/ofac
-
-  enabled INTEGER DEFAULT 1,             -- 是否启用
-
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
-  UNIQUE(address, chain_type)
-);
-```
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| id | INTEGER | PRIMARY KEY AUTOINCREMENT | 主键ID |
+| address | TEXT | NOT NULL | 地址 |
+| chain_type | TEXT | NOT NULL | 链类型: evm/btc/solana |
+| risk_type | TEXT | NOT NULL | 风险类型: blacklist/whitelist/suspicious/sanctioned |
+| risk_level | TEXT | DEFAULT 'medium' | 风险级别: low/medium/high |
+| reason | TEXT | | 风险原因 |
+| source | TEXT | DEFAULT 'manual' | 来源: manual/auto/chainalysis/ofac |
+| enabled | INTEGER | DEFAULT 1 | 是否启用 |
+| created_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| updated_at | DATETIME | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
+| - | - | UNIQUE(address, chain_type) | 地址和链类型组合唯一 |
 
 ### 2.4 数据库关联关系
 
