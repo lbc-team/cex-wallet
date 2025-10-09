@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import { initDatabaseService, getDatabaseService } from './db';
 import { walletRoutes } from './routes/wallet';
+import { internalRoutes } from './routes/internal';
 
 // API响应接口
 interface ApiResponse<T = any> {
@@ -65,7 +66,10 @@ app.get('/health', (req: Request, res: Response) => {
 function setupRoutes() {
   // 钱包路由
   app.use('/api', walletRoutes(dbService));
-  
+
+  // 内部路由（用于接收其他服务的回调）
+  app.use('/api/internal', internalRoutes(dbService));
+
   // 404处理 - 必须在所有路由之后
   app.use((req: Request, res: Response) => {
     const response: ApiResponse = { 

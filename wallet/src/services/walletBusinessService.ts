@@ -710,5 +710,223 @@ export class WalletBusinessService {
     }
   }
 
+  /**
+   * 人工审核通过后继续提现流程
+   */
+  async continueWithdrawAfterReview(withdraw: any, riskSignature: string): Promise<void> {
+    console.log('📝 继续提现流程（人工审核通过）', {
+      withdraw_id: withdraw.id,
+      operation_id: withdraw.operation_id,
+      risk_signature: riskSignature ? `${riskSignature.substring(0, 16)}...` : 'missing'
+    });
+
+    try {
+      // 1. 获取代币信息
+      const tokenInfo = await this.dbReader.getConnection().findTokenById(withdraw.token_id);
+      if (!tokenInfo) {
+        throw new Error(`Token not found: ${withdraw.token_id}`);
+      }
+
+      // 2. 计算实际转账金额（扣除手续费）
+      const actualAmount = BigInt(withdraw.amount) - BigInt(withdraw.fee || '0');
+
+      // 3. 选择热钱包
+      const walletSelection = await this.selectHotWallet({
+        chainId: withdraw.chain_id,
+        chainType: withdraw.chain_type,
+        requiredAmount: actualAmount.toString(),
+        tokenId: withdraw.token_id
+      });
+
+      if (!walletSelection.success) {
+        throw new Error(walletSelection.error || '选择热钱包失败');
+      }
+
+      const hotWallet = walletSelection.wallet!;
+
+      // 4. 更新提现状态为 signing，填充 from 地址和 nonce
+      await this.dbGatewayClient.updateWithdrawStatus(withdraw.id, 'signing', {
+        from_address: hotWallet.address,
+        nonce: hotWallet.nonce
+      });
+
+      // 5. 估算 gas 费用
+      let gasEstimation;
+      if (tokenInfo.is_native) {
+        gasEstimation = await this.gasEstimationService.estimateGas({
+          chainId: withdraw.chain_id,
+          gasLimit: 21000n
+        });
+      } else {
+        gasEstimation = await this.gasEstimationService.estimateGas({
+          chainId: withdraw.chain_id,
+          gasLimit: 60000n
+        });
+      }
+
+      // 6. 构建签名请求
+      const signRequest: {
+        address: string;
+        to: string;
+        amount: string;
+        tokenAddress?: string;
+        gas: string;
+        maxFeePerGas: string;
+        maxPriorityFeePerGas: string;
+        nonce: number;
+        chainId: number;
+        chainType: 'evm' | 'btc' | 'solana';
+        type: 2;
+      } = {
+        address: hotWallet.address,
+        to: withdraw.to_address,
+        amount: actualAmount.toString(),
+        gas: gasEstimation.gasLimit,
+        maxFeePerGas: gasEstimation.maxFeePerGas,
+        maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
+        nonce: hotWallet.nonce,
+        chainId: withdraw.chain_id,
+        chainType: withdraw.chain_type,
+        type: 2
+      };
+
+      // 只有非原生代币才设置 tokenAddress
+      if (!tokenInfo.is_native && tokenInfo.token_address) {
+        signRequest.tokenAddress = tokenInfo.token_address;
+      }
+
+      // 7. 使用已有的风控签名请求签名交易
+      console.log('🔐 使用风控签名请求签名交易...');
+      const timestamp = Date.now();
+      const signResult = await this.signerClient.signTransactionWithRiskSignature(
+        signRequest,
+        withdraw.operation_id,
+        riskSignature,
+        timestamp
+      );
+      console.log('✅ 签名成功，交易哈希:', signResult.transactionHash);
+
+      // 8. 发送交易到区块链网络
+      const chain = this.getChainByChainId(withdraw.chain_id);
+      const publicClient = this.getPublicClient(chain);
+
+      const txHash = await publicClient.sendRawTransaction({
+        serializedTransaction: signResult.signedTransaction as `0x${string}`
+      });
+
+      console.log(`✅ 交易已发送到网络，交易哈希: ${txHash}`);
+
+      // 9. 标记 nonce 已使用
+      await this.hotWalletService.markNonceUsed(hotWallet.address, withdraw.chain_id, hotWallet.nonce);
+
+      // 10. 更新提现状态为 pending
+      await this.dbGatewayClient.updateWithdrawStatus(withdraw.id, 'pending', {
+        tx_hash: txHash,
+        gas_price: gasEstimation.gasPrice,
+        max_fee_per_gas: gasEstimation.maxFeePerGas,
+        max_priority_fee_per_gas: gasEstimation.maxPriorityFeePerGas
+      });
+
+      // 11. 创建 credit 流水记录（扣除用户余额）
+      await this.dbGatewayClient.createCredit({
+        user_id: withdraw.user_id,
+        token_id: tokenInfo.id,
+        token_symbol: tokenInfo.symbol,
+        amount: `-${withdraw.amount}`,
+        chain_id: withdraw.chain_id,
+        chain_type: withdraw.chain_type,
+        reference_id: withdraw.id,
+        reference_type: 'withdraw',
+        address: withdraw.to_address,
+        credit_type: 'withdraw',
+        business_type: 'withdraw',
+        status: 'pending'
+      });
+
+      // 12. 创建热钱包 credit 流水记录（热钱包支出）
+      await this.dbGatewayClient.createCredit({
+        user_id: hotWallet.userId,
+        token_id: tokenInfo.id,
+        token_symbol: tokenInfo.symbol,
+        amount: `-${actualAmount.toString()}`,
+        chain_id: withdraw.chain_id,
+        chain_type: withdraw.chain_type,
+        reference_id: withdraw.id,
+        reference_type: 'withdraw',
+        address: hotWallet.address,
+        credit_type: 'withdraw',
+        business_type: 'withdraw',
+        status: 'pending'
+      });
+
+      console.log('✅ 提现流程继续完成', {
+        withdraw_id: withdraw.id,
+        tx_hash: txHash
+      });
+
+    } catch (error) {
+      console.error('继续提现流程失败', {
+        withdraw_id: withdraw.id,
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : String(error)
+      });
+
+      await this.dbGatewayClient.updateWithdrawStatus(
+        withdraw.id,
+        'failed',
+        error instanceof Error ? error.message : '继续提现失败'
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * 退回提现金额到用户余额
+   */
+  async refundWithdraw(withdraw: any): Promise<void> {
+    console.log('💰 退回提现金额', {
+      withdraw_id: withdraw.id,
+      user_id: withdraw.user_id,
+      amount: withdraw.amount
+    });
+
+    try {
+      // 创建正数 credit 记录，退回余额
+      const totalAmount = BigInt(withdraw.amount) + BigInt(withdraw.fee || '0');
+
+      await this.dbGatewayClient.createCredit({
+        user_id: withdraw.user_id,
+        address: withdraw.from_address || 'refund',
+        token_id: withdraw.token_id,
+        token_symbol: 'UNKNOWN',  // 需要从 token_id 查询
+        amount: totalAmount.toString(),  // 正数
+        credit_type: 'refund',
+        business_type: 'internal_transfer',
+        reference_id: withdraw.id.toString(),
+        reference_type: 'withdraw_rejected',
+        chain_id: withdraw.chain_id,
+        chain_type: withdraw.chain_type,
+        status: 'confirmed',
+        metadata: JSON.stringify({
+          reason: 'manual_review_rejected',
+          operation_id: withdraw.operation_id
+        })
+      });
+
+      console.log('✅ 退款成功', { withdraw_id: withdraw.id });
+
+    } catch (error) {
+      console.error('退款失败', {
+        withdraw_id: withdraw.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      throw error;
+    }
+  }
+
 
 }

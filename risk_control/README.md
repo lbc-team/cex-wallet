@@ -28,6 +28,15 @@
 
 ### 2.1 risk_assessments (风控评估记录表)
 
+```
+wallet.db (withdraws)           risk_control.db (risk_assessments)
+├─ operation_id (UUID) ◄────────────► operation_id (UUID)
+└─ status                             └─ decision, approval_status
+
+```
+
+与业务表双向关联机制
+
 存储所有风控评估记录，包括自动批准、人工审核、拒绝等。
 
 ```sql
@@ -349,6 +358,28 @@ POST /api/assess
 }
 ```
 
+- **查询 API**: `GET /api/assessment/:operation_id`
+  - 根据 operation_id 查询风控评估结果
+
+
+### 2. 查看待审核列表
+```bash
+GET http://localhost:3004/api/pending-reviews
+```
+
+### 审核员批准接口
+
+```bash
+POST http://localhost:3004/api/manual-review
+{
+  "operation_id": "uuid-xxxx",
+  "approver_user_id": 1,
+  "approved": true,
+  "comment": "Verified user identity"
+}
+```
+
+审核完成后自动回调 Wallet 服务 POST `ttp://localhost:3001/api/internal/manual-review-callback`
 
 ## 风控规则
 
@@ -424,6 +455,4 @@ if (request.event_type === 'withdraw' && request.amount) {
    - 对高风险操作发送告警
    - 监控风控服务的可用性
 
-## License
-
-ISC
+ 

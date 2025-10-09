@@ -97,6 +97,9 @@ class RiskControlService {
     this.app.get('/api/pending-reviews', this.riskController.getPendingReviews);
     this.app.get('/api/review-history/:operation_id', this.riskController.getReviewHistory);
 
+    // 查询风控评估结果
+    this.app.get('/api/assessment/:operation_id', this.riskController.getAssessmentByOperationId);
+
     // 密钥生成端点（仅开发环境）
     if (process.env.NODE_ENV === 'development') {
       this.app.post('/api/generate-keypair', (req, res) => {

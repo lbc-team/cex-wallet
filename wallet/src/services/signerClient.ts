@@ -269,4 +269,80 @@ export class SignerClient {
     }
   }
 
+  /**
+   * 使用已有的风控签名请求签名交易（用于人工审核后继续提现）
+   */
+  async signTransactionWithRiskSignature(
+    request: SignTransactionRequest,
+    operationId: string,
+    riskSignature: string,
+    timestamp: number
+  ): Promise<SignTransactionData> {
+    console.log('📥 SignerClient: 使用已有风控签名请求签名');
+
+    try {
+      // 1. 生成 wallet 服务自己的签名
+      const signPayload = JSON.stringify({
+        operation_id: operationId,
+        from: request.address,
+        to: request.to,
+        amount: request.amount,
+        tokenAddress: request.tokenAddress || null,
+        chainId: request.chainId,
+        nonce: request.nonce,
+        timestamp
+      });
+
+      const walletSignature = this.signMessage(signPayload);
+      console.log('✅ SignerClient: Wallet 服务签名生成成功');
+
+      // 2. 请求 Signer 签名交易，携带双重签名
+      console.log('🌐 SignerClient: 请求 Signer 服务签名交易');
+      const response: AxiosResponse<SignerApiResponse<SignTransactionData>> = await axios.post(
+        `${this.signerBaseUrl}/api/signer/sign-transaction`,
+        {
+          ...request,
+          operation_id: operationId,
+          timestamp,
+          risk_signature: riskSignature,
+          wallet_signature: walletSignature
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('📋 SignerClient: 响应状态:', response.status);
+
+      if (!response.data.success) {
+        const errorMsg = response.data.error || '签名交易失败';
+        console.error('❌ SignerClient: 签名失败:', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      if (!response.data.data) {
+        throw new Error('Signer 模块返回的数据为空');
+      }
+
+      console.log('✅ SignerClient: 交易签名成功');
+      return response.data.data;
+    } catch (error) {
+      console.error('❌ SignerClient: 请求异常:', error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          throw new Error(`Signer 模块错误: ${error.response.data?.error || error.message}`);
+        } else if (error.request) {
+          throw new Error('无法连接到 Signer 模块');
+        }
+      }
+
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      throw new Error(`签名交易失败: ${errorMessage}`);
+    }
+  }
+
 }

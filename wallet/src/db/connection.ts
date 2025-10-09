@@ -165,6 +165,27 @@ export class DatabaseConnection {
     return result || null;
   }
 
+  // 通过代币ID查找代币信息
+  async findTokenById(tokenId: number): Promise<{
+    id: number;
+    chain_type: string;
+    chain_id: number;
+    token_address: string | null;
+    token_symbol: string;
+    symbol: string;
+    token_name: string | null;
+    decimals: number;
+    is_native: boolean;
+    withdraw_fee: string;
+    min_withdraw_amount: string;
+  } | null> {
+    const result = await this.queryOne(
+      'SELECT id, chain_type, chain_id, token_address, token_symbol as symbol, token_symbol, token_name, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE id = ? AND status = 1 LIMIT 1',
+      [tokenId]
+    );
+    return result || null;
+  }
+
   // 获取系统用户ID
   async getSystemUserId(userType: 'sys_hot_wallet' | 'sys_multisig'): Promise<number | null> {
     const result = await this.queryOne(

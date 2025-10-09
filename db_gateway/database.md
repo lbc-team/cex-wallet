@@ -9,7 +9,7 @@
    ```bash
    sqlite3 wallet.db < src/db/schema.sql
    ```
-   
+
 
 ## 数据库设计
 
@@ -105,8 +105,6 @@ node dist/scripts/createTables.js
 - 每个操作ID（operation_id）只能使用一次，保证操作的幂等性
 - 操作ID由客户端（如 wallet 服务）生成，通常使用 UUID v4
 - 默认5分钟后过期（expires_at = used_at + 5 * 60 * 1000）
-- 系统定期（每分钟）自动清理过期记录，释放存储空间
-- 使用内存缓存 + 数据库双重验证机制，提高验证性能
 - 适用场景：敏感操作（创建钱包、更新 nonce、创建提现等）
 
 
@@ -167,6 +165,7 @@ node dist/scripts/createTables.js
 |------|------|------|
 | id | INTEGER | 主键，自增 |
 | user_id | INTEGER | 用户ID，外键关联 users 表 |
+| operation_id | TEXT | 操作ID（UUID），唯一，用于关联风控记录 |
 | from_address | TEXT | 热钱包地址（可为空，签名时填充） |
 | to_address | TEXT | 提现目标地址 |
 | token_id | INTEGER | 代币ID，外键关联 tokens 表 |
@@ -174,7 +173,7 @@ node dist/scripts/createTables.js
 | fee | TEXT | 交易所收取、提现手续费，最小单位存储，默认 '0' |
 | chain_id | INTEGER | 链ID |
 | chain_type | TEXT | 链类型：evm/btc/solana |
-| status | TEXT | 提现状态：user_withdraw_request/signing/pending/processing/confirmed/failed |
+| status | TEXT | 提现状态（见下方状态流转） |
 | tx_hash | TEXT | 交易哈希（签名后填充） |
 | nonce | INTEGER | 交易 nonce（签名时填充） |
 | gas_used | TEXT | 实际使用的 gas（确认后填充） |
@@ -185,19 +184,43 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
+**约束**:
+- `UNIQUE(operation_id)` - 操作ID唯一约束，用于关联风控记录
+
 **索引**:
 - `idx_withdraws_user_id` - 用户ID索引
 - `idx_withdraws_status` - 状态索引
 - `idx_withdraws_created_at` - 创建时间索引
-- `idx_withdraws_user_status` - 用户+状态复合索引
-- `idx_withdraws_chain_id` - 链ID索引
+- `idx_withdraws_chain` - 链ID+链类型复合索引
+- `idx_withdraws_tx_hash` - 交易哈希索引
+- `idx_withdraws_operation_id` - 操作ID索引，用于关联查询
 
 **状态流转**:
 ```
-user_withdraw_request → signing → pending → processing → confirmed
-         ↓                ↓         ↓           ↓
-       failed           failed    failed     failed
+user_withdraw_request → risk_reviewing → signing → pending → processing → confirmed
+         ↓                    ↓              ↓        ↓           ↓
+       failed              rejected       failed   failed      failed
+                               ↓
+                         manual_reviewing → (审核通过) → signing
+                               ↓
+                          (审核拒绝) → rejected
 ```
+
+**状态说明**:
+- `user_withdraw_request`: 用户提交提现请求
+- `risk_reviewing`: 风控评估中
+- `manual_reviewing`: 需要人工审核（风控返回 manual_review）
+- `signing`: 签名交易中
+- `pending`: 交易已发送，等待确认
+- `processing`: 交易确认中
+- `confirmed`: 交易已确认
+- `rejected`: 风控拒绝或人工审核拒绝
+- `failed`: 签名或交易失败
+
+**与风控系统的关联**:
+- 通过 `operation_id` 字段关联 `risk_control.db` 的 `risk_assessments` 表
+- 每个提现记录对应一条风控评估记录
+- 人工审核通过后，根据 `operation_id` 查找 `withdraws` 记录并继续处理
 
 ### 资金流水表 (credits)
 | 字段 | 类型 | 说明 |

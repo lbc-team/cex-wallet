@@ -1,6 +1,8 @@
 import { RiskAssessmentModel, RiskManualReviewModel } from '../db/models';
 import { riskControlDB } from '../db/connection';
 import { logger } from '../utils/logger';
+import fetch from 'node-fetch';
+import { RiskAssessmentService } from './risk-assessment';
 
 export interface ManualReviewRequest {
   operation_id: string;
@@ -27,10 +29,12 @@ export interface ManualReviewResponse {
 export class ManualReviewService {
   private assessmentModel: RiskAssessmentModel;
   private reviewModel: RiskManualReviewModel;
+  private riskAssessmentService: RiskAssessmentService;
 
-  constructor() {
+  constructor(riskAssessmentService: RiskAssessmentService) {
     this.assessmentModel = new RiskAssessmentModel(riskControlDB);
     this.reviewModel = new RiskManualReviewModel(riskControlDB);
+    this.riskAssessmentService = riskAssessmentService;
   }
 
   /**
@@ -98,6 +102,15 @@ export class ManualReviewService {
         approved: request.approved,
         approver_user_id: request.approver_user_id
       });
+
+      // 5. 回调 Wallet 服务（异步，不阻塞响应）
+      this.notifyWalletService(request.operation_id, approvalStatus, assessment.action)
+        .catch(error => {
+          logger.error('Failed to notify wallet service', {
+            operation_id: request.operation_id,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        });
 
       return {
         success: true,
@@ -179,6 +192,79 @@ export class ManualReviewService {
         success: false,
         error: error instanceof Error ? error.message : 'UNKNOWN_ERROR'
       };
+    }
+  }
+
+  /**
+   * 通知 Wallet 服务审核结果
+   */
+  private async notifyWalletService(
+    operationId: string,
+    decision: 'approved' | 'rejected',
+    action: string
+  ): Promise<void> {
+    const walletServiceUrl = process.env.WALLET_SERVICE_URL || 'http://localhost:3001';
+
+    logger.info('Notifying wallet service', {
+      operation_id: operationId,
+      decision,
+      action,
+      url: walletServiceUrl
+    });
+
+    try {
+      // 生成签名消息
+      const timestamp = Date.now();
+      const signatureMessage = JSON.stringify({
+        operation_id: operationId,
+        decision,
+        action,
+        timestamp
+      });
+
+      // 使用风控私钥签名
+      const riskSignature = this.riskAssessmentService.signMessage(signatureMessage);
+
+      const response = await fetch(`${walletServiceUrl}/api/internal/manual-review-callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          operation_id: operationId,
+          decision,
+          action,
+          timestamp,
+          risk_signature: riskSignature
+        }),
+        timeout: 5000 // 5秒超时
+      });
+
+      if (!response.ok) {
+        throw new Error(`Wallet service responded with status ${response.status}`);
+      }
+
+      const result = await response.json() as any;
+
+      if (!result.success) {
+        throw new Error(`Wallet service returned error: ${result.error || 'Unknown error'}`);
+      }
+
+      logger.info('Wallet service notified successfully', {
+        operation_id: operationId,
+        decision
+      });
+
+    } catch (error) {
+      logger.error('Failed to notify wallet service', {
+        operation_id: operationId,
+        decision,
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : String(error)
+      });
+      throw error;
     }
   }
 }

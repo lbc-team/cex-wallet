@@ -445,23 +445,31 @@ export class DbGatewayClient {
   /**
    * 更新提现状态
    */
-  async updateWithdrawStatus(withdrawId: number, status: string, data?: {
-    from_address?: string;
-    tx_hash?: string;
-    nonce?: number;
-    gas_used?: string;
-    gas_price?: string;
-    max_fee_per_gas?: string;
-    max_priority_fee_per_gas?: string;
-    error_message?: string;
-  }): Promise<void> {
+  async updateWithdrawStatus(
+    withdrawId: number,
+    status: string,
+    dataOrErrorMessage?: string | {
+      from_address?: string;
+      tx_hash?: string;
+      nonce?: number;
+      gas_used?: string;
+      gas_price?: string;
+      max_fee_per_gas?: string;
+      max_priority_fee_per_gas?: string;
+      error_message?: string;
+    }
+  ): Promise<void> {
     try {
       const updateData: any = {
         status,
         updated_at: new Date().toISOString()
       };
 
-      if (data) {
+      // 处理参数：可以是字符串（errorMessage）或对象（data）
+      if (typeof dataOrErrorMessage === 'string') {
+        updateData.error_message = dataOrErrorMessage;
+      } else if (dataOrErrorMessage && typeof dataOrErrorMessage === 'object') {
+        const data = dataOrErrorMessage;
         if (data.from_address !== undefined) updateData.from_address = data.from_address;
         if (data.tx_hash !== undefined) updateData.tx_hash = data.tx_hash;
         if (data.nonce !== undefined) updateData.nonce = data.nonce;
@@ -769,6 +777,34 @@ export class DbGatewayClient {
       return 0;
     }
   }
+
+  /**
+   * 根据 operation_id 查找提现记录
+   */
+  async findWithdrawByOperationId(operationId: string): Promise<any | null> {
+    try {
+      const timestamp = Date.now();
+      const result = await this.executeOperationWithContext(
+        uuidv4(),  // 查询操作使用新的 operation_id
+        timestamp,
+        'withdraws',
+        'select',
+        'read',
+        undefined,
+        { operation_id: operationId }
+      );
+
+      if (result.data && result.data.length > 0) {
+        return result.data[0];
+      }
+
+      return null;
+    } catch (error) {
+      console.error('查找提现记录失败', { operation_id: operationId, error });
+      throw error;
+    }
+  }
+
 
 }
 

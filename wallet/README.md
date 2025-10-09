@@ -107,5 +107,12 @@ curl http://localhost:3000/api/user/123/balance/pending
 
 # 获取用户指定代币余额详情
 curl http://localhost:3000/api/user/123/balance/token/USDT
+
+# 查询提现状态
+curl http://localhost:3000/api/user/withdraw/123
+
+# 查询用户余额（如果拒绝）
+curl  http://localhost:3000/api/user/balance
 ```
+
 

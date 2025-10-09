@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS credits (
 CREATE TABLE IF NOT EXISTS withdraws (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,                -- 用户ID
+  operation_id TEXT UNIQUE,                -- 操作ID（UUID），用于关联风控记录
   to_address TEXT NOT NULL,                -- 提现目标地址
   token_id INTEGER NOT NULL,               -- 代币ID
   amount TEXT NOT NULL,                    -- 提现金额
@@ -159,7 +160,7 @@ CREATE TABLE IF NOT EXISTS withdraws (
   max_priority_fee_per_gas TEXT,           -- 优先费用（EIP-1559）
   gas_used TEXT,                           -- 实际使用的 gas
   nonce INTEGER,                           -- 交易 nonce
-  status TEXT NOT NULL DEFAULT 'user_withdraw_request',  -- user_withdraw_request/signing/pending/processing/confirmed/failed
+  status TEXT NOT NULL DEFAULT 'user_withdraw_request',  -- user_withdraw_request/risk_reviewing/manual_reviewing/signing/pending/processing/confirmed/failed/rejected
   error_message TEXT,                      -- 错误信息
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -215,6 +216,7 @@ CREATE INDEX IF NOT EXISTS idx_withdraws_status ON withdraws(status);
 CREATE INDEX IF NOT EXISTS idx_withdraws_chain ON withdraws(chain_id, chain_type);
 CREATE INDEX IF NOT EXISTS idx_withdraws_tx_hash ON withdraws(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_withdraws_created_at ON withdraws(created_at);
+CREATE INDEX IF NOT EXISTS idx_withdraws_operation_id ON withdraws(operation_id);
 
 -- Used Operation IDs 表索引
 CREATE INDEX IF NOT EXISTS idx_operation_ids_id ON used_operation_ids(operation_id);

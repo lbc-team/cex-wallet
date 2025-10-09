@@ -12,7 +12,7 @@ export class RiskController {
   private addressRiskModel: AddressRiskModel;
 
   constructor(private riskService: RiskAssessmentService) {
-    this.manualReviewService = new ManualReviewService();
+    this.manualReviewService = new ManualReviewService(riskService);
     this.riskAssessmentModel = new RiskAssessmentModel(riskControlDB);
     this.addressRiskModel = new AddressRiskModel(riskControlDB);
   }
@@ -372,6 +372,61 @@ export class RiskController {
           code: 'INTERNAL_ERROR',
           message: 'Internal server error',
           details: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  };
+
+  /**
+   * 根据 operation_id 查询风控评估结果
+   */
+  getAssessmentByOperationId = async (req: Request, res: Response) => {
+    try {
+      const { operation_id } = req.params;
+
+      if (!operation_id) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Missing operation_id parameter'
+          }
+        });
+      }
+
+      const assessment = await this.riskAssessmentModel.findByOperationId(operation_id);
+
+      if (!assessment) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Assessment not found',
+            details: `No assessment found for operation_id: ${operation_id}`
+          }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: assessment
+      });
+
+    } catch (error) {
+      logger.error('Get assessment by operation_id endpoint error', {
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        } : String(error),
+        params: req.params
+      });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Internal server error',
+          details: error instanceof Error ? error.message : 'Unknown error'
         }
       });
     }
