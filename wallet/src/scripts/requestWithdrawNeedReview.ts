@@ -1,8 +1,8 @@
 #!/usr/bin/env ts-node
 
 /**
- * 模拟用户提现测试脚本
- * 使用方法: npx ts-node src/scripts/requestWithdraw.ts
+ * 模拟用户提现测试脚本,大额提现需要 Review
+ * 使用方法: npm run mock:withdraw:needReview
  */
 
 import axios from 'axios';

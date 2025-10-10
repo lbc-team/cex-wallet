@@ -3,6 +3,11 @@ import { getDbGatewayClient } from '../services/dbGatewayClient';
 import { HotWalletService } from '../services/hotWalletService';
 import { getDatabase } from '../db/connection';
 
+/**
+ * 模拟插入示例数据
+ * 使用方法: npm run mock:init
+ */
+
 // 简单的日志函数
 const logger = {
   info: (message: string, data?: any) => console.log(`[INFO] ${message}`, data || ''),
