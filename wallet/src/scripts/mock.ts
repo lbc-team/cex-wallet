@@ -108,7 +108,7 @@ async function insertMockData() {
 
       if (existingETH.length === 0) {
         await dbGateway.createToken({
-          chain_type: 'eth',
+          chain_type: 'evm',
           chain_id: 31337,
           token_address: '0x0000000000000000000000000000000000000000',
           token_symbol: 'ETH',
@@ -137,7 +137,7 @@ async function insertMockData() {
 
       if (existingOPS.length === 0) {
         await dbGateway.createToken({
-          chain_type: 'eth',
+          chain_type: 'evm',
           chain_id: 31337,
           token_address: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
           token_symbol: 'OPS',
@@ -166,7 +166,7 @@ async function insertMockData() {
 
       if (existingUSDT.length === 0) {
         await dbGateway.createToken({
-          chain_type: 'eth',
+          chain_type: 'evm',
           chain_id: 31337,
           token_address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
           token_symbol: 'USDT',
@@ -188,24 +188,41 @@ async function insertMockData() {
 
     logger.info('代币配置插入完成');
 
-    // 5. 通过 API 创建用户钱包地址
-    logger.info('通过 API 创建用户钱包地址...');
+    // 5. 通过 API 创建用户钱包地址（EVM）
+    logger.info('通过 API 创建用户钱包地址（EVM）...');
     for (let i = 1; i <= 10; i++) {
       try {
         const response = await fetch(`http://localhost:3000/api/user/${i}/address?chain_type=evm`);
         const data = await response.json();
 
         if ((data as any).message && (data as any).data) {
-          logger.info(`用户 ${i} 钱包创建成功:`, (data as any).data);
+          logger.info(`用户 ${i} EVM 钱包创建成功:`, (data as any).data);
         } else {
-          logger.warn(`用户 ${i} 钱包创建失败:`, data);
+          logger.warn(`用户 ${i} EVM 钱包创建失败:`, data);
         }
       } catch (error) {
-        logger.error(`用户 ${i} 钱包创建请求失败:`, error);
+        logger.error(`用户 ${i} EVM 钱包创建请求失败:`, error);
       }
     }
 
-    // 6. 显示插入的数据
+    // 6. 通过 API 创建用户 Solana 钱包地址
+    logger.info('通过 API 创建用户 Solana 钱包地址...');
+    for (let i = 1; i <= 10; i++) {
+      try {
+        const response = await fetch(`http://localhost:3000/api/user/${i}/address?chain_type=solana`);
+        const data = await response.json();
+
+        if ((data as any).message && (data as any).data) {
+          logger.info(`用户 ${i} Solana 钱包创建成功:`, (data as any).data);
+        } else {
+          logger.warn(`用户 ${i} Solana 钱包创建失败:`, data);
+        }
+      } catch (error) {
+        logger.error(`用户 ${i} Solana 钱包创建请求失败:`, error);
+      }
+    }
+
+    // 7. 显示插入的数据
     const tokens = await dbGateway.getTokens({ chain_id: 31337 });
     logger.info('本地测试网络代币:', { count: tokens.length, tokens });
 

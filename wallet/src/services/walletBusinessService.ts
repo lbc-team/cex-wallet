@@ -146,8 +146,8 @@ export class WalletBusinessService {
     error?: string;
   }> {
     try {
-      // 首先检查用户是否已有钱包
-      const existingWallet = await this.dbReader.wallets.findByUserId(userId);
+      // 首先检查用户是否已有该链类型的钱包
+      const existingWallet = await this.dbReader.wallets.findByUserIdAndChainType(userId, chainType);
       if (existingWallet) {
         const responseData = {
           id: existingWallet.id,

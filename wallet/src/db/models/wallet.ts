@@ -64,6 +64,15 @@ export class WalletModel {
     return wallet || null;
   }
 
+  // 根据用户ID和链类型查找钱包
+  async findByUserIdAndChainType(userId: number, chainType: 'evm' | 'btc' | 'solana'): Promise<Wallet | null> {
+    const wallet = await this.db.queryOne<Wallet>(
+      'SELECT * FROM wallets WHERE user_id = ? AND chain_type = ?',
+      [userId, chainType]
+    );
+    return wallet || null;
+  }
+
   // 获取所有钱包
   async findAll(): Promise<Wallet[]> {
     return await this.db.query<Wallet>('SELECT * FROM wallets ORDER BY created_at DESC');
