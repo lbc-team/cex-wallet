@@ -65,7 +65,7 @@ node dist/scripts/createTables.js
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
 
-### 钱包 Nonce 表 (wallet_nonces) - 管理钱包的 nonce
+### 钱包 Nonce 表 (wallet_nonces) - EVM 链管理钱包的 nonce
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | INTEGER | 主键，自增 |

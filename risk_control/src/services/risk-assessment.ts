@@ -16,11 +16,8 @@ export class RiskAssessmentService {
   private assessmentModel: RiskAssessmentModel;
   private addressRiskModel: AddressRiskModel;
 
-  // 大额交易阈值（单位：wei，测试设置为 0.5 ETH， 应该用数据库定义规则）
-  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('500000000000000000');
-
-  // 高风险用户列表（模拟，后续可以移到数据库）
-  private highRiskUsers: Set<number> = new Set([666, 999]);
+  // 大额交易阈值（单位：wei，测试设置为 1 ETH， 应该用数据库定义规则）
+  private readonly LARGE_AMOUNT_THRESHOLD = BigInt('1000000000000000000');
 
   constructor(privateKeyHex: string) {
     this.signer = new Ed25519Signer(privateKeyHex);
@@ -231,21 +228,7 @@ export class RiskAssessmentService {
       }
     }
 
-    // 规则2: 检查高风险用户 - 人工审核
-    const userId = ctx.user_id || request.data?.user_id;
-    if (userId && this.highRiskUsers.has(userId)) {
-      reasons.push('User is marked as high risk');
-      reasons.push('Manual review required');
-      return {
-        decision: 'manual_review',
-        risk_level: 'high',
-        reasons,
-        suggestData,
-        suggestReason
-      };
-    }
-
-    // 规则3: 检查大额提现 - 人工审核（只检查提现，不检查存款）
+    // 规则2: 检查大额提现 - 人工审核（只检查提现，不检查存款）
     const amount = ctx.amount || request.data?.amount;
     const isWithdraw = creditType === 'withdraw' || request.table === 'withdraws';
 
