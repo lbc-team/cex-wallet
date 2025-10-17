@@ -4,7 +4,7 @@ Solana区块链扫描器 - CEX钱包系统
 
 ## 功能特点
 
-- **实时扫块**: 使用 `@solana/web3.js` 库连接本地测试节点或主网节点进行实时扫块
+- **实时扫块**: 使用 `@solana/kit` 库连接本地测试节点或主网节点进行实时扫块
 - **多代币支持**: 支持 SOL 原生代币、SPL Token 和 SPL Token 2022 的转账解析
 - **回滚处理**: 处理 Solana 的槽位回滚（虽然较少见但可能发生）
 - **断点续扫**: 支持从上次扫描位置继续扫描
@@ -23,7 +23,7 @@ Solana区块链扫描器 - CEX钱包系统
    - 解析 SOL 原生转账
    - 解析 SPL Token 转账 (TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA)
    - 解析 SPL Token 2022 转账 (TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb)
-   - 从 preBalances/postBalances 和 instructions/innerInstructions 中提取转账信息
+   - 从 instructions/innerInstructions 中提取转账信息
 
 3. **BlockScanner** (`src/services/blockScanner.ts`)
    - 管理扫块流程
@@ -132,30 +132,6 @@ npm run build
 npm start
 ```
 
-## 主要流程
-
-### 扫块流程伪代码
-
-```typescript
-while (true) {
-  const slot = await waitForNextSlot(lastSlot + 1);
-  const block = await rpc.getBlock(slot, { maxSupportedTransactionVersion: 0 });
-
-  // 解析交易
-  const parsedDeposits = parseBlock(block);
-
-  // 展开 tx -> instructions 和 innerInstructions
-  // 解析 SOL 转账（从 preBalances/postBalances）
-  // 解析 SPL Token 转账（从 instructions）
-  // 解析 SPL Token 2022 转账（从 instructions）
-
-  // 写入数据库
-  await writeDepositsToDB(parsedDeposits);
-
-  lastSlot = slot;
-  setCursor("block_slot", lastSlot);
-}
-```
 
 ### 转账解析逻辑
 
@@ -223,6 +199,4 @@ npm run build
 npm run clean
 ```
 
-## License
 
-MIT

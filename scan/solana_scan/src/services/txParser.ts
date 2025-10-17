@@ -1,10 +1,3 @@
-import {
-  PublicKey,
-  VersionedTransactionResponse,
-  ParsedInstruction,
-  PartiallyDecodedInstruction,
-  ParsedTransactionWithMeta
-} from '@solana/web3.js';
 import { walletDAO, tokenDAO } from '../db/models';
 import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';

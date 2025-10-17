@@ -1,6 +1,5 @@
 import { blockScanner } from './blockScanner';
 import { transactionParser } from './txParser';
-import { database } from '../db/connection';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -34,9 +33,6 @@ export class ScanService {
 
     try {
       logger.info('正在启动Solana扫描服务...');
-
-      // 初始化数据库
-      await database.initialize();
 
       // 加载监控地址和代币信息
       await transactionParser.refreshCache();

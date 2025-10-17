@@ -1,24 +1,27 @@
-import { Connection, Commitment, BlockResponse, GetVersionedBlockConfig, VersionedBlockResponse } from '@solana/web3.js';
+import { createSolanaRpc, Commitment } from '@solana/kit';
 import config from '../config';
 import logger from './logger';
 
+// 类型定义
+interface GetBlockConfig {
+  commitment?: Commitment;
+  maxSupportedTransactionVersion?: number;
+  transactionDetails?: 'full' | 'accounts' | 'none' | 'signatures';
+  rewards?: boolean;
+  encoding?: 'json' | 'jsonParsed' | 'base58' | 'base64';
+}
+
 export class SolanaClient {
-  private connection: Connection;
-  private backupConnection?: Connection;
+  private rpc: ReturnType<typeof createSolanaRpc>;
+  private backupRpc?: ReturnType<typeof createSolanaRpc>;
 
   constructor() {
-    // 创建主连接
-    this.connection = new Connection(config.solanaRpcUrl, {
-      commitment: 'confirmed' as Commitment,
-      confirmTransactionInitialTimeout: 60000
-    });
+    // 创建主 RPC 客户端
+    this.rpc = createSolanaRpc(config.solanaRpcUrl);
 
-    // 创建备份连接（如果配置了）
+    // 创建备份 RPC 客户端（如果配置了）
     if (config.solanaRpcUrlBackup) {
-      this.backupConnection = new Connection(config.solanaRpcUrlBackup, {
-        commitment: 'confirmed' as Commitment,
-        confirmTransactionInitialTimeout: 60000
-      });
+      this.backupRpc = createSolanaRpc(config.solanaRpcUrlBackup);
     }
 
     logger.info('Solana客户端初始化完成', {
@@ -32,18 +35,18 @@ export class SolanaClient {
    */
   async getLatestSlot(commitment: Commitment = 'confirmed'): Promise<number> {
     try {
-      const slot = await this.connection.getSlot(commitment);
+      const slot = await this.rpc.getSlot({ commitment }).send();
       logger.debug('获取最新槽位', { slot, commitment });
-      return slot;
+      return Number(slot);
     } catch (error) {
       logger.error('获取最新槽位失败', { error, commitment });
 
       // 尝试使用备份连接
-      if (this.backupConnection) {
+      if (this.backupRpc) {
         try {
           logger.info('尝试使用备份连接获取最新槽位');
-          const slot = await this.backupConnection.getSlot(commitment);
-          return slot;
+          const slot = await this.backupRpc.getSlot({ commitment }).send();
+          return Number(slot);
         } catch (backupError) {
           logger.error('备份连接也失败', { backupError });
         }
@@ -78,12 +81,17 @@ export class SolanaClient {
   /**
    * 获取区块信息
    */
-  async getBlock(slot: number, config?: GetVersionedBlockConfig): Promise<VersionedBlockResponse | null> {
+  async getBlock(slot: number, config?: GetBlockConfig): Promise<any | null> {
     try {
-      const block = await this.connection.getBlock(slot, {
-        maxSupportedTransactionVersion: 0,
-        ...config
-      });
+      const blockConfig: any = {
+        commitment: config?.commitment || 'confirmed',
+        maxSupportedTransactionVersion: config?.maxSupportedTransactionVersion ?? 0,
+        transactionDetails: config?.transactionDetails || 'full',
+        rewards: config?.rewards ?? true,
+        encoding: config?.encoding || 'jsonParsed'
+      };
+
+      const block = await this.rpc.getBlock(BigInt(slot), blockConfig).send();
 
       if (!block) {
         logger.debug('槽位无区块（可能被跳过）', { slot });
@@ -92,22 +100,32 @@ export class SolanaClient {
 
       logger.debug('获取区块成功', {
         slot,
-        txCount: block.transactions.length,
+        txCount: Array.isArray((block as any).transactions) ? (block as any).transactions.length : 0,
         blockTime: block.blockTime
       });
 
       return block;
-    } catch (error) {
+    } catch (error: any) {
+      // 如果是槽位被跳过的错误，返回 null 而不是抛出异常
+      if (error?.message?.includes('skipped') || error?.message?.includes('not available')) {
+        logger.debug('槽位被跳过', { slot });
+        return null;
+      }
+
       logger.error('获取区块失败', { slot, error });
 
       // 尝试使用备份连接
-      if (this.backupConnection) {
+      if (this.backupRpc) {
         try {
           logger.info('尝试使用备份连接获取区块', { slot });
-          const block = await this.backupConnection.getBlock(slot, {
-            maxSupportedTransactionVersion: 0,
-            ...config
-          });
+          const blockConfig: any = {
+            commitment: config?.commitment || 'confirmed',
+            maxSupportedTransactionVersion: config?.maxSupportedTransactionVersion ?? 0,
+            transactionDetails: config?.transactionDetails || 'full',
+            rewards: config?.rewards ?? true,
+            encoding: config?.encoding || 'jsonParsed'
+          };
+          const block = await this.backupRpc.getBlock(BigInt(slot), blockConfig).send();
           return block;
         } catch (backupError) {
           logger.error('备份连接获取区块也失败', { slot, backupError });
@@ -123,17 +141,29 @@ export class SolanaClient {
    */
   async getBlocks(startSlot: number, endSlot?: number): Promise<number[]> {
     try {
-      const slots = await this.connection.getBlocks(startSlot, endSlot);
-      logger.debug('批量获取槽位列表', { startSlot, endSlot, count: slots.length });
-      return slots;
+      let slots: bigint[];
+      if (endSlot !== undefined) {
+        slots = await this.rpc.getBlocks(BigInt(startSlot), BigInt(endSlot)).send();
+      } else {
+        slots = await this.rpc.getBlocks(BigInt(startSlot)).send();
+      }
+
+      const numberSlots = slots.map(s => Number(s));
+      logger.debug('批量获取槽位列表', { startSlot, endSlot, count: numberSlots.length });
+      return numberSlots;
     } catch (error) {
       logger.error('批量获取槽位失败', { startSlot, endSlot, error });
 
-      if (this.backupConnection) {
+      if (this.backupRpc) {
         try {
           logger.info('尝试使用备份连接批量获取槽位');
-          const slots = await this.backupConnection.getBlocks(startSlot, endSlot);
-          return slots;
+          let slots: bigint[];
+          if (endSlot !== undefined) {
+            slots = await this.backupRpc.getBlocks(BigInt(startSlot), BigInt(endSlot)).send();
+          } else {
+            slots = await this.backupRpc.getBlocks(BigInt(startSlot)).send();
+          }
+          return slots.map(s => Number(s));
         } catch (backupError) {
           logger.error('备份连接批量获取槽位也失败', { backupError });
         }
@@ -177,10 +207,10 @@ export class SolanaClient {
   }
 
   /**
-   * 获取Connection实例（用于其他操作）
+   * 获取 RPC 实例（用于其他操作）
    */
-  getConnection(): Connection {
-    return this.connection;
+  getRpc(): ReturnType<typeof createSolanaRpc> {
+    return this.rpc;
   }
 }
 

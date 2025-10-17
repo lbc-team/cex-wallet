@@ -15,9 +15,9 @@ class Database {
   }
 
   /**
-   * 初始化数据库连接
+   * 初始化数据库连接（只读模式）
    */
-  async initialize(): Promise<void> {
+  async initConnection(): Promise<void> {
     if (this.db) {
       logger.warn('数据库已经初始化');
       return;
@@ -26,25 +26,14 @@ class Database {
     return new Promise((resolve, reject) => {
       this.db = new sqlite3.Database(
         this.dbPath,
-        sqlite3.OPEN_READWRITE,
-        async (err) => {
+        sqlite3.OPEN_READONLY,
+        (err) => {
           if (err) {
             logger.error('数据库连接失败', { error: err.message, dbPath: this.dbPath });
             reject(err);
           } else {
-            logger.info('数据库连接成功');
-
-            try {
-              // 设置 PRAGMA
-              await this.run('PRAGMA journal_mode=WAL');
-              await this.run('PRAGMA busy_timeout=30000');
-              await this.run('PRAGMA synchronous=NORMAL');
-
-              resolve();
-            } catch (pragmaError) {
-              logger.error('设置 PRAGMA 失败', { error: pragmaError });
-              reject(pragmaError);
-            }
+            logger.info('数据库连接成功（只读模式）');
+            resolve();
           }
         }
       );

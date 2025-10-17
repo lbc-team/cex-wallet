@@ -21,7 +21,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@solana/web3.js": "^1.95.0",
+    "@solana/kit": "^3.0.3",
     "@solana/spl-token": "^0.4.0",
     "axios": "^1.5.0",
     "dotenv": "^16.3.1",

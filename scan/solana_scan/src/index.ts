@@ -11,7 +11,7 @@ async function checkWalletAddresses(): Promise<void> {
     logger.info('检查钱包地址...');
 
     // 初始化数据库连接
-    await database.initialize();
+    await database.initConnection();
 
     // 查询所有活跃的Solana钱包地址
     const wallets = await database.all(`

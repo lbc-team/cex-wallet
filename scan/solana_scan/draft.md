@@ -45,6 +45,7 @@ Helius（支持 Reference Account 监听、Webhooks、SQL-like 过滤）
 
 ### 扫块
 
+参考 @scan/evm_scan 模块， 实现 @scan/solana_scan 模块：
 使用最新的 @solana/kit 库完成扫块
 需要处理可能回滚的逻辑，
 在 db_gateway 下，添加Solana 相应的表
@@ -161,3 +162,8 @@ parsed.type == transfer / transferChecked
 Geyser Plugin
 
 https://api.helius.xyz/v0/addresses/<user_ata>/transactions
+
+
+•获取块⾥⾯的交易，判断是 native token 或者是代币充值
+◦ native token：主链币充值 program 等于 system 并且 type 为 transfer
+◦ Token：代币充值 program 等于 spl-token 并且 type 为 transfer 或者 transferChecked。
