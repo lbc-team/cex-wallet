@@ -1,0 +1,42 @@
+{
+  "name": "cex-wallet-solana-scanner",
+  "version": "1.0.0",
+  "description": "Solana区块链扫描器 - CEX钱包系统",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "dev:watch": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "test": "ts-node tests/run-tests.ts"
+  },
+  "keywords": [
+    "solana",
+    "blockchain",
+    "scanner",
+    "wallet",
+    "cex"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "@solana/spl-token": "^0.4.0",
+    "axios": "^1.5.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3",
+    "sqlite3": "^5.1.6",
+    "tweetnacl": "^1.0.3",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.10",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^9.0.8",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  }
+}

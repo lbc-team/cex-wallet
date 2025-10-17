@@ -45,17 +45,24 @@ Helius（支持 Reference Account 监听、Webhooks、SQL-like 过滤）
 
 ### 扫块
 
-伪代码：
+使用最新的 @solana/kit 库完成扫块
+需要处理可能回滚的逻辑，
+在 db_gateway 下，添加Solana 相应的表
+连接接本地测试节点
+
+主要流程伪代码：
 ```
     const slot = await waitForNextSlot(lastSlot + 1);
     const block = await rpc.getBlock(slot, { maxSupportedTransactionVersion: 0 }); // 或者从 validator 读取
-    const parsedEvents = parseBlock(block); // 展开 tx -> instructions -> tokenTransfer / memo / reference
-    await writeEventsToDB(parsedEvents);
+    const parsedDeposits = parseBlock(block); // 展开 tx -> instructions 和innerinstructions 解析出 sol 和 spltoken spltoken 2022 的转账
+    await writeDepositsToDB(parsedEvents);
     lastSlot = slot;
     setCursor("block_slot", lastSlot);
   }
 ```
 
+
+ 
 
 
 

@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS used_operation_ids (
 );
 
 -- ============================================
--- 5. 区块表 (blocks)
+-- 5. 区块表 (blocks) - EVM链
 -- ============================================
 CREATE TABLE IF NOT EXISTS blocks (
   hash TEXT PRIMARY KEY,                   -- 区块哈希
@@ -75,7 +75,20 @@ CREATE TABLE IF NOT EXISTS blocks (
 );
 
 -- ============================================
--- 6. 交易表 (transactions)
+-- 5.1 Solana区块槽位表 (solana_slots)
+-- ============================================
+CREATE TABLE IF NOT EXISTS solana_slots (
+  slot INTEGER PRIMARY KEY,                -- Solana槽位号
+  block_hash TEXT,                         -- 区块哈希
+  parent_slot INTEGER,                     -- 父槽位号
+  block_time INTEGER,                      -- 区块时间戳
+  status TEXT DEFAULT 'confirmed',         -- confirmed、finalized、skipped
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- 6. 交易表 (transactions) - EVM链
 -- ============================================
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +102,24 @@ CREATE TABLE IF NOT EXISTS transactions (
   type TEXT,                               -- deposit/withdraw/collect/rebalance
   status TEXT DEFAULT 'confirmed',         -- confirmed/safe/finalized/failed
   confirmation_count INTEGER DEFAULT 0,    -- 确认数
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- 6.1 Solana交易表 (solana_transactions)
+-- ============================================
+CREATE TABLE IF NOT EXISTS solana_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot INTEGER,                            -- 槽位号
+  tx_hash TEXT UNIQUE NOT NULL,            -- 交易签名
+  from_addr TEXT,                          -- 发起地址
+  to_addr TEXT,                            -- 接收地址
+  token_mint TEXT,                         -- SPL Token Mint地址 (NULL表示SOL)
+  amount TEXT,                             -- 交易金额
+  type TEXT,                               -- deposit/withdraw/collect/rebalance
+  status TEXT DEFAULT 'confirmed',         -- confirmed/finalized/failed
+  block_time INTEGER,                      -- 区块时间戳
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -177,10 +208,21 @@ CREATE INDEX IF NOT EXISTS idx_blocks_number ON blocks(number);
 CREATE INDEX IF NOT EXISTS idx_blocks_hash ON blocks(hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_status ON blocks(status);
 
+-- Solana Slots 表索引
+CREATE INDEX IF NOT EXISTS idx_solana_slots_slot ON solana_slots(slot);
+CREATE INDEX IF NOT EXISTS idx_solana_slots_status ON solana_slots(status);
+CREATE INDEX IF NOT EXISTS idx_solana_slots_parent ON solana_slots(parent_slot);
+
 -- Transactions 表索引
 CREATE INDEX IF NOT EXISTS idx_transactions_block_hash ON transactions(block_hash);
 CREATE INDEX IF NOT EXISTS idx_transactions_to_addr ON transactions(to_addr);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+
+-- Solana Transactions 表索引
+CREATE INDEX IF NOT EXISTS idx_solana_transactions_slot ON solana_transactions(slot);
+CREATE INDEX IF NOT EXISTS idx_solana_transactions_tx_hash ON solana_transactions(tx_hash);
+CREATE INDEX IF NOT EXISTS idx_solana_transactions_to_addr ON solana_transactions(to_addr);
+CREATE INDEX IF NOT EXISTS idx_solana_transactions_status ON solana_transactions(status);
 
 -- Credits 表索引
 CREATE INDEX IF NOT EXISTS idx_credits_user_token ON credits(user_id, token_id);
