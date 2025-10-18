@@ -125,6 +125,24 @@ CREATE TABLE IF NOT EXISTS solana_transactions (
 );
 
 -- ============================================
+-- 6.2 Solana代币账户表 (solana_token_accounts)
+-- 存储每个钱包对应每个代币的ATA (Associated Token Account) 地址
+-- ============================================
+CREATE TABLE IF NOT EXISTS solana_token_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,                         -- 用户ID（冗余字段，方便查询）
+  wallet_id INTEGER NOT NULL,              -- 关联的钱包ID
+  wallet_address TEXT NOT NULL,            -- 钱包地址（owner地址）
+  token_mint TEXT NOT NULL,                -- SPL Token Mint地址
+  ata_address TEXT NOT NULL,               -- ATA (Associated Token Account) 地址
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(wallet_address, token_mint),      -- 每个钱包+代币组合唯一
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (wallet_id) REFERENCES wallets(id)
+);
+
+-- ============================================
 -- 7. 代币表 (tokens)
 -- ============================================
 CREATE TABLE IF NOT EXISTS tokens (
@@ -223,6 +241,13 @@ CREATE INDEX IF NOT EXISTS idx_solana_transactions_slot ON solana_transactions(s
 CREATE INDEX IF NOT EXISTS idx_solana_transactions_tx_hash ON solana_transactions(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_solana_transactions_to_addr ON solana_transactions(to_addr);
 CREATE INDEX IF NOT EXISTS idx_solana_transactions_status ON solana_transactions(status);
+
+-- Solana Token Accounts 表索引
+CREATE INDEX IF NOT EXISTS idx_solana_token_accounts_ata ON solana_token_accounts(ata_address);
+CREATE INDEX IF NOT EXISTS idx_solana_token_accounts_wallet ON solana_token_accounts(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_solana_token_accounts_wallet_token ON solana_token_accounts(wallet_address, token_mint);
+CREATE INDEX IF NOT EXISTS idx_solana_token_accounts_wallet_id ON solana_token_accounts(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_solana_token_accounts_user_id ON solana_token_accounts(user_id);
 
 -- Credits 表索引
 CREATE INDEX IF NOT EXISTS idx_credits_user_token ON credits(user_id, token_id);

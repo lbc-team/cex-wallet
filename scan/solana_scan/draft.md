@@ -167,3 +167,5 @@ https://api.helius.xyz/v0/addresses/<user_ata>/transactions
 •获取块⾥⾯的交易，判断是 native token 或者是代币充值
 ◦ native token：主链币充值 program 等于 system 并且 type 为 transfer
 ◦ Token：代币充值 program 等于 spl-token 并且 type 为 transfer 或者 transferChecked。
+
+从 ATA 地址映射到钱包充值

@@ -146,7 +146,7 @@ node dist/scripts/createTables.js
 | id | INTEGER | 主键  |
 | chain_type | TEXT | 链类型：eth/btc/sol/polygon/bsc 等 |
 | chain_id | INTEGER | 链ID：1(以太坊主网)/5(Goerli)/137(Polygon)/56(BSC) 等 |
-| token_address | TEXT | 代币合约地址（原生代币为空） |
+| token_address | TEXT | 代币合约地址（原生代币为空）， 如果是Solana 则是 mint account  |
 | token_symbol | TEXT | 代币符号：USDC/ETH/BTC/SOL 等 |
 | token_name | TEXT | 代币全名：USD Coin/Ethereum/Bitcoin 等 |
 | decimals | INTEGER | 代币精度（小数位数） |

@@ -1,4 +1,4 @@
-import { walletDAO, tokenDAO } from '../db/models';
+import { walletDAO, tokenDAO, solanaTokenAccountDAO } from '../db/models';
 import { getDbGatewayClient } from './dbGatewayClient';
 import logger from '../utils/logger';
 
@@ -24,8 +24,10 @@ export class TransactionParser {
   private dbGatewayClient = getDbGatewayClient();
   private monitoredAddresses: Set<string> = new Set();
   private tokenMintMap: Map<string, any> = new Map();
+  private ataToWalletMap: Map<string, string> = new Map(); // ATA地址 -> 钱包地址映射
   private lastAddressUpdate: number = 0;
   private lastTokenUpdate: number = 0;
+  private lastATAUpdate: number = 0;
 
   constructor() {
     this.refreshCache();
@@ -51,12 +53,17 @@ export class TransactionParser {
         }
       }
 
+      // 获取ATA到钱包地址的映射
+      this.ataToWalletMap = await solanaTokenAccountDAO.getATAToWalletMap();
+
       this.lastAddressUpdate = Date.now();
       this.lastTokenUpdate = Date.now();
+      this.lastATAUpdate = Date.now();
 
       logger.info('缓存刷新完成', {
         addressCount: this.monitoredAddresses.size,
-        tokenCount: this.tokenMintMap.size
+        tokenCount: this.tokenMintMap.size,
+        ataCount: this.ataToWalletMap.size
       });
     } catch (error) {
       logger.error('刷新缓存失败', { error });
@@ -142,6 +149,26 @@ export class TransactionParser {
           if (deposit) deposits.push(deposit);
         }
       }
+
+      // 对于 Token 转账，使用 ATA 映射匹配钱包地址
+      deposits.forEach(deposit => {
+        if (deposit.type !== 'sol') {
+          // 从 ATA 映射中查找对应的钱包地址
+          const walletAddress = this.ataToWalletMap.get(deposit.toAddr.toLowerCase());
+          if (walletAddress) {
+            logger.debug('通过ATA映射找到钱包地址', {
+              ataAddress: deposit.toAddr,
+              walletAddress: walletAddress
+            });
+            deposit.toAddr = walletAddress;
+          } else {
+            logger.warn('未在ATA映射中找到钱包地址', {
+              ataAddress: deposit.toAddr,
+              txHash: txHash
+            });
+          }
+        }
+      });
     } catch (error) {
       logger.error('解析转账失败', { txHash, error });
     }
@@ -173,9 +200,6 @@ export class TransactionParser {
         if (ix.parsed) {
           return this.parseParsedTokenInstruction(ix, programId, slot, txHash, blockTime);
         }
-
-        // 解析未解析的指令（需要手动解码）
-        return this.parseRawTokenInstruction(ix, tx, programId, slot, txHash, blockTime);
       }
 
       return null;
@@ -242,6 +266,8 @@ export class TransactionParser {
    * Program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA (SPL Token)
    * Program: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb (SPL Token 2022)
    * Type: transfer / transferChecked
+   *
+   * 注意：destination 是 Token Account (ATA) 地址，不是钱包地址
    */
   private parseParsedTokenInstruction(
     ix: any,
@@ -259,18 +285,15 @@ export class TransactionParser {
       }
 
       const info = parsed.info;
-      const destination = info.destination;
+      const destination = info.destination; // 这是 Token Account (ATA) 地址
       const amount = info.amount || info.tokenAmount?.amount;
 
       if (!destination || !amount) {
         return null;
       }
 
-      // 检查目标地址是否是我们监控的地址
-      const lowerDest = destination.toLowerCase();
-      if (!this.monitoredAddresses.has(lowerDest)) {
-        return null;
-      }
+      // Token 转账的 destination 是 Token Account，不是钱包地址
+      // 但 destination 的所有者需要从数据库中获取
 
       // 获取 mint 地址
       const mint = info.mint;
@@ -281,7 +304,7 @@ export class TransactionParser {
         txHash,
         slot,
         fromAddr: info.source || undefined,
-        toAddr: destination,
+        toAddr: destination, // 这是 Token Account 地址，稍后需要匹配钱包地址
         tokenMint: mint,
         amount: amount,
         type,
@@ -289,64 +312,6 @@ export class TransactionParser {
       };
     } catch (error) {
       logger.error('解析已解析Token指令失败', { txHash, error });
-      return null;
-    }
-  }
-
-  /**
-   * 解析原始 Token 指令（需要手动解码）
-   * 从 preTokenBalances 和 postTokenBalances 推断转账
-   */
-  private parseRawTokenInstruction(
-    ix: any,
-    tx: any,
-    programId: string,
-    slot: number,
-    txHash: string,
-    blockTime?: number | null
-  ): ParsedDeposit | null {
-    try {
-      // 从 preTokenBalances 和 postTokenBalances 推断转账
-      const preTokenBalances = tx.meta.preTokenBalances || [];
-      const postTokenBalances = tx.meta.postTokenBalances || [];
-
-      for (const postBalance of postTokenBalances) {
-        const preBalance = preTokenBalances.find(
-          (pb: any) => pb.accountIndex === postBalance.accountIndex
-        );
-
-        const preAmount = BigInt(preBalance?.uiTokenAmount?.amount || '0');
-        const postAmount = BigInt(postBalance.uiTokenAmount?.amount || '0');
-        const change = postAmount - preAmount;
-
-        if (change > 0n) {
-          // 余额增加，可能是接收方
-          const accountKeys = tx.transaction.message.accountKeys || [];
-          const accountKey = accountKeys[postBalance.accountIndex];
-          const address = typeof accountKey === 'string' ? accountKey : accountKey?.pubkey?.toString();
-
-          if (!address) continue;
-
-          const lowerAddr = address.toLowerCase();
-          if (this.monitoredAddresses.has(lowerAddr)) {
-            const type = programId === TOKEN_2022_PROGRAM_ID ? 'spl-token-2022' : 'spl-token';
-
-            return {
-              txHash,
-              slot,
-              toAddr: address,
-              tokenMint: postBalance.mint,
-              amount: change.toString(),
-              type,
-              blockTime: blockTime || undefined
-            };
-          }
-        }
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('解析原始Token指令失败', { txHash, error });
       return null;
     }
   }
@@ -439,8 +404,10 @@ export class TransactionParser {
     return {
       monitoredAddressCount: this.monitoredAddresses.size,
       supportedTokenCount: this.tokenMintMap.size,
+      ataCount: this.ataToWalletMap.size,
       lastAddressUpdate: this.lastAddressUpdate,
-      lastTokenUpdate: this.lastTokenUpdate
+      lastTokenUpdate: this.lastTokenUpdate,
+      lastATAUpdate: this.lastATAUpdate
     };
   }
 }

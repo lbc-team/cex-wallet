@@ -54,6 +54,17 @@ export interface Token {
   updated_at: string;
 }
 
+export interface SolanaTokenAccount {
+  id: number;
+  user_id?: number;
+  wallet_id: number;
+  wallet_address: string;
+  token_mint: string;
+  ata_address: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Solana槽位数据访问对象
  */
@@ -256,11 +267,37 @@ export class TokenDAO {
   }
 }
 
+/**
+ * Solana代币账户数据访问对象（只读）
+ * 注意：所有写操作必须通过 db_gateway 服务
+ */
+export class SolanaTokenAccountDAO {
+  /**
+   * 获取ATA到钱包地址的映射
+   */
+  async getATAToWalletMap(): Promise<Map<string, string>> {
+    try {
+      const rows = await database.all(
+        'SELECT ata_address, wallet_address FROM solana_token_accounts'
+      );
+      const map = new Map<string, string>();
+      for (const row of rows) {
+        map.set(row.ata_address.toLowerCase(), row.wallet_address);
+      }
+      return map;
+    } catch (error) {
+      logger.error('获取ATA到钱包地址映射失败', { error });
+      throw error;
+    }
+  }
+}
+
 // 导出DAO实例
 export const solanaSlotDAO = new SolanaSlotDAO();
 export const solanaTransactionDAO = new SolanaTransactionDAO();
 export const walletDAO = new WalletDAO();
 export const tokenDAO = new TokenDAO();
+export const solanaTokenAccountDAO = new SolanaTokenAccountDAO();
 
 // 导出数据库实例
 export { database } from './connection';

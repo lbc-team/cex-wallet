@@ -186,6 +186,24 @@ export class DatabaseConnection {
     return result || null;
   }
 
+  // 根据链类型查找所有代币
+  async findAllTokensByChain(chainType: string): Promise<{
+    id: number;
+    chain_type: string;
+    chain_id: number;
+    token_address: string | null;
+    token_symbol: string;
+    token_name: string | null;
+    decimals: number;
+    is_native: boolean;
+  }[]> {
+    const results = await this.query(
+      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native FROM tokens WHERE chain_type = ? AND status = 1',
+      [chainType]
+    );
+    return results || [];
+  }
+
   // 获取系统用户ID
   async getSystemUserId(userType: 'sys_hot_wallet' | 'sys_multisig'): Promise<number | null> {
     const result = await this.queryOne(
