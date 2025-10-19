@@ -30,7 +30,7 @@ export class TransactionParser {
   private lastATAUpdate: number = 0;
 
   constructor() {
-    this.refreshCache();
+    // 缓存会在 scanService.start 中显式刷新，确保数据库连接已建立
   }
 
   /**

@@ -63,21 +63,19 @@ export class Ed25519Signer {
   }
 
   /**
-   * 序列化 payload 为字符串（规范化）
+   * 序列化 payload 为字符串
+   * 必须与 db_gateway 使用的顺序保持一致
    */
   private serializePayload(payload: SignaturePayload): string {
-    // 按字母顺序排序键，确保签名一致性
-    const sortedPayload = {
-      action: payload.action,
-      conditions: payload.conditions,
-      data: payload.data,
+    return JSON.stringify({
       operation_id: payload.operation_id,
       operation_type: payload.operation_type,
       table: payload.table,
+      action: payload.action,
+      data: payload.data ?? null,
+      conditions: payload.conditions ?? null,
       timestamp: payload.timestamp
-    };
-
-    return JSON.stringify(sortedPayload);
+    });
   }
 
   /**

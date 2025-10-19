@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Ed25519Signer, SignaturePayload } from '../utils/crypto';
 import logger from '../utils/logger';
+import { getRiskControlClient } from './riskControlClient';
 
 interface GatewayRequest {
   operation_id: string;
@@ -25,9 +26,45 @@ interface GatewayResponse {
   };
 }
 
+function normalizeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      stack: error.stack
+    };
+  }
+  return error;
+}
+
+function sanitizeValue<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    const numericValue = Number(value);
+    return (Number.isSafeInteger(numericValue) ? numericValue : value.toString()) as unknown as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeValue(item)) as unknown as T;
+  }
+
+  if (typeof value === 'object') {
+    const sanitized: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value as Record<string, any>)) {
+      sanitized[key] = sanitizeValue(val);
+    }
+    return sanitized as T;
+  }
+
+  return value;
+}
+
 export class DbGatewayClient {
   private baseUrl: string;
   private signer: Ed25519Signer;
+  private riskControlClient = getRiskControlClient();
 
   constructor(baseUrl: string = process.env.DB_GATEWAY_URL || 'http://localhost:3003') {
     this.baseUrl = baseUrl;
@@ -44,14 +81,71 @@ export class DbGatewayClient {
     try {
       const operationId = uuidv4();
       const timestamp = Date.now();
+      let riskSignature: string | undefined;
+      let requestTable = table;
+      let requestAction = action;
+
+      if (operationType === 'sensitive') {
+        const riskResult = await this.riskControlClient.requestRiskAssessment({
+          operation_id: operationId,
+          operation_type: operationType,
+          table,
+          action,
+          data,
+          conditions,
+          timestamp
+        });
+
+        if (!riskResult) {
+          throw new Error('风控服务未返回结果');
+        }
+
+        if (!riskResult.risk_signature) {
+          throw new Error('风控服务未返回签名');
+        }
+
+        if (!riskResult.success && riskResult.decision === 'reject') {
+          const reason = riskResult.reasons?.join(', ') || '风控拒绝';
+          throw new Error(`风控拒绝敏感操作: ${reason}`);
+        }
+
+        riskSignature = riskResult.risk_signature;
+
+        if (riskResult.db_operation?.table) {
+          requestTable = riskResult.db_operation.table;
+        }
+
+        if (riskResult.db_operation?.action) {
+          requestAction = riskResult.db_operation.action;
+        }
+
+        if (riskResult.db_operation?.data !== undefined) {
+          data = riskResult.db_operation.data;
+        }
+
+        if (riskResult.db_operation?.conditions !== undefined) {
+          conditions = riskResult.db_operation.conditions;
+        }
+
+        logger.info('风控评估完成', {
+          operationId,
+          decision: riskResult.decision,
+          reasons: riskResult.reasons,
+          table: requestTable,
+          action: requestAction
+        });
+      }
+
+      const sanitizedData = sanitizeValue(data ?? null);
+      const sanitizedConditions = sanitizeValue(conditions ?? null);
 
       const signaturePayload: SignaturePayload = {
         operation_id: operationId,
         operation_type: operationType,
-        table,
-        action,
-        data: data || null,
-        conditions: conditions || null,
+        table: requestTable,
+        action: requestAction,
+        data: sanitizedData,
+        conditions: sanitizedConditions,
         timestamp
       };
 
@@ -60,11 +154,12 @@ export class DbGatewayClient {
       const gatewayRequest: GatewayRequest = {
         operation_id: operationId,
         operation_type: operationType,
-        table,
-        action,
-        data,
-        conditions,
+        table: requestTable,
+        action: requestAction,
+        data: sanitizedData === null ? undefined : sanitizedData,
+        conditions: sanitizedConditions === null ? undefined : sanitizedConditions,
         business_signature: signature,
+        risk_signature: riskSignature,
         timestamp
       };
 
@@ -88,7 +183,7 @@ export class DbGatewayClient {
 
       return apiResult.data;
     } catch (error) {
-      logger.error('数据库操作失败', { table, action, error });
+      logger.error('数据库操作失败', { table, action, error: normalizeError(error) });
       throw error;
     }
   }
@@ -145,7 +240,7 @@ export class DbGatewayClient {
 
       return true;
     } catch (error) {
-      logger.error('插入Solana槽位记录失败', { slot: params.slot, error });
+      logger.error('插入Solana槽位记录失败', { slot: params.slot, error: normalizeError(error) });
       return false;
     }
   }
@@ -168,7 +263,7 @@ export class DbGatewayClient {
 
       return true;
     } catch (error) {
-      logger.error('更新Solana槽位状态失败', { slot, error });
+      logger.error('更新Solana槽位状态失败', { slot, error: normalizeError(error) });
       return false;
     }
   }
@@ -204,7 +299,7 @@ export class DbGatewayClient {
       await this.executeOperation('solana_transactions', 'insert', 'write', data);
       return true;
     } catch (error) {
-      logger.error('插入Solana交易记录失败', { txHash: params.tx_hash, error });
+      logger.error('插入Solana交易记录失败', { txHash: params.tx_hash, error: normalizeError(error) });
       return false;
     }
   }
@@ -268,7 +363,7 @@ export class DbGatewayClient {
         logger.debug('Credit记录已存在', { txHash: params.tx_hash });
         return null;
       }
-      logger.error('创建credit记录失败', { error });
+      logger.error('创建credit记录失败', { error: normalizeError(error) });
       return null;
     }
   }

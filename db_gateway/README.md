@@ -45,8 +45,10 @@ curl -X POST http://localhost:3003/generate-keypair
 ### 4. 配置模块私钥
 
 将对应的私钥配置到各模块的环境变量中：
-- Wallet模块：`wallet/.env.gateway` 中的 `WALLET_PRIVATE_KEY`
-- Scan模块：`scan/.env.gateway` 中的 `SCAN_PRIVATE_KEY`
+- Wallet模块：`wallet/.env` 中的 `WALLET_PRIVATE_KEY`
+- Scan 模块（EVM 链 和 Solana 链）：`scan/evm_scan/.env` 和 `scan/solana_scan/.env`  中的 `SCAN_PRIVATE_KEY`
+  - 最好不同的链扫描模块有独立的 SCAN_PRIVATE_KEY
+- 风控模块: `risk_control/.env` 中 `RISK_PRIVATE_KEY`
 
 ### 5. 启动服务
 

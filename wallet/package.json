@@ -11,6 +11,7 @@
     "test": "ts-node tests/run-tests.ts",
     "test:wallet": "ts-node tests/wallet.test.ts",
     "mock:init": "ts-node src/scripts/mock.ts",
+    "mock:solana:transfer": "ts-node src/scripts/solanaTransferToWallets.ts",
     "mock:withdraw": "ts-node src/scripts/requestWithdraw.ts",
     "mock:withdraw:black": "ts-node src/scripts/requestWithdrawToBlackAddr.ts",
     "mock:withdraw:needReview": "ts-node src/scripts/requestWithdrawNeedReview.ts",
