@@ -209,34 +209,7 @@ export class DbGatewayClient {
         updated_at: new Date().toISOString()
       };
 
-      // 检查是否已存在
-      const existing = await this.executeOperation(
-        'solana_slots',
-        'select',
-        'read',
-        undefined,
-        { slot: params.slot }
-      );
-
-      if (existing && existing.length > 0) {
-        // 更新
-        await this.executeOperation(
-          'solana_slots',
-          'update',
-          'write',
-          {
-            block_hash: data.block_hash,
-            parent_slot: data.parent_slot,
-            block_time: data.block_time,
-            status: data.status,
-            updated_at: data.updated_at
-          },
-          { slot: params.slot }
-        );
-      } else {
-        // 插入
-        await this.executeOperation('solana_slots', 'insert', 'write', data);
-      }
+      await this.executeOperation('solana_slots', 'insert', 'write', data);
 
       return true;
     } catch (error) {

@@ -112,17 +112,6 @@ export class ScanService {
     }
   }
 
-  /**
-   * 手动触发扫描
-   */
-  async triggerScan(): Promise<void> {
-    if (!this.isRunning) {
-      throw new Error('扫描服务未运行');
-    }
-
-    logger.info('手动触发扫描');
-    await blockScanner.triggerScan();
-  }
 
   /**
    * 获取健康状态

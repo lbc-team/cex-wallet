@@ -133,6 +133,7 @@ export class TransactionParser {
     const deposits: ParsedDeposit[] = [];
 
     try {
+      // compiledInstructions
       const instructions = tx.transaction.message.instructions || [];
       const innerInstructions = tx.meta.innerInstructions || [];
 

@@ -14,7 +14,6 @@ export interface Config {
   // 扫描配置
   startSlot: number;
   confirmationThreshold: number;
-  scanBatchSize: number;
   reorgCheckDepth: number;
   scanInterval: number;
   maxConcurrentRequests: number;
@@ -37,7 +36,6 @@ const config: Config = {
   // 扫描配置
   startSlot: parseInt(process.env.START_SLOT || '0'),
   confirmationThreshold: parseInt(process.env.CONFIRMATION_THRESHOLD || '32'),
-  scanBatchSize: parseInt(process.env.SCAN_BATCH_SIZE || '10'),
   reorgCheckDepth: parseInt(process.env.REORG_CHECK_DEPTH || '64'),
   scanInterval: parseInt(process.env.SCAN_INTERVAL || '2'),
   maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '5'),

@@ -36,9 +36,9 @@
   1. 生成密钥对: curl -X POST http://localhost:3003/generate-keypair
   2. 配置环境变量: 将公钥配置到数据库网关，私钥配置到 wallet/Scan/risk_control模块
 3. 启动 risk_control 服务 (cd risk_control && npm run dev)
-4. 启动 signer 服务（配置 .env 的助记词）
+4. 启动 signer 服务（配置 .env 的助记词,  `./start_signer.sh` 使用默认密码启动 ）
 5. 启动 wallet 服务  (cd wallet && npm run dev)
-6. 执行 wallet 模块下的 mock.ts 填充一些测试数据。
+6. 执行 wallet 模块下的 mock.ts 填充一些测试的 ETH 及 Solana 用户地址。(注意本地测试，先部署 token )
 7. 执行 scan 服务， 扫描存款入账
 8. 执行 wallet 模块下的 requestWithdraw.ts 测试提款
 

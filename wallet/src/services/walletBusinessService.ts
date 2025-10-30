@@ -211,8 +211,17 @@ export class WalletBusinessService {
 
           // 批量生成并保存 ATA
           for (const token of solanaTokens) {
-            // token_address 是 mint address
-            if (!token.token_address) {
+            // 跳过原生代币 SOL：
+            // - token_address 为 null/undefined/空字符串
+            // - token_address 为零地址（0x0000...或全0地址）
+            // - is_native 为 true
+            if (
+              !token.token_address ||
+              token.token_address.trim() === '' ||
+              token.token_address === '0x0000000000000000000000000000000000000000' ||
+              /^0x0+$/.test(token.token_address) ||
+              token.is_native === true
+            ) {
               console.log(`⏭️  跳过原生代币 ${token.token_symbol}`);
               continue;
             }

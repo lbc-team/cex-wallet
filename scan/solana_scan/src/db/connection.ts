@@ -9,8 +9,16 @@ class Database {
   private dbPath: string;
 
   constructor() {
-    // 解析数据库路径
-    this.dbPath = path.resolve(__dirname, config.databaseUrl);
+    // 使用与 db_gateway 相同的路径解析逻辑
+    // 如果 WALLET_DB_PATH 是绝对路径，直接使用；否则相对于当前工作目录
+    if (config.databaseUrl) {
+      this.dbPath = path.isAbsolute(config.databaseUrl)
+        ? config.databaseUrl
+        : path.resolve(process.cwd(), config.databaseUrl);
+    } else {
+      // 默认：相对于项目根目录的 wallet.db
+      this.dbPath = path.resolve(process.cwd(), '../../db_gateway/wallet.db');
+    }
     logger.info('数据库路径', { dbPath: this.dbPath });
   }
 

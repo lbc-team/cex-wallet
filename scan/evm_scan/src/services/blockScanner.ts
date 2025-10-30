@@ -528,17 +528,6 @@ export class BlockScanner {
     }
   }
 
-  /**
-   * 手动触发扫描
-   */
-  async triggerScan(): Promise<void> {
-    if (!this.isScanning) {
-      throw new Error('扫描器未运行');
-    }
-
-    logger.info('手动触发扫描');
-    await this.scanNewBlocks();
-  }
 }
 
 export const blockScanner = new BlockScanner();

@@ -10,6 +10,7 @@
     "prebuild": "npm run clean",
     "test": "ts-node tests/run-tests.ts",
     "test:wallet": "ts-node tests/wallet.test.ts",
+    "deploy:solana:tokens": "ts-node src/scripts/deploySplTokens.ts",
     "mock:init": "ts-node src/scripts/mock.ts",
     "mock:solana:transfer": "ts-node src/scripts/solanaTransferToWallets.ts",
     "mock:withdraw": "ts-node src/scripts/requestWithdraw.ts",

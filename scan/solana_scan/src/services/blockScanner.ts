@@ -16,6 +16,8 @@ export class BlockScanner {
   private isScanning: boolean = false;
   private intervalTimer: NodeJS.Timeout | null = null;
   private dbGatewayClient = getDbGatewayClient();
+  private cachedFinalizedSlot: number = 0;
+  private lastFinalizedSlotUpdate: number = 0;
 
   /**
    * 启动扫描服务
@@ -65,10 +67,10 @@ export class BlockScanner {
   }
 
   /**
-   * 执行初始同步扫描
+   * 执行初始同步扫描（逐个槽位扫描）
    */
   private async performInitialSync(): Promise<void> {
-    logger.info('开始初始同步扫描...');
+    logger.info('开始初始同步扫描（逐个槽位模式）...');
 
     // 获取当前最新槽位
     let latestSlot = await solanaClient.getLatestSlot();
@@ -83,38 +85,43 @@ export class BlockScanner {
       slotsToSync: latestSlot - currentSlot + 1
     });
 
-    // 连续扫描直到追上最新槽位
+    // 逐个槽位扫描直到追上最新槽位
     while (currentSlot <= latestSlot && this.isScanning) {
-      const endSlot = Math.min(currentSlot + config.scanBatchSize - 1, latestSlot);
-
-      logger.info('扫描槽位批次', {
-        startSlot: currentSlot,
-        endSlot: endSlot,
-        batchSize: endSlot - currentSlot + 1,
-        progress: `${endSlot}/${latestSlot} (${((endSlot / latestSlot) * 100).toFixed(2)}%)`
-      });
+      // 每扫描一定数量的槽位打印进度
+      if (currentSlot % 10 === 0 || currentSlot === lastScannedSlot + 1) {
+        logger.info('扫描进度', {
+          currentSlot,
+          latestSlot,
+          progress: `${currentSlot}/${latestSlot} (${((currentSlot / latestSlot) * 100).toFixed(2)}%)`
+        });
+      }
 
       try {
-        await this.scanSlotBatch(currentSlot, endSlot);
+        // 扫描单个槽位
+        await this.scanSingleSlot(currentSlot);
 
-        currentSlot = endSlot + 1;
+        // 移动到下一个槽位
+        currentSlot++;
 
-        // 检查是否有新的槽位产生
-        const newLatestSlot = await solanaClient.getLatestSlot();
-        if (newLatestSlot > latestSlot) {
-          logger.info('检测到新槽位', {
-            oldLatest: latestSlot,
-            newLatest: newLatestSlot
-          });
-          latestSlot = newLatestSlot;
+        // 每扫描 100 个槽位检查是否有新的槽位产生
+        if (currentSlot % 100 === 0) {
+          const newLatestSlot = await solanaClient.getLatestSlot();
+          if (newLatestSlot > latestSlot) {
+            logger.info('检测到新槽位', {
+              oldLatest: latestSlot,
+              newLatest: newLatestSlot,
+              newSlots: newLatestSlot - latestSlot
+            });
+            latestSlot = newLatestSlot;
+          }
         }
       } catch (error) {
-        logger.error('扫描批次失败', {
-          startSlot: currentSlot,
-          endSlot: endSlot,
+        logger.error('扫描槽位失败', {
+          slot: currentSlot,
           error
         });
-        throw error;
+        // 继续扫描下一个槽位，不要因为单个槽位失败而停止整个扫描
+        currentSlot++;
       }
     }
 
@@ -125,32 +132,21 @@ export class BlockScanner {
   }
 
   /**
-   * 扫描槽位批次
+   * 获取缓存的 finalized slot（每1秒更新一次）
    */
-  private async scanSlotBatch(startSlot: number, endSlot: number): Promise<void> {
-    try {
-      // 使用 getBlocks 获取有区块的槽位列表
-      const slots = await solanaClient.getBlocks(startSlot, endSlot);
-
-      logger.debug('批量获取槽位列表', {
-        startSlot,
-        endSlot,
-        actualSlots: slots.length
-      });
-
-      // 扫描每个槽位
-      for (const slot of slots) {
-        if (!this.isScanning) break;
-
-        await this.scanSingleSlot(slot);
+  private async getCachedFinalizedSlot(): Promise<number> {
+    const now = Date.now();
+    // 每1秒更新一次 finalized slot
+    if (now - this.lastFinalizedSlotUpdate > 1000) {
+      try {
+        this.cachedFinalizedSlot = await solanaClient.getFinalizedSlot();
+        this.lastFinalizedSlotUpdate = now;
+        logger.debug('更新 finalized slot 缓存', { finalizedSlot: this.cachedFinalizedSlot });
+      } catch (error) {
+        logger.error('获取 finalized slot 失败', { error });
       }
-
-      // 标记跳过的槽位
-      await this.markSkippedSlots(startSlot, endSlot, slots);
-    } catch (error) {
-      logger.error('扫描槽位批次失败', { startSlot, endSlot, error });
-      throw error;
     }
+    return this.cachedFinalizedSlot;
   }
 
   /**
@@ -160,17 +156,20 @@ export class BlockScanner {
     try {
       logger.debug('扫描槽位', { slot });
 
-      // 检查槽位是否已处理
+      // 检查槽位是否已处理（从本地数据库读取）
       const existingSlot = await solanaSlotDAO.getSlot(slot);
       if (existingSlot && existingSlot.status === 'finalized') {
         logger.debug('槽位已最终确认，跳过', { slot });
         return;
       }
 
-      // 检测可能的回滚
-      await this.checkForReorg(slot);
+      // 如果槽位已经被处理为 confirmed 或 skipped，也跳过
+      if (existingSlot && (existingSlot.status === 'confirmed' || existingSlot.status === 'skipped')) {
+        logger.debug('槽位已处理，跳过', { slot, status: existingSlot.status });
+        return;
+      }
 
-      // 获取区块信息
+      // 获取区块信息（使用 confirmed commitment）
       const block = await solanaClient.getBlock(slot);
 
       if (!block) {
@@ -182,8 +181,17 @@ export class BlockScanner {
         return;
       }
 
-      // 处理区块
-      await this.processBlock(slot, block);
+      // 验证父区块（检测回滚）
+      if (block.parentSlot !== undefined && block.parentSlot !== null) {
+        await this.verifyParentBlock(slot, block.parentSlot, block.previousBlockhash);
+      }
+
+      // 检查该 slot 是否已经 finalized（使用缓存）
+      const finalizedSlot = await this.getCachedFinalizedSlot();
+      const blockStatus = slot <= finalizedSlot ? 'finalized' : 'confirmed';
+
+      // 处理区块（传入状态）
+      await this.processBlock(slot, block, blockStatus);
     } catch (error) {
       logger.error('扫描槽位失败', { slot, error });
       throw error;
@@ -193,18 +201,18 @@ export class BlockScanner {
   /**
    * 处理区块
    */
-  private async processBlock(slot: number, block: any): Promise<void> {
+  private async processBlock(slot: number, block: any, status: string = 'confirmed'): Promise<void> {
     try {
       // 解析区块中的交易
       const deposits = await transactionParser.parseBlock(block, slot);
 
-      // 插入槽位记录
+      // 插入槽位记录（使用真实的状态）
       await this.dbGatewayClient.insertSolanaSlot({
         slot,
         block_hash: block.blockhash || undefined,
         parent_slot: block.parentSlot || undefined,
         block_time: block.blockTime || undefined,
-        status: 'confirmed'
+        status
       });
 
       // 处理检测到的存款
@@ -215,6 +223,7 @@ export class BlockScanner {
       logger.debug('槽位处理完成', {
         slot,
         blockhash: block.blockhash,
+        status,
         transactions: block.transactions?.length || 0,
         deposits: deposits.length
       });
@@ -225,35 +234,80 @@ export class BlockScanner {
   }
 
   /**
-   * 检查并处理回滚（Solana的回滚较少见但可能发生）
+   * 验证父区块（检测回滚）
+   * 验证当前区块的 previousBlockhash 是否与数据库中父区块的 block_hash 匹配
    */
-  private async checkForReorg(currentSlot: number): Promise<void> {
+  private async verifyParentBlock(
+    currentSlot: number,
+    parentSlot: number,
+    previousBlockhash: string | undefined
+  ): Promise<void> {
     try {
-      // 检查最近几个槽位的状态
-      const checkDepth = Math.min(config.reorgCheckDepth, currentSlot);
-      const startCheckSlot = Math.max(0, currentSlot - checkDepth);
+      // 如果当前区块没有 previousBlockhash，无法验证
+      if (!previousBlockhash) {
+        logger.debug('当前区块缺少 previousBlockhash，无法验证父区块', { currentSlot, parentSlot });
+        return;
+      }
 
-      // 获取这些槽位的链上信息
-      const chainSlots = await solanaClient.getBlocks(startCheckSlot, currentSlot - 1);
-
-      // 获取数据库中的槽位
-      const dbSlots = await database.all(
-        'SELECT slot FROM solana_slots WHERE slot >= ? AND slot < ? AND status != "skipped"',
-        [startCheckSlot, currentSlot]
+      // 从数据库查询父区块信息
+      const dbParentSlot = await database.get(
+        'SELECT slot, block_hash, status FROM solana_slots WHERE slot = ?',
+        [parentSlot]
       );
 
-      const dbSlotSet = new Set(dbSlots.map((s: any) => s.slot));
-      const chainSlotSet = new Set(chainSlots);
-
-      // 检查是否有数据库中存在但链上不存在的槽位（可能被跳过或回滚）
-      for (const dbSlot of dbSlotSet) {
-        if (!chainSlotSet.has(dbSlot)) {
-          logger.warn('检测到可能的槽位回滚', { slot: dbSlot });
-          await this.handleSlotReorg(dbSlot);
-        }
+      // 如果数据库中没有父区块记录，不需要检查（可能还未扫描到）
+      if (!dbParentSlot) {
+        logger.debug('数据库中未找到父区块记录', { currentSlot, parentSlot });
+        return;
       }
+
+      // 如果父区块已经 finalized，不需要检查回滚
+      if (dbParentSlot.status === 'finalized') {
+        return;
+      }
+
+      // 如果父区块在数据库中是 skipped，但当前区块认为它有 previousBlockhash
+      // 说明父区块实际存在，需要重新扫描
+      if (dbParentSlot.status === 'skipped') {
+        logger.warn('父区块状态异常：数据库标记为 skipped 但链上存在', {
+          currentSlot,
+          parentSlot,
+          previousBlockhash
+        });
+        // 重新扫描父区块（会更新其 block_hash）
+        await this.scanSingleSlot(parentSlot);
+        return;
+      }
+
+      // 如果数据库中没有父区块的 block_hash，无法验证
+      if (!dbParentSlot.block_hash) {
+        logger.debug('父区块缺少 block_hash，无法验证', { parentSlot });
+        return;
+      }
+
+      // 验证当前区块的 previousBlockhash 是否等于数据库中父区块的 block_hash
+      if (previousBlockhash !== dbParentSlot.block_hash) {
+        // block_hash 不匹配，发生了回滚
+        logger.warn('检测到回滚：previousBlockhash 不匹配', {
+          currentSlot,
+          parentSlot,
+          previousBlockhash,
+          dbParentBlockHash: dbParentSlot.block_hash
+        });
+        await this.handleSlotReorg(parentSlot);
+        return;
+      }
+
+      // 验证通过
+      logger.debug('父区块验证通过', {
+        currentSlot,
+        parentSlot,
+        previousBlockhash
+      });
+
     } catch (error) {
-      logger.error('检查回滚失败', { currentSlot, error });
+      logger.error('验证父区块失败', { currentSlot, parentSlot, error });
+      // 验证失败不影响当前区块的处理
     }
   }
 
@@ -280,34 +334,6 @@ export class BlockScanner {
   }
 
   /**
-   * 标记跳过的槽位
-   */
-  private async markSkippedSlots(
-    startSlot: number,
-    endSlot: number,
-    actualSlots: number[]
-  ): Promise<void> {
-    try {
-      const actualSlotSet = new Set(actualSlots);
-
-      for (let slot = startSlot; slot <= endSlot; slot++) {
-        if (!actualSlotSet.has(slot)) {
-          // 检查数据库中是否已有记录
-          const existing = await solanaSlotDAO.getSlot(slot);
-          if (!existing) {
-            await this.dbGatewayClient.insertSolanaSlot({
-              slot,
-              status: 'skipped'
-            });
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('标记跳过槽位失败', { startSlot, endSlot, error });
-    }
-  }
-
-  /**
    * 启动定时扫描
    */
   private startIntervalScanning(): void {
@@ -327,7 +353,7 @@ export class BlockScanner {
   }
 
   /**
-   * 扫描新槽位（定时任务）
+   * 扫描新槽位（定时任务，逐个槽位扫描）
    */
   private async scanNewSlots(): Promise<void> {
     try {
@@ -335,16 +361,31 @@ export class BlockScanner {
       const lastScannedSlot = await this.getLastScannedSlot();
 
       if (latestSlot > lastScannedSlot) {
-        const startSlot = lastScannedSlot + 1;
-        const endSlot = Math.min(startSlot + config.scanBatchSize - 1, latestSlot);
+        const newSlotsCount = latestSlot - lastScannedSlot;
 
         logger.info('定时扫描新槽位', {
-          startSlot,
-          endSlot,
-          newSlots: endSlot - startSlot + 1
+          lastScannedSlot,
+          latestSlot,
+          newSlots: newSlotsCount
         });
 
-        await this.scanSlotBatch(startSlot, endSlot);
+        // 逐个扫描新槽位
+        let currentSlot = lastScannedSlot + 1;
+        while (currentSlot <= latestSlot && this.isScanning) {
+          try {
+            await this.scanSingleSlot(currentSlot);
+            currentSlot++;
+          } catch (error) {
+            logger.error('扫描新槽位失败', { slot: currentSlot, error });
+            // 继续扫描下一个槽位
+            currentSlot++;
+          }
+        }
+
+        logger.info('定时扫描完成', {
+          scannedSlots: newSlotsCount,
+          lastSlot: currentSlot - 1
+        });
       } else {
         logger.debug('没有新槽位');
       }
@@ -354,7 +395,7 @@ export class BlockScanner {
   }
 
   /**
-   * 获取最后扫描的槽位号
+   * 获取最后扫描的槽位号（从本地数据库读取）
    */
   private async getLastScannedSlot(): Promise<number> {
     try {
@@ -394,17 +435,6 @@ export class BlockScanner {
     }
   }
 
-  /**
-   * 手动触发扫描
-   */
-  async triggerScan(): Promise<void> {
-    if (!this.isScanning) {
-      throw new Error('扫描器未运行');
-    }
-
-    logger.info('手动触发扫描');
-    await this.scanNewSlots();
-  }
 }
 
 export const blockScanner = new BlockScanner();
