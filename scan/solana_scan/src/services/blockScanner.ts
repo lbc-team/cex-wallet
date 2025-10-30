@@ -14,6 +14,7 @@ export interface ScanProgress {
 
 export class BlockScanner {
   private isScanning: boolean = false;
+  private isScanningInterval: boolean = false; // 防止定时扫描重叠
   private intervalTimer: NodeJS.Timeout | null = null;
   private dbGatewayClient = getDbGatewayClient();
   private cachedFinalizedSlot: number = 0;
@@ -32,7 +33,6 @@ export class BlockScanner {
 
     logger.info('启动Solana区块扫描器', {
       startSlot: config.startSlot,
-      batchSize: config.scanBatchSize,
       confirmationThreshold: config.confirmationThreshold,
       useFinalizedOnly: config.useFinalizedOnly
     });
@@ -344,6 +344,12 @@ export class BlockScanner {
         return;
       }
 
+      // 如果已有扫描在进行中，跳过本次
+      if (this.isScanningInterval) {
+        logger.debug('上一次定时扫描尚未完成，跳过本次扫描');
+        return;
+      }
+
       try {
         await this.scanNewSlots();
       } catch (error) {
@@ -356,6 +362,9 @@ export class BlockScanner {
    * 扫描新槽位（定时任务，逐个槽位扫描）
    */
   private async scanNewSlots(): Promise<void> {
+    // 设置扫描标志
+    this.isScanningInterval = true;
+
     try {
       const latestSlot = await solanaClient.getLatestSlot();
       const lastScannedSlot = await this.getLastScannedSlot();
@@ -391,6 +400,9 @@ export class BlockScanner {
       }
     } catch (error) {
       logger.error('扫描新槽位失败', { error });
+    } finally {
+      // 清除扫描标志
+      this.isScanningInterval = false;
     }
   }
 

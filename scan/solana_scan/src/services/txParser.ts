@@ -81,9 +81,12 @@ export class TransactionParser {
 
     const deposits: ParsedDeposit[] = [];
 
+    // 将 blockTime 转换为 number（处理 BigInt 情况）
+    const blockTime = block.blockTime ? Number(block.blockTime) : undefined;
+
     for (const tx of block.transactions) {
       try {
-        const parsedDeposits = await this.parseTransaction(tx, slot, block.blockTime);
+        const parsedDeposits = await this.parseTransaction(tx, slot, blockTime);
         deposits.push(...parsedDeposits);
       } catch (error) {
         logger.error('解析交易失败', { slot, error });

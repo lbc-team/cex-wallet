@@ -43,7 +43,6 @@ export class ScanService {
       this.isRunning = true;
       logger.info('Solana扫描服务启动成功', {
         startSlot: config.startSlot,
-        scanBatchSize: config.scanBatchSize,
         confirmationThreshold: config.confirmationThreshold,
         scanInterval: config.scanInterval
       });
