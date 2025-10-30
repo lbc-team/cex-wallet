@@ -8,6 +8,12 @@ import {
   Transaction,
   sendAndConfirmTransaction
 } from '@solana/web3.js';
+import {
+  TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction
+} from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
 import sqlite3 from 'sqlite3';
@@ -150,8 +156,131 @@ async function transferOneSolToAll(): Promise<void> {
   console.log('\n🎉 所有转账任务完成');
 }
 
+interface TokenInfo {
+  symbol: string;
+  name: string;
+  mint: string;
+  decimals: number;
+  payerTokenAccount: string;
+}
+
+interface DeployedTokens {
+  payer: string;
+  tokens: TokenInfo[];
+}
+
+function loadDeployedTokens(): DeployedTokens {
+  const tokensPath = path.resolve(__dirname, 'deployed-tokens.json');
+  if (!fs.existsSync(tokensPath)) {
+    throw new Error(`未找到 deployed-tokens.json 文件: ${tokensPath}`);
+  }
+  const raw = fs.readFileSync(tokensPath, 'utf-8');
+  return JSON.parse(raw) as DeployedTokens;
+}
+
+async function transferTokensToAll(): Promise<void> {
+  const connection = new Connection(RPC_URL, 'processed');
+  const payer = loadPayerKeypair();
+  const deployedTokens = loadDeployedTokens();
+
+  console.log('🚀 开始批量Token转账');
+  console.log('RPC Endpoint:', RPC_URL);
+  console.log('Payer:', payer.publicKey.toBase58());
+
+  const wallets = await querySolanaWallets();
+  if (wallets.length === 0) {
+    console.log('⚠️ 未找到任何 Solana 地址，退出');
+    return;
+  }
+
+  console.log(`🎯 将向 ${wallets.length} 个地址转账 ${deployedTokens.tokens.length} 种Token`);
+
+  // 为每个token转账
+  for (const tokenInfo of deployedTokens.tokens) {
+    console.log(`\n💰 开始转账 ${tokenInfo.symbol}...`);
+    console.log(`   Token Mint: ${tokenInfo.mint}`);
+    console.log(`   Decimals: ${tokenInfo.decimals}`);
+
+    const mintPubkey = new PublicKey(tokenInfo.mint);
+    const payerTokenAccount = new PublicKey(tokenInfo.payerTokenAccount);
+
+    // 每个token转账100个（考虑decimals）
+    const transferAmount = 100 * Math.pow(10, tokenInfo.decimals);
+
+    for (const [index, address] of wallets.entries()) {
+      try {
+        const toPubkey = new PublicKey(address);
+
+        // 获取目标地址的ATA
+        const toTokenAccount = await getAssociatedTokenAddress(
+          mintPubkey,
+          toPubkey,
+          false,
+          TOKEN_PROGRAM_ID
+        );
+
+        // 检查ATA是否存在
+        const accountInfo = await connection.getAccountInfo(toTokenAccount);
+        const transaction = new Transaction();
+
+        // 如果ATA不存在，添加创建ATA的指令
+        if (!accountInfo) {
+          console.log(`   📝 [${index + 1}/${wallets.length}] 为 ${address} 创建 ${tokenInfo.symbol} ATA`);
+          transaction.add(
+            createAssociatedTokenAccountInstruction(
+              payer.publicKey,  // payer
+              toTokenAccount,   // ATA address
+              toPubkey,        // owner
+              mintPubkey,      // mint
+              TOKEN_PROGRAM_ID
+            )
+          );
+        }
+
+        // 添加转账指令
+        transaction.add(
+          createTransferInstruction(
+            payerTokenAccount,  // source
+            toTokenAccount,     // destination
+            payer.publicKey,    // owner
+            transferAmount,     // amount
+            [],                 // multi signers
+            TOKEN_PROGRAM_ID
+          )
+        );
+
+        console.log(`   🔁 [${index + 1}/${wallets.length}] 转账 ${transferAmount / Math.pow(10, tokenInfo.decimals)} ${tokenInfo.symbol} 到 ${address}`);
+        const signature = await sendTransactionWithTimeout(connection, transaction, [payer], 30000);
+        console.log(`   ✅ 成功，签名: ${signature}`);
+      } catch (error) {
+        console.error(`   ❌ 转账 ${tokenInfo.symbol} 到 ${address} 失败`, error);
+      }
+    }
+
+    console.log(`✨ ${tokenInfo.symbol} 转账完成`);
+  }
+
+  console.log('\n🎉 所有Token转账任务完成');
+}
+
+async function transferAll(): Promise<void> {
+  console.log('=' .repeat(60));
+  console.log('开始批量转账（SOL + Tokens）');
+  console.log('=' .repeat(60));
+
+  // 先转SOL
+  await transferOneSolToAll();
+
+  // 再转Tokens
+  await transferTokensToAll();
+
+  console.log('\n' + '=' .repeat(60));
+  console.log('所有转账完成！');
+  console.log('=' .repeat(60));
+}
+
 if (require.main === module) {
-  transferOneSolToAll()
+  transferAll()
     .then(() => process.exit(0))
     .catch((error) => {
       console.error('脚本执行失败:', error);
@@ -159,4 +288,4 @@ if (require.main === module) {
     });
 }
 
-export { transferOneSolToAll };
+export { transferOneSolToAll, transferTokensToAll, transferAll };
