@@ -4,16 +4,16 @@
     {
       "symbol": "USDC",
       "name": "USD Coin (Test)",
-      "mint": "99k4xe514rmja5AAzuh2RSi8Crhhu3F9qUuK6ukBPkTb",
+      "mint": "uceu8rhVR3kXjF4da7ce5nzeY9zScNx3QEJ1QNJWMPr",
       "decimals": 6,
-      "payerTokenAccount": "7tWhXRaWTLFg4x6zU2z2rSt3hk962G32qy1uNgWi5sro"
+      "payerTokenAccount": "2diHjAWMSV6TcLrHqWxmqT1pHgXEw5RWwZe44mm3xXPg"
     },
     {
       "symbol": "USDT",
       "name": "Tether USD (Test)",
-      "mint": "AgkU1L7d9v6QEcbUbHiQZ1L3MG66DxAYugbv1JxTpsm",
+      "mint": "utSi6U6UhwaArZD88AJFDUCmoxk9ojU21PzCSrRCz3B",
       "decimals": 6,
-      "payerTokenAccount": "HwKdxrSS41hmCH8siZTHpuZvbF4b6Af47uYaKuiFTvgG"
+      "payerTokenAccount": "6GtCVx1YjyYKAQrE51j5sLbER51Rmqg2x4o4f5xfCSmh"
     }
   ]
 }

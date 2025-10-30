@@ -91,8 +91,28 @@ async function ensurePayerBalance(connection: Connection, payer: Keypair, requir
   await connection.confirmTransaction(sig, 'confirmed');
 }
 
+async function sendTransactionWithTimeout(
+  connection: Connection,
+  transaction: Transaction,
+  signers: Keypair[],
+  timeoutMs: number = 30000
+): Promise<string> {
+  const promise = sendAndConfirmTransaction(connection, transaction, signers, {
+    commitment: 'processed',
+    skipPreflight: false,
+    preflightCommitment: 'processed',
+    maxRetries: 3
+  });
+
+  const timeout = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`交易超时 (${timeoutMs}ms)`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]);
+}
+
 async function transferOneSolToAll(): Promise<void> {
-  const connection = new Connection(RPC_URL, 'confirmed');
+  const connection = new Connection(RPC_URL, 'processed');
   const payer = loadPayerKeypair();
 
   console.log('🚀 开始批量转账');
@@ -120,9 +140,7 @@ async function transferOneSolToAll(): Promise<void> {
       );
 
       console.log(`🔁 [${index + 1}/${wallets.length}] 转账到 ${address}`);
-      const signature = await sendAndConfirmTransaction(connection, transaction, [payer], {
-        commitment: 'confirmed'
-      });
+      const signature = await sendTransactionWithTimeout(connection, transaction, [payer], 30000);
       console.log(`✅ 成功，签名: ${signature}`);
     } catch (error) {
       console.error(`❌ 转账到 ${address} 失败`, error);

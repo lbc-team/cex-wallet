@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { getDbGatewayClient } from '../services/dbGatewayClient';
 import { HotWalletService } from '../services/hotWalletService';
 import { getDatabase } from '../db/connection';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * 模拟插入示例数据
@@ -184,6 +186,74 @@ async function insertMockData() {
       }
     } catch (error) {
       logger.warn('创建 USDT 代币配置失败:', error);
+    }
+
+    // Solana 本地测试网络 (chain_id: 900) - 从 deployed-tokens.json 读取
+    logger.info('插入 Solana 代币配置...');
+    try {
+      const deployedTokensPath = path.join(__dirname, 'deployed-tokens.json');
+      if (fs.existsSync(deployedTokensPath)) {
+        const deployedTokens = JSON.parse(fs.readFileSync(deployedTokensPath, 'utf-8'));
+        
+        for (const token of deployedTokens.tokens) {
+          const existingToken = await dbGateway.getTokens({
+            chain_id: 900,  // Solana 本地测试网
+            token_symbol: token.symbol
+          });
+
+          if (existingToken.length === 0) {
+            await dbGateway.createToken({
+              chain_type: 'solana',
+              chain_id: 900,  // Solana 本地测试网
+              token_address: token.mint,
+              token_symbol: token.symbol,
+              token_name: token.name,
+              decimals: token.decimals,
+              is_native: false,
+              collect_amount: '1000000',  // 1 token (with 6 decimals)
+              withdraw_fee: '100000',     // 0.1 token
+              min_withdraw_amount: '1000000',  // 1 token
+              status: 1
+            });
+            logger.info(`${token.symbol} (Solana) 代币配置创建成功`);
+          } else {
+            logger.info(`${token.symbol} (Solana) 代币配置已存在`);
+          }
+        }
+      } else {
+        logger.warn('deployed-tokens.json 文件不存在，跳过 Solana 代币配置');
+      }
+    } catch (error) {
+      logger.warn('创建 Solana 代币配置失败:', error);
+    }
+
+    // 添加 Solana 原生代币 SOL
+    try {
+      const existingSOL = await dbGateway.getTokens({
+        chain_id: 900,
+        token_symbol: 'SOL'
+      });
+
+      if (existingSOL.length === 0) {
+        await dbGateway.createToken({
+          chain_type: 'solana',
+          chain_id: 900,
+          token_address: '0x0000000000000000000000000000000000000000',
+          token_symbol: 'SOL',
+          token_name: 'Solana',
+          decimals: 9,
+          is_native: true,
+          collect_amount: '100000000',  // 0.1 SOL
+          withdraw_fee: '5000000',      // 0.005 SOL
+          min_withdraw_amount: '10000000',  // 0.01 SOL
+          status: 1
+        });
+        logger.info('SOL 代币配置创建成功');
+      } else {
+        logger.info('SOL 代币配置已存在');
+      }
+    } catch (error) {
+      logger.warn('创建 SOL 代币配置失败:', error);
     }
 
     logger.info('代币配置插入完成');

@@ -54,14 +54,27 @@ async function deployTokens() {
       console.log('✅ 空投成功\n');
     }
 
+    // 加载预先生成的 mint keypairs
+    const usdcMintKeypairPath = path.join(__dirname, 'uceu8rhVR3kXjF4da7ce5nzeY9zScNx3QEJ1QNJWMPr.json');
+    const usdtMintKeypairPath = path.join(__dirname, 'utSi6U6UhwaArZD88AJFDUCmoxk9ojU21PzCSrRCz3B.json');
+    
+    const usdcMintKeypairData = JSON.parse(fs.readFileSync(usdcMintKeypairPath, 'utf-8'));
+    const usdcMintKeypair = Keypair.fromSecretKey(new Uint8Array(usdcMintKeypairData));
+    console.log('🔑 USDC Mint Keypair 加载成功:', usdcMintKeypair.publicKey.toBase58());
+    
+    const usdtMintKeypairData = JSON.parse(fs.readFileSync(usdtMintKeypairPath, 'utf-8'));
+    const usdtMintKeypair = Keypair.fromSecretKey(new Uint8Array(usdtMintKeypairData));
+    console.log('🔑 USDT Mint Keypair 加载成功:', usdtMintKeypair.publicKey.toBase58());
+
     // 部署第一个 Token (USDC)
-    console.log('📦 部署 Token 1: Mock USDC');
+    console.log('\n📦 部署 Token 1: Mock USDC');
     const usdcMint = await createMint(
       connection,
       payer,
       payer.publicKey,      // mint authority
       payer.publicKey,      // freeze authority
-      6                     // decimals (USDC 使用 6 位小数)
+      6,                    // decimals (USDC 使用 6 位小数)
+      usdcMintKeypair       // 使用指定的 mint keypair
     );
     console.log('✅ USDC Mint 地址:', usdcMint.toBase58());
 
@@ -72,7 +85,8 @@ async function deployTokens() {
       payer,
       payer.publicKey,      // mint authority
       payer.publicKey,      // freeze authority
-      6                     // decimals (USDT 使用 6 位小数)
+      6,                    // decimals (USDT 使用 6 位小数)
+      usdtMintKeypair       // 使用指定的 mint keypair
     );
     console.log('✅ USDT Mint 地址:', usdtMint.toBase58());
 
