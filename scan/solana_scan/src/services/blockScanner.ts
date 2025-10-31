@@ -133,13 +133,44 @@ export class BlockScanner {
 
   /**
    * 获取缓存的 finalized slot（每1秒更新一次）
+   * 当检测到新的 finalized slot 时，批量更新历史记录的状态
    */
   private async getCachedFinalizedSlot(): Promise<number> {
     const now = Date.now();
     // 每1秒更新一次 finalized slot
     if (now - this.lastFinalizedSlotUpdate > 1000) {
       try {
-        this.cachedFinalizedSlot = await solanaClient.getFinalizedSlot();
+        const oldFinalizedSlot = this.cachedFinalizedSlot;
+        const newFinalizedSlot = await solanaClient.getFinalizedSlot();
+
+        // 检测到新的 finalized slot
+        if (newFinalizedSlot > oldFinalizedSlot && oldFinalizedSlot > 0) {
+          logger.info('检测到新的 finalized slot，批量更新历史记录', {
+            oldFinalizedSlot,
+            newFinalizedSlot,
+            slotsToUpdate: newFinalizedSlot - oldFinalizedSlot
+          });
+
+          // 批量更新 solana_slots
+          const slotsUpdated = await this.dbGatewayClient.updateSolanaSlotStatusToFinalized(newFinalizedSlot);
+
+          // 批量更新 solana_transactions
+          const txsUpdated = await this.dbGatewayClient.updateSolanaTransactionStatusToFinalized(newFinalizedSlot);
+
+          // 批量更新 credits
+          const creditsUpdated = await this.dbGatewayClient.updateCreditStatusToFinalized(newFinalizedSlot);
+
+          if (slotsUpdated > 0 || txsUpdated > 0 || creditsUpdated > 0) {
+            logger.info('批量更新 finalized 状态完成', {
+              newFinalizedSlot,
+              slotsUpdated,
+              txsUpdated,
+              creditsUpdated
+            });
+          }
+        }
+
+        this.cachedFinalizedSlot = newFinalizedSlot;
         this.lastFinalizedSlotUpdate = now;
         logger.debug('更新 finalized slot 缓存', { finalizedSlot: this.cachedFinalizedSlot });
       } catch (error) {
@@ -203,8 +234,8 @@ export class BlockScanner {
    */
   private async processBlock(slot: number, block: any, status: string = 'confirmed'): Promise<void> {
     try {
-      // 解析区块中的交易
-      const deposits = await transactionParser.parseBlock(block, slot);
+      // 解析区块中的交易（传入状态）
+      const deposits = await transactionParser.parseBlock(block, slot, status as 'confirmed' | 'finalized');
 
       // 插入槽位记录（使用真实的状态）
       await this.dbGatewayClient.insertSolanaSlot({

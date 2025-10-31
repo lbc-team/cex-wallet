@@ -18,6 +18,7 @@ export interface ParsedDeposit {
   userId?: number;
   tokenId?: number;
   blockTime?: number;
+  status: 'confirmed' | 'finalized';
 }
 
 export class TransactionParser {
@@ -74,7 +75,7 @@ export class TransactionParser {
   /**
    * 解析区块中的交易
    */
-  async parseBlock(block: any, slot: number): Promise<ParsedDeposit[]> {
+  async parseBlock(block: any, slot: number, status: 'confirmed' | 'finalized' = 'confirmed'): Promise<ParsedDeposit[]> {
     if (!block || !block.transactions) {
       return [];
     }
@@ -86,7 +87,7 @@ export class TransactionParser {
 
     for (const tx of block.transactions) {
       try {
-        const parsedDeposits = await this.parseTransaction(tx, slot, blockTime);
+        const parsedDeposits = await this.parseTransaction(tx, slot, blockTime, status);
         deposits.push(...parsedDeposits);
       } catch (error) {
         logger.error('解析交易失败', { slot, error });
@@ -102,7 +103,8 @@ export class TransactionParser {
   private async parseTransaction(
     tx: any,
     slot: number,
-    blockTime?: number | null
+    blockTime?: number | null,
+    status: 'confirmed' | 'finalized' = 'confirmed'
   ): Promise<ParsedDeposit[]> {
     const deposits: ParsedDeposit[] = [];
 
@@ -117,7 +119,7 @@ export class TransactionParser {
     // 处理每个签名（虽然通常第一个是主签名，但我们记录所有签名）
     for (const txHash of signatures) {
       // 解析 instructions 中的转账（包括 SOL 和 SPL Token）
-      const transferDeposits = await this.parseInstructionTransfers(tx, slot, txHash, blockTime);
+      const transferDeposits = await this.parseInstructionTransfers(tx, slot, txHash, blockTime, status);
       deposits.push(...transferDeposits);
     }
 
@@ -131,7 +133,8 @@ export class TransactionParser {
     tx: any,
     slot: number,
     txHash: string,
-    blockTime?: number | null
+    blockTime?: number | null,
+    status: 'confirmed' | 'finalized' = 'confirmed'
   ): Promise<ParsedDeposit[]> {
     const deposits: ParsedDeposit[] = [];
 
@@ -142,14 +145,14 @@ export class TransactionParser {
 
       // 解析主指令
       for (const ix of instructions) {
-        const deposit = await this.parseInstruction(ix, tx, slot, txHash, blockTime);
+        const deposit = await this.parseInstruction(ix, tx, slot, txHash, blockTime, status);
         if (deposit) deposits.push(deposit);
       }
 
       // 解析内部指令
       for (const innerIx of innerInstructions) {
         for (const ix of innerIx.instructions || []) {
-          const deposit = await this.parseInstruction(ix, tx, slot, txHash, blockTime);
+          const deposit = await this.parseInstruction(ix, tx, slot, txHash, blockTime, status);
           if (deposit) deposits.push(deposit);
         }
       }
@@ -188,21 +191,22 @@ export class TransactionParser {
     tx: any,
     slot: number,
     txHash: string,
-    blockTime?: number | null
+    blockTime?: number | null,
+    status: 'confirmed' | 'finalized' = 'confirmed'
   ): Promise<ParsedDeposit | null> {
     try {
       const programId = ix.programId?.toString() || ix.program;
 
       // 检查是否是 System Program (SOL 转账)
       if (programId === SYSTEM_PROGRAM_ID) {
-        return this.parseSystemProgramInstruction(ix, slot, txHash, blockTime);
+        return this.parseSystemProgramInstruction(ix, slot, txHash, blockTime, status);
       }
 
       // 检查是否是 Token 程序 (SPL Token 转账)
       if (programId === TOKEN_PROGRAM_ID || programId === TOKEN_2022_PROGRAM_ID) {
         // 解析 parsed 指令
         if (ix.parsed) {
-          return this.parseParsedTokenInstruction(ix, programId, slot, txHash, blockTime);
+          return this.parseParsedTokenInstruction(ix, programId, slot, txHash, blockTime, status);
         }
       }
 
@@ -222,7 +226,8 @@ export class TransactionParser {
     ix: any,
     slot: number,
     txHash: string,
-    blockTime?: number | null
+    blockTime?: number | null,
+    status: 'confirmed' | 'finalized' = 'confirmed'
   ): ParsedDeposit | null {
     try {
       if (!ix.parsed) {
@@ -257,7 +262,8 @@ export class TransactionParser {
         toAddr: destination,
         amount: lamports.toString(),
         type: 'sol',
-        blockTime: blockTime || undefined
+        blockTime: blockTime || undefined,
+        status
       };
     } catch (error) {
       logger.error('解析System Program指令失败', { txHash, error });
@@ -278,7 +284,8 @@ export class TransactionParser {
     programId: string,
     slot: number,
     txHash: string,
-    blockTime?: number | null
+    blockTime?: number | null,
+    status: 'confirmed' | 'finalized' = 'confirmed'
   ): ParsedDeposit | null {
     try {
       const parsed = ix.parsed;
@@ -312,7 +319,8 @@ export class TransactionParser {
         tokenMint: mint,
         amount: amount,
         type,
-        blockTime: blockTime || undefined
+        blockTime: blockTime || undefined,
+        status
       };
     } catch (error) {
       logger.error('解析已解析Token指令失败', { txHash, error });
@@ -357,7 +365,7 @@ export class TransactionParser {
         token_mint: deposit.tokenMint || undefined,
         amount: deposit.amount,
         type: 'deposit',
-        status: 'confirmed',
+        status: deposit.status,
         block_time: deposit.blockTime
       });
 
@@ -372,7 +380,7 @@ export class TransactionParser {
         business_type: 'blockchain',
         reference_type: 'blockchain_tx',
         chain_type: 'solana',
-        status: 'confirmed',
+        status: deposit.status,
         block_number: deposit.slot,
         tx_hash: deposit.txHash,
         event_index: 0,

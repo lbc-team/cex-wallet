@@ -456,6 +456,82 @@ export class DbGatewayClient {
       return 0;
     }
   }
+
+  /**
+   * 批量更新槽位状态（从 confirmed 到 finalized）
+   */
+  async updateSolanaSlotStatusToFinalized(maxSlot: number): Promise<number> {
+    try {
+      const result = await this.executeOperation(
+        'solana_slots',
+        'update',
+        'write',
+        {
+          status: 'finalized',
+          updated_at: new Date().toISOString()
+        },
+        {
+          slot: { '<=': maxSlot },
+          status: 'confirmed'
+        }
+      );
+      return result.changes || 0;
+    } catch (error) {
+      logger.error('批量更新槽位状态失败', { maxSlot, error });
+      return 0;
+    }
+  }
+
+  /**
+   * 批量更新Solana交易状态（从 confirmed 到 finalized）
+   */
+  async updateSolanaTransactionStatusToFinalized(maxSlot: number): Promise<number> {
+    try {
+      const result = await this.executeOperation(
+        'solana_transactions',
+        'update',
+        'write',
+        {
+          status: 'finalized',
+          updated_at: new Date().toISOString()
+        },
+        {
+          slot: { '<=': maxSlot },
+          status: 'confirmed'
+        }
+      );
+      return result.changes || 0;
+    } catch (error) {
+      logger.error('批量更新Solana交易状态失败', { maxSlot, error });
+      return 0;
+    }
+  }
+
+  /**
+   * 批量更新Credit状态（从 confirmed 到 finalized）
+   */
+  async updateCreditStatusToFinalized(maxSlot: number): Promise<number> {
+    try {
+      const result = await this.executeOperation(
+        'credits',
+        'update',
+        'sensitive',
+        {
+          status: 'finalized',
+          updated_at: new Date().toISOString()
+        },
+        {
+          block_number: { '<=': maxSlot },
+          status: 'confirmed',
+          chain_type: 'solana'
+        }
+      );
+      return result.changes || 0;
+    } catch (error) {
+      logger.error('批量更新Credit状态失败', { maxSlot, error });
+      return 0;
+    }
+  }
 }
 
 // 单例实例
