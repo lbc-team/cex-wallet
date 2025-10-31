@@ -61,10 +61,15 @@ export class TransactionParser {
       this.lastTokenUpdate = Date.now();
       this.lastATAUpdate = Date.now();
 
+      // 打印前3条ATA映射用于调试
+      const ataEntries = Array.from(this.ataToWalletMap.entries()).slice(0, 3);
+
       logger.info('缓存刷新完成', {
         addressCount: this.monitoredAddresses.size,
         tokenCount: this.tokenMintMap.size,
-        ataCount: this.ataToWalletMap.size
+        ataCount: this.ataToWalletMap.size,
+        sampleATAMappings: ataEntries.map(([ata, wallet]) => ({ ata, wallet })),
+        sampleAddresses: Array.from(this.monitoredAddresses).slice(0, 3)
       });
     } catch (error) {
       logger.error('刷新缓存失败', { error });
@@ -85,13 +90,27 @@ export class TransactionParser {
     // 将 blockTime 转换为 number（处理 BigInt 情况）
     const blockTime = block.blockTime ? Number(block.blockTime) : undefined;
 
+    logger.debug(`解析区块 ${slot}，交易数量: ${block.transactions.length}`);
+
     for (const tx of block.transactions) {
       try {
         const parsedDeposits = await this.parseTransaction(tx, slot, blockTime, status);
+        if (parsedDeposits.length > 0) {
+          logger.debug(`槽位 ${slot} 发现 ${parsedDeposits.length} 笔存款`, {
+            types: parsedDeposits.map(d => d.type)
+          });
+        }
         deposits.push(...parsedDeposits);
       } catch (error) {
         logger.error('解析交易失败', { slot, error });
       }
+    }
+
+    if (deposits.length > 0) {
+      logger.info(`槽位 ${slot} 共解析出 ${deposits.length} 笔存款`, {
+        solCount: deposits.filter(d => d.type === 'sol').length,
+        tokenCount: deposits.filter(d => d.type !== 'sol').length
+      });
     }
 
     return deposits;
@@ -157,30 +176,51 @@ export class TransactionParser {
         }
       }
 
-      // 对于 Token 转账，使用 ATA 映射匹配钱包地址
-      deposits.forEach(deposit => {
+      // 对于 Token 转账，使用 ATA 映射匹配钱包地址，并过滤掉不在监控列表中的地址
+      const filteredDeposits: ParsedDeposit[] = [];
+      for (const deposit of deposits) {
         if (deposit.type !== 'sol') {
-          // 从 ATA 映射中查找对应的钱包地址
-          const walletAddress = this.ataToWalletMap.get(deposit.toAddr.toLowerCase());
+          // Token 转账：需要将 ATA 地址映射到钱包地址
+          const ataAddress = deposit.toAddr.toLowerCase();
+          const walletAddress = this.ataToWalletMap.get(ataAddress);
+
           if (walletAddress) {
-            logger.debug('通过ATA映射找到钱包地址', {
-              ataAddress: deposit.toAddr,
-              walletAddress: walletAddress
-            });
-            deposit.toAddr = walletAddress;
+            // 检查钱包地址是否在监控列表中
+            if (this.monitoredAddresses.has(walletAddress.toLowerCase())) {
+              deposit.toAddr = walletAddress;
+              filteredDeposits.push(deposit);
+              logger.info('✅ Token转账：匹配成功', {
+                ataAddress,
+                walletAddress: walletAddress,
+                tokenMint: deposit.tokenMint,
+                amount: deposit.amount,
+                txHash: txHash
+              });
+            } else {
+              logger.info('⚠️  Token转账：钱包不在监控列表', {
+                ataAddress,
+                walletAddress,
+                txHash: txHash
+              });
+            }
           } else {
-            logger.warn('未在ATA映射中找到钱包地址', {
-              ataAddress: deposit.toAddr,
+            logger.info('⚠️  Token转账：ATA未映射', {
+              ataAddress,
+              ataMapSize: this.ataToWalletMap.size,
               txHash: txHash
             });
           }
+        } else {
+          // SOL 转账：直接添加（已在 parseSystemProgramInstruction 中过滤）
+          filteredDeposits.push(deposit);
         }
-      });
+      }
+
+      return filteredDeposits;
     } catch (error) {
       logger.error('解析转账失败', { txHash, error });
+      return [];
     }
-
-    return deposits;
   }
 
   /**
@@ -310,6 +350,15 @@ export class TransactionParser {
       const mint = info.mint;
 
       const type = programId === TOKEN_2022_PROGRAM_ID ? 'spl-token-2022' : 'spl-token';
+
+      logger.info('🔍 检测到Token转账指令', {
+        type: parsed.type,
+        ataAddress: destination,
+        tokenMint: mint,
+        amount,
+        programId,
+        txHash
+      });
 
       return {
         txHash,
