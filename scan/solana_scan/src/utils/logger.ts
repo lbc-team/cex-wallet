@@ -1,6 +1,24 @@
 import winston from 'winston';
 import config from '../config';
 
+// BigInt 序列化辅助函数
+function bigIntReplacer(key: string, value: any): any {
+  if (typeof value === 'bigint') {
+    return value.toString() + 'n';
+  }
+  return value;
+}
+
+// 安全的 JSON 序列化函数，支持 BigInt
+function safeStringify(obj: any, space?: number): string {
+  try {
+    return JSON.stringify(obj, bigIntReplacer, space);
+  } catch (error) {
+    // 如果还是失败，返回简化的错误信息
+    return JSON.stringify({ error: 'Failed to stringify object', type: typeof obj }, null, space);
+  }
+}
+
 // 定义日志格式
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -25,7 +43,7 @@ const consoleFormat = winston.format.combine(
         }, {});
 
       if (Object.keys(filteredMeta).length > 0) {
-        metaStr = '\n' + JSON.stringify(filteredMeta, null, 2);
+        metaStr = '\n' + safeStringify(filteredMeta, 2);
       }
     }
     return `${timestamp} [${level}]: ${message}${metaStr}`;

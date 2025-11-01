@@ -178,6 +178,7 @@ export class TransactionParser {
 
       // 对于 Token 转账，使用 ATA 映射匹配钱包地址，并过滤掉不在监控列表中的地址
       const filteredDeposits: ParsedDeposit[] = [];
+
       for (const deposit of deposits) {
         if (deposit.type !== 'sol') {
           // Token 转账：需要将 ATA 地址映射到钱包地址
@@ -189,25 +190,22 @@ export class TransactionParser {
             if (this.monitoredAddresses.has(walletAddress.toLowerCase())) {
               deposit.toAddr = walletAddress;
               filteredDeposits.push(deposit);
-              logger.info('✅ Token转账：匹配成功', {
-                ataAddress,
-                walletAddress: walletAddress,
-                tokenMint: deposit.tokenMint,
-                amount: deposit.amount,
-                txHash: txHash
-              });
-            } else {
-              logger.info('⚠️  Token转账：钱包不在监控列表', {
+              logger.debug('Token转账匹配成功', {
                 ataAddress,
                 walletAddress,
-                txHash: txHash
+                tokenMint: deposit.tokenMint,
+                amount: deposit.amount
+              });
+            } else {
+              logger.debug('Token转账钱包不在监控列表', {
+                ataAddress,
+                walletAddress
               });
             }
           } else {
-            logger.info('⚠️  Token转账：ATA未映射', {
+            logger.debug('Token转账ATA未映射', {
               ataAddress,
-              ataMapSize: this.ataToWalletMap.size,
-              txHash: txHash
+              ataMapSize: this.ataToWalletMap.size
             });
           }
         } else {
@@ -246,7 +244,7 @@ export class TransactionParser {
       if (programId === TOKEN_PROGRAM_ID || programId === TOKEN_2022_PROGRAM_ID) {
         // 解析 parsed 指令
         if (ix.parsed) {
-          return this.parseParsedTokenInstruction(ix, programId, slot, txHash, blockTime, status);
+          return this.parseParsedTokenInstruction(ix, programId, tx, slot, txHash, blockTime, status);
         }
       }
 
@@ -312,6 +310,74 @@ export class TransactionParser {
   }
 
   /**
+   * 从交易的 Token Balances 中提取指定账户的 mint 地址
+   *
+   * 背景：SPL Token 的 transfer 指令不包含 mint 参数（只有 transferChecked 包含）
+   * 原因：
+   *   1. 向后兼容性 - transfer 是最早的指令
+   *   2. 性能优化 - 不需要额外验证 mint
+   *   3. Token Account 本身已包含 mint 信息
+   *
+   * 解决方案：从交易的 postTokenBalances/preTokenBalances 中提取
+   * 这些字段包含了交易中所有 Token Account 的状态，包括 mint 地址
+   */
+  private extractMintFromTokenBalances(tx: any, accountAddress: string): string | undefined {
+    try {
+      // 获取交易中所有涉及的账户地址
+      const accountKeys = tx.transaction?.message?.accountKeys || [];
+
+      // 找到目标账户的索引
+      let accountIndex = -1;
+      for (let i = 0; i < accountKeys.length; i++) {
+        const key = accountKeys[i];
+        const pubkeyStr = typeof key === 'string' ? key : key.pubkey?.toString() || key.toString();
+        if (pubkeyStr === accountAddress) {
+          accountIndex = i;
+          break;
+        }
+      }
+
+      if (accountIndex === -1) {
+        logger.debug('在交易账户列表中未找到目标地址', { accountAddress });
+        return undefined;
+      }
+
+      // 从 postTokenBalances 中查找该账户的 mint
+      const postBalances = tx.meta?.postTokenBalances || [];
+      for (const balance of postBalances) {
+        if (balance.accountIndex === accountIndex && balance.mint) {
+          logger.debug('从 postTokenBalances 提取到 mint', {
+            accountAddress,
+            mint: balance.mint
+          });
+          return balance.mint;
+        }
+      }
+
+      // 如果 postTokenBalances 中没有，尝试 preTokenBalances
+      const preBalances = tx.meta?.preTokenBalances || [];
+      for (const balance of preBalances) {
+        if (balance.accountIndex === accountIndex && balance.mint) {
+          logger.debug('从 preTokenBalances 提取到 mint', {
+            accountAddress,
+            mint: balance.mint
+          });
+          return balance.mint;
+        }
+      }
+
+      logger.debug('在 Token Balances 中未找到 mint', { accountAddress });
+      return undefined;
+    } catch (error) {
+      logger.error('从 Token Balances 提取 mint 失败', {
+        accountAddress,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    }
+  }
+
+  /**
    * 解析已解析的 Token 指令
    * Program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA (SPL Token)
    * Program: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb (SPL Token 2022)
@@ -322,6 +388,7 @@ export class TransactionParser {
   private parseParsedTokenInstruction(
     ix: any,
     programId: string,
+    tx: any,
     slot: number,
     txHash: string,
     blockTime?: number | null,
@@ -343,22 +410,25 @@ export class TransactionParser {
         return null;
       }
 
-      // Token 转账的 destination 是 Token Account，不是钱包地址
-      // 但 destination 的所有者需要从数据库中获取
-
       // 获取 mint 地址
-      const mint = info.mint;
+      // transferChecked 指令包含 mint，但 transfer 指令不包含
+      // 对于 transfer 指令，需要从 tx.meta.postTokenBalances 中提取
+      let mint = info.mint;
+
+      if (!mint) {
+        // 尝试从 Token Balances 中提取 mint
+        mint = this.extractMintFromTokenBalances(tx, destination);
+      }
 
       const type = programId === TOKEN_2022_PROGRAM_ID ? 'spl-token-2022' : 'spl-token';
 
-      logger.info('🔍 检测到Token转账指令', {
-        type: parsed.type,
-        ataAddress: destination,
-        tokenMint: mint,
-        amount,
-        programId,
-        txHash
-      });
+      if (!mint) {
+        logger.warn('Token转账指令缺少 mint 地址', {
+          txHash,
+          destination,
+          type: parsed.type
+        });
+      }
 
       return {
         txHash,
@@ -372,7 +442,7 @@ export class TransactionParser {
         status
       };
     } catch (error) {
-      logger.error('解析已解析Token指令失败', { txHash, error });
+      logger.error('解析Token指令失败', { txHash, error });
       return null;
     }
   }
@@ -385,7 +455,10 @@ export class TransactionParser {
       // 获取钱包信息
       const wallet = await walletDAO.getWalletByAddress(deposit.toAddr);
       if (!wallet) {
-        logger.warn('未找到钱包信息', { address: deposit.toAddr });
+        logger.error('未找到钱包信息', {
+          address: deposit.toAddr,
+          txHash: deposit.txHash
+        });
         return false;
       }
 
@@ -398,9 +471,10 @@ export class TransactionParser {
       }
 
       if (!token) {
-        logger.warn('未找到代币信息', {
+        logger.error('未找到代币信息', {
           type: deposit.type,
-          mint: deposit.tokenMint
+          mint: deposit.tokenMint,
+          txHash: deposit.txHash
         });
         return false;
       }
@@ -439,12 +513,13 @@ export class TransactionParser {
         }
       });
 
-      logger.info('处理存款成功', {
+      logger.info('存款处理完成', {
         txHash: deposit.txHash,
         slot: deposit.slot,
         address: deposit.toAddr,
         amount: deposit.amount,
-        type: deposit.type
+        type: deposit.type,
+        tokenSymbol: token.token_symbol
       });
 
       return true;
@@ -453,7 +528,13 @@ export class TransactionParser {
         logger.debug('存款记录已存在', { txHash: deposit.txHash });
         return true;
       }
-      logger.error('处理存款失败', { deposit, error });
+      logger.error('处理存款失败', {
+        txHash: deposit.txHash,
+        toAddr: deposit.toAddr,
+        type: deposit.type,
+        tokenMint: deposit.tokenMint,
+        error: error.message
+      });
       return false;
     }
   }

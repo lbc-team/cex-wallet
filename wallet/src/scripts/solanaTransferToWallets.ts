@@ -204,8 +204,8 @@ async function transferTokensToAll(): Promise<void> {
     const mintPubkey = new PublicKey(tokenInfo.mint);
     const payerTokenAccount = new PublicKey(tokenInfo.payerTokenAccount);
 
-    // 每个token转账100个（考虑decimals）
-    const transferAmount = 100 * Math.pow(10, tokenInfo.decimals);
+    // 每个token转账25个（考虑decimals）
+    const transferAmount = 25 * Math.pow(10, tokenInfo.decimals);
 
     for (const [index, address] of wallets.entries()) {
       try {

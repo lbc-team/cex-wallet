@@ -247,8 +247,31 @@ export class BlockScanner {
       });
 
       // 处理检测到的存款
+      let successCount = 0;
+      let failureCount = 0;
+
       for (const deposit of deposits) {
-        await transactionParser.processDeposit(deposit);
+        const success = await transactionParser.processDeposit(deposit);
+        if (success) {
+          successCount++;
+        } else {
+          failureCount++;
+          logger.error('存款处理失败', {
+            slot,
+            txHash: deposit.txHash,
+            toAddr: deposit.toAddr,
+            type: deposit.type
+          });
+        }
+      }
+
+      if (deposits.length > 0) {
+        logger.info('槽位存款处理汇总', {
+          slot,
+          totalDeposits: deposits.length,
+          successCount,
+          failureCount
+        });
       }
 
       logger.debug('槽位处理完成', {
