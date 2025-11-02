@@ -14,12 +14,7 @@ export interface Config {
   // 扫描配置
   startSlot: number;
   confirmationThreshold: number;
-  reorgCheckDepth: number;
   scanInterval: number;
-  maxConcurrentRequests: number;
-
-  // 终结性配置
-  useFinalizedOnly: boolean;
 
   // 服务配置
   logLevel: string;
@@ -36,12 +31,7 @@ const config: Config = {
   // 扫描配置
   startSlot: parseInt(process.env.START_SLOT || '0'),
   confirmationThreshold: parseInt(process.env.CONFIRMATION_THRESHOLD || '32'),
-  reorgCheckDepth: parseInt(process.env.REORG_CHECK_DEPTH || '64'),
   scanInterval: parseInt(process.env.SCAN_INTERVAL || '2'),
-  maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '5'),
-
-  // 终结性配置
-  useFinalizedOnly: process.env.USE_FINALIZED_ONLY === 'true',
 
   // 服务配置
   logLevel: process.env.LOG_LEVEL || 'info'

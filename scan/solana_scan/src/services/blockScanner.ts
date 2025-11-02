@@ -34,7 +34,6 @@ export class BlockScanner {
     logger.info('启动Solana区块扫描器', {
       startSlot: config.startSlot,
       confirmationThreshold: config.confirmationThreshold,
-      useFinalizedOnly: config.useFinalizedOnly
     });
 
     try {
