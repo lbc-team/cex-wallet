@@ -7,6 +7,7 @@ import { getDbGatewayClient } from './dbGatewayClient';
 import { normalizeBigIntString, isBigIntStringGreaterOrEqual } from '../utils/numberUtils';
 import { chainConfigManager, SupportedChain } from '../utils/chains';
 import { type TransactionReceipt } from 'viem';
+import { getAssociatedTokenAddress } from '../utils/solana';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
@@ -146,8 +147,8 @@ export class WalletBusinessService {
     error?: string;
   }> {
     try {
-      // 首先检查用户是否已有钱包
-      const existingWallet = await this.dbReader.wallets.findByUserId(userId);
+      // 首先检查用户是否已有该链类型的钱包
+      const existingWallet = await this.dbReader.wallets.findByUserIdAndChainType(userId, chainType);
       if (existingWallet) {
         const responseData = {
           id: existingWallet.id,
@@ -188,7 +189,7 @@ export class WalletBusinessService {
         };
       }
 
-      
+
       // 通过 db_gateway 服务创建钱包
       const wallet = await this.dbGatewayClient.createWallet({
         user_id: userId,
@@ -198,7 +199,62 @@ export class WalletBusinessService {
         path: walletData.path,
         wallet_type: 'user'
       });
-      
+
+      // 如果是 Solana 钱包，为所有 Solana 代币生成并保存 ATA
+      if (chainType === 'solana') {
+        try {
+          console.log('🔗 为 Solana 钱包生成 ATA...');
+
+          // 获取所有 Solana 代币
+          const solanaTokens = await this.dbReader.getConnection().findAllTokensByChain('solana');
+          console.log(`📋 找到 ${solanaTokens.length} 个 Solana 代币`);
+
+          // 批量生成并保存 ATA
+          for (const token of solanaTokens) {
+            // 跳过原生代币 SOL：
+            // - token_address 为 null/undefined/空字符串
+            // - token_address 为零地址（0x0000...或全0地址）
+            // - is_native 为 true
+            if (
+              !token.token_address ||
+              token.token_address.trim() === '' ||
+              token.token_address === '0x0000000000000000000000000000000000000000' ||
+              /^0x0+$/.test(token.token_address) ||
+              token.is_native === true
+            ) {
+              console.log(`⏭️  跳过原生代币 ${token.token_symbol}`);
+              continue;
+            }
+
+            try {
+              const ataAddress = await getAssociatedTokenAddress(
+                walletData.address,
+                token.token_address
+              );
+
+              // 通过 db_gateway 保存 ATA 记录
+              await this.dbGatewayClient.insertData('solana_token_accounts', {
+                user_id: userId,
+                wallet_id: wallet.id,
+                wallet_address: walletData.address,
+                token_mint: token.token_address,
+                ata_address: ataAddress
+              });
+
+              console.log(`✅ 保存 ATA: ${token.token_symbol} -> ${ataAddress.substring(0, 8)}...`);
+            } catch (error) {
+              console.error(`❌ 为代币 ${token.token_symbol} 生成 ATA 失败:`, error);
+              // 继续处理其他代币
+            }
+          }
+
+          console.log('✅ Solana ATA 生成完成');
+        } catch (error) {
+          console.error('❌ 生成 Solana ATA 失败:', error);
+          // 不影响钱包创建流程
+        }
+      }
+
       // 返回给前端的数据，移除 device 字段
       const responseData = {
         id: wallet.id,
@@ -210,7 +266,7 @@ export class WalletBusinessService {
         created_at: wallet.created_at,
         updated_at: wallet.updated_at
       };
-      
+
       return {
         success: true,
         data: responseData

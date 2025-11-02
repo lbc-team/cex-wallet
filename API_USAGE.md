@@ -4,7 +4,8 @@
 
 - **Wallet**: `http://localhost:3000`
 - **Signer**: `http://localhost:3001`
-- **Scan**: `http://localhost:3002`
+- **Scan**: 
+  - evm scan: `http://localhost:3002`
 - **DB Gateway**: `http://localhost:3003`
 - **Risk Control**: `http://localhost:3004`
 

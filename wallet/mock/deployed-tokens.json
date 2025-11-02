@@ -1,0 +1,19 @@
+{
+  "payer": "6oLiQn73H8EWnbo5sSuFx1V4KNAasBgFP39puLR9Emaw",
+  "tokens": [
+    {
+      "symbol": "USDC",
+      "name": "USD Coin (Test)",
+      "mint": "uceu8rhVR3kXjF4da7ce5nzeY9zScNx3QEJ1QNJWMPr",
+      "decimals": 6,
+      "payerTokenAccount": "2diHjAWMSV6TcLrHqWxmqT1pHgXEw5RWwZe44mm3xXPg"
+    },
+    {
+      "symbol": "USDT",
+      "name": "Tether USD (Test)",
+      "mint": "utSi6U6UhwaArZD88AJFDUCmoxk9ojU21PzCSrRCz3B",
+      "decimals": 6,
+      "payerTokenAccount": "6GtCVx1YjyYKAQrE51j5sLbER51Rmqg2x4o4f5xfCSmh"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+solana-test-validator --ticks-per-slot 320

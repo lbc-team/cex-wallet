@@ -28,6 +28,18 @@ export interface UpdateWalletRequest {
   balance?: number;
 }
 
+// Solana ATA 账户接口
+export interface SolanaTokenAccount {
+  id?: number;
+  user_id: number;
+  wallet_id: number;
+  wallet_address: string;
+  token_mint: string;
+  ata_address: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // 钱包数据模型类
 export class WalletModel {
   private db: DatabaseConnection;
@@ -60,6 +72,15 @@ export class WalletModel {
     const wallet = await this.db.queryOne<Wallet>(
       'SELECT * FROM wallets WHERE user_id = ?',
       [userId]
+    );
+    return wallet || null;
+  }
+
+  // 根据用户ID和链类型查找钱包
+  async findByUserIdAndChainType(userId: number, chainType: 'evm' | 'btc' | 'solana'): Promise<Wallet | null> {
+    const wallet = await this.db.queryOne<Wallet>(
+      'SELECT * FROM wallets WHERE user_id = ? AND chain_type = ?',
+      [userId, chainType]
     );
     return wallet || null;
   }
@@ -133,5 +154,53 @@ export class WalletModel {
     return await this.db.query<Wallet>(
       'SELECT id, address, device, path, chain_type, created_at, updated_at FROM wallets ORDER BY created_at DESC'
     );
+  }
+
+  // 获取所有 Solana ATA 账户
+  async getAllSolanaTokenAccounts(): Promise<SolanaTokenAccount[]> {
+    return await this.db.query<SolanaTokenAccount>(
+      'SELECT * FROM solana_token_accounts ORDER BY created_at DESC'
+    );
+  }
+
+  // 根据钱包地址获取 ATA 账户
+  async getSolanaTokenAccountsByWallet(walletAddress: string): Promise<SolanaTokenAccount[]> {
+    return await this.db.query<SolanaTokenAccount>(
+      'SELECT * FROM solana_token_accounts WHERE wallet_address = ?',
+      [walletAddress]
+    );
+  }
+
+  // 根据用户ID获取 ATA 账户
+  async getSolanaTokenAccountsByUserId(userId: number): Promise<SolanaTokenAccount[]> {
+    return await this.db.query<SolanaTokenAccount>(
+      'SELECT * FROM solana_token_accounts WHERE user_id = ?',
+      [userId]
+    );
+  }
+
+  // 获取 ATA 账户统计信息
+  async getSolanaTokenAccountsStats(): Promise<{
+    totalAccounts: number;
+    uniqueWallets: number;
+    uniqueTokens: number;
+  }> {
+    const result = await this.db.queryOne<{
+      totalAccounts: number;
+      uniqueWallets: number;
+      uniqueTokens: number;
+    }>(`
+      SELECT
+        COUNT(*) as totalAccounts,
+        COUNT(DISTINCT wallet_address) as uniqueWallets,
+        COUNT(DISTINCT token_mint) as uniqueTokens
+      FROM solana_token_accounts
+    `);
+
+    return result || {
+      totalAccounts: 0,
+      uniqueWallets: 0,
+      uniqueTokens: 0
+    };
   }
 }

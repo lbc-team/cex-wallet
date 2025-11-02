@@ -16,4 +16,5 @@ rm -rf scan/logs
 rm -rf db_gateway/logs
 rm -rf risk_control/logs
 
+rm -rf test-ledger
 

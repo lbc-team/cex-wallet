@@ -806,6 +806,29 @@ export class DbGatewayClient {
     }
   }
 
+  /**
+   * 通用插入数据方法
+   */
+  async insertData(table: string, data: any): Promise<number> {
+    try {
+      const result = await this.executeOperation(table, 'insert', 'write', data);
+      return result.lastID;
+    } catch (error) {
+      throw new Error(`插入数据到${table}失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  /**
+   * 通用查询数据方法
+   */
+  async queryData(table: string, conditions?: any): Promise<any[]> {
+    try {
+      const result = await this.executeOperation(table, 'select', 'read', undefined, conditions);
+      return result || [];
+    } catch (error) {
+      throw new Error(`查询${table}失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
 
 }
 

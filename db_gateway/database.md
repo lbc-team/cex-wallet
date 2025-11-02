@@ -146,7 +146,7 @@ node dist/scripts/createTables.js
 | id | INTEGER | 主键  |
 | chain_type | TEXT | 链类型：eth/btc/sol/polygon/bsc 等 |
 | chain_id | INTEGER | 链ID：1(以太坊主网)/5(Goerli)/137(Polygon)/56(BSC) 等 |
-| token_address | TEXT | 代币合约地址（原生代币为空） |
+| token_address | TEXT | 代币合约地址（原生代币为空）， 如果是Solana 则是 mint account  |
 | token_symbol | TEXT | 代币符号：USDC/ETH/BTC/SOL 等 |
 | token_name | TEXT | 代币全名：USD Coin/Ethereum/Bitcoin 等 |
 | decimals | INTEGER | 代币精度（小数位数） |
@@ -271,5 +271,115 @@ user_withdraw_request → risk_reviewing → signing → pending → processing 
    - 一条提现记录对应一条扣除的 credit 记录
 
 ### 余额聚合视图用户代币总余额 （[v_user_token_totals](./src/db/connection.ts)）
+
+
+## Solana 扫描模块相关表
+
+Solana 区块链因其独特的架构（槽位系统、ATA 账户等），使用的表结构有所不一样。
+
+### Solana 槽位表 (solana_slots)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| slot | INTEGER | 主键，Solana 槽位号 |
+| block_hash | TEXT | 区块哈希 |
+| parent_slot | INTEGER | 父槽位号 |
+| block_time | INTEGER | 区块时间戳 |
+| status | TEXT | 槽位状态：confirmed/finalized/skipped |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+**索引**:
+- `idx_solana_slots_slot` - 槽位号索引
+- `idx_solana_slots_status` - 状态索引
+- `idx_solana_slots_parent` - 父槽位索引
+
+**状态说明**:
+- `confirmed`: 已确认的槽位，但还未达到 finalized 确认数（约32个槽位）
+- `finalized`: 已达到 finalized 确认数，不会回滚
+- `skipped`: 链上没有区块的槽位（空槽）
+
+
+### Solana 交易表 (solana_transactions)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键，自增 |
+| slot | INTEGER | 槽位号 |
+| tx_hash | TEXT | 交易签名（唯一） |
+| from_addr | TEXT | 发起地址 |
+| to_addr | TEXT | 接收地址 |
+| token_mint | TEXT | SPL Token Mint 地址（NULL 表示 SOL） |
+| amount | TEXT | 交易金额（最小单位存储） |
+| type | TEXT | 交易类型：deposit/withdraw/collect/rebalance |
+| status | TEXT | 交易状态：confirmed/finalized/failed |
+| block_time | INTEGER | 区块时间戳 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+**约束**:
+- `UNIQUE(tx_hash)` - 交易签名唯一约束
+
+**索引**:
+- `idx_solana_transactions_slot` - 槽位号索引
+- `idx_solana_transactions_tx_hash` - 交易哈希索引
+- `idx_solana_transactions_to_addr` - 接收地址索引
+- `idx_solana_transactions_status` - 状态索引
+
+**说明**:
+- Solana 交易使用独立的表，与 EVM 链的 `transactions` 表分离
+- `token_mint` 为 `NULL` 或空表示 SOL 原生代币转账
+- 金额以最小单位存储（SOL: lamports = 10^-9，SPL Token: 根据 decimals）
+
+### Solana Token 账户表 (solana_token_accounts)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键，自增 |
+| user_id | INTEGER | 用户ID（冗余字段，便于查询） |
+| wallet_id | INTEGER | 关联的钱包ID |
+| wallet_address | TEXT | 钱包地址（owner地址） |
+| token_mint | TEXT | SPL Token Mint 地址 |
+| ata_address | TEXT | ATA (Associated Token Account) 地址 |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+**约束**:
+- `UNIQUE(wallet_address, token_mint)` - 每个钱包+代币组合唯一
+- `FOREIGN KEY (user_id)` - 关联 users 表
+- `FOREIGN KEY (wallet_id)` - 关联 wallets 表
+
+**索引**:
+- `idx_solana_token_accounts_ata` - ATA 地址索引
+- `idx_solana_token_accounts_wallet` - 钱包地址索引
+- `idx_solana_token_accounts_wallet_token` - 钱包地址+代币组合索引
+- `idx_solana_token_accounts_wallet_id` - 钱包ID索引
+- `idx_solana_token_accounts_user_id` - 用户ID索引
+
+**用途**:
+- 存储 Solana 钱包的 Associated Token Account (ATA) 地址映射
+- SPL Token 转账的目标是 ATA 地址，而非钱包地址
+- 扫描器通过此表将 ATA 地址映射回钱包地址，以识别用户存款
+
+**ATA 说明**:
+- 每个 Solana 钱包（owner）对每种 SPL Token 都有唯一的 ATA 地址
+- ATA 地址是通过 owner 地址和 token mint 地址派生的确定性地址
+- 接收 SPL Token 转账时，转账目标是 ATA 地址，不是钱包地址
+- 创建用户 Solana 钱包时，系统会自动为所有支持的 SPL Token 创建 ATA 记录
+
+**示例**:
+```sql
+-- 查询某用户的所有 Solana Token 账户
+SELECT
+  sta.wallet_address,
+  sta.ata_address,
+  t.token_symbol,
+  t.token_name
+FROM solana_token_accounts sta
+JOIN tokens t ON t.token_address = sta.token_mint
+WHERE sta.user_id = 1;
+
+-- 根据 ATA 地址查找对应的钱包地址
+SELECT wallet_address
+FROM solana_token_accounts
+WHERE ata_address = 'ATA_ADDRESS_HERE';
+```
 
 
