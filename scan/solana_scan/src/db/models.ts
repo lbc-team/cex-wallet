@@ -290,6 +290,25 @@ export class SolanaTokenAccountDAO {
       throw error;
     }
   }
+
+  /**
+   * 获取ATA到Token Mint的映射
+   */
+  async getATAToMintMap(): Promise<Map<string, string>> {
+    try {
+      const rows = await database.all(
+        'SELECT ata_address, token_mint FROM solana_token_accounts'
+      );
+      const map = new Map<string, string>();
+      for (const row of rows) {
+        map.set(row.ata_address.toLowerCase(), row.token_mint);
+      }
+      return map;
+    } catch (error) {
+      logger.error('获取ATA到Mint映射失败', { error });
+      throw error;
+    }
+  }
 }
 
 // 导出DAO实例

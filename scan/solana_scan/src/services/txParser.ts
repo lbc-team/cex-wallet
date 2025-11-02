@@ -26,6 +26,7 @@ export class TransactionParser {
   private monitoredAddresses: Set<string> = new Set();
   private tokenMintMap: Map<string, any> = new Map();
   private ataToWalletMap: Map<string, string> = new Map(); // ATA地址 -> 钱包地址映射
+  private ataToMintMap: Map<string, string> = new Map(); // ATA地址 -> Mint地址映射
   private lastAddressUpdate: number = 0;
   private lastTokenUpdate: number = 0;
   private lastATAUpdate: number = 0;
@@ -57,6 +58,9 @@ export class TransactionParser {
       // 获取ATA到钱包地址的映射
       this.ataToWalletMap = await solanaTokenAccountDAO.getATAToWalletMap();
 
+      // 获取ATA到Mint地址的映射
+      this.ataToMintMap = await solanaTokenAccountDAO.getATAToMintMap();
+
       this.lastAddressUpdate = Date.now();
       this.lastTokenUpdate = Date.now();
       this.lastATAUpdate = Date.now();
@@ -68,6 +72,7 @@ export class TransactionParser {
         addressCount: this.monitoredAddresses.size,
         tokenCount: this.tokenMintMap.size,
         ataCount: this.ataToWalletMap.size,
+        ataMintCount: this.ataToMintMap.size,
         sampleATAMappings: ataEntries.map(([ata, wallet]) => ({ ata, wallet })),
         sampleAddresses: Array.from(this.monitoredAddresses).slice(0, 3)
       });
@@ -410,14 +415,25 @@ export class TransactionParser {
         return null;
       }
 
-      // 获取 mint 地址
-      // transferChecked 指令包含 mint，但 transfer 指令不包含
-      // 对于 transfer 指令，需要从 tx.meta.postTokenBalances 中提取
+      // 获取 mint 地址（优先级从高到低）
+      // 1. transferChecked 指令的 info.mint（最直接）
+      // 2. 从数据库缓存的 ataToMintMap 获取（性能最好，推荐）
+      // 3. 从交易的 postTokenBalances 提取（fallback，适用于新创建的ATA）
       let mint = info.mint;
 
       if (!mint) {
-        // 尝试从 Token Balances 中提取 mint
-        mint = this.extractMintFromTokenBalances(tx, destination);
+        // 优先从缓存获取（O(1) 查询，性能最优）
+        const ataLower = destination.toLowerCase();
+        mint = this.ataToMintMap.get(ataLower);
+
+        if (!mint) {
+          // 缓存未命中，从交易 Token Balances 提取（适用于新创建的ATA）
+          mint = this.extractMintFromTokenBalances(tx, destination);
+          logger.debug('从Token Balances提取mint（新ATA）', {
+            destination,
+            mint: mint || 'NOT_FOUND'
+          });
+        }
       }
 
       const type = programId === TOKEN_2022_PROGRAM_ID ? 'spl-token-2022' : 'spl-token';
@@ -547,6 +563,7 @@ export class TransactionParser {
       monitoredAddressCount: this.monitoredAddresses.size,
       supportedTokenCount: this.tokenMintMap.size,
       ataCount: this.ataToWalletMap.size,
+      ataMintCount: this.ataToMintMap.size,
       lastAddressUpdate: this.lastAddressUpdate,
       lastTokenUpdate: this.lastTokenUpdate,
       lastATAUpdate: this.lastATAUpdate
