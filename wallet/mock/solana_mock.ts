@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { getDbGatewayClient } from '../services/dbGatewayClient';
+import { getDbGatewayClient } from '../src/services/dbGatewayClient';
 import * as fs from 'fs';
 import * as path from 'path';
 

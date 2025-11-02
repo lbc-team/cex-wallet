@@ -5,7 +5,7 @@ Solana区块链扫描器 - CEX钱包系统
 ## 功能特点
 
 - **实时扫块**: 使用 `@solana/kit` 库连接本地测试节点或主网节点进行实时扫块
-- **多代币支持**: 支持 SOL 原生代币、SPL Token 和 SPL Token 2022 的转账解析
+- **多代币支持**: 支持 SOL 原生代币、SPL Token 和 SPL Token 2022 的转账解析（Token 2022暂未测试）
 - **回滚处理**: 处理 Solana 的槽位回滚（虽然较少见但可能发生）
 - **断点续扫**: 支持从上次扫描位置继续扫描
 - **批量处理**: 批量获取和处理槽位，提高扫描效率
@@ -164,27 +164,6 @@ Solana 的回滚较少见，但在网络分叉时可能发生：
 - `logs/combined.log`: 所有日志
 - `logs/error.log`: 错误日志
 
-### 健康检查
-
-```typescript
-const health = await scanService.getHealthStatus();
-console.log(health);
-// {
-//   status: 'healthy',
-//   details: {
-//     scanDelay: 10,
-//     currentSlot: 123456,
-//     latestSlot: 123466
-//   }
-// }
-```
-
-## 注意事项
-
-1. **Solana 槽位**: Solana 使用槽位（slot）而不是区块号，某些槽位可能被跳过（skipped）
-2. **Token Program ID**: 支持 Token Program 和 Token-2022 Program
-3. **性能优化**: 使用批量获取槽位（`getBlocks`）减少 RPC 调用
-4. **回滚频率**: Solana 的回滚比 EVM 链少得多，但仍需处理
 
 ## 开发和测试
 

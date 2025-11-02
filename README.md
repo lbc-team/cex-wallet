@@ -15,7 +15,9 @@
 
 - **wallet**: 主模块，提供钱包管理 API
 - **signer**: 签名机，负责地址生成和密钥管理  
-- **scan**: 区块链扫描器，支持智能重组处理和存款检测
+- **scan**: 区块链扫描器，支持智能重组处理和存款检测, 每一个链有独立的扫描模块
+  - evm_scan: 扫描 EVM 链
+  - solana_scan: 扫描 Solana 链
 - **risk_control**: 风控模块
 - **fund_rebalance**: 资金调度模块
 
@@ -38,9 +40,15 @@
 3. 启动 risk_control 服务 (cd risk_control && npm run dev)
 4. 启动 signer 服务（配置 .env 的助记词,  `./start_signer.sh` 使用默认密码启动 ）
 5. 启动 wallet 服务  (cd wallet && npm run dev)
-6. 执行 wallet 模块下的 mock.ts 填充一些测试的 ETH 及 Solana 用户地址。(注意本地测试，先部署 token )
-7. 执行 scan 服务， 扫描存款入账
-8. 执行 wallet 模块下的 requestWithdraw.ts 测试提款
+6. 模拟一些数据：
+   1. 启动 以太坊 和 Solana 本地模拟网络： `./start_anvil.sh` 和 `./start_solana_localnet` 
+   2. 执行 wallet 模块下的 Token 部署脚本：`npm run deploy:erc20:tokens` 和 `npm run deploy:solana:tokens`
+   3. 执行 wallet 模块下的  `npm run mock:init` 填充一些测试的 ETH 及 Solana 用户地址。(注意本地测试，先部署 token )
+7. 启动两个 scan 服务， 扫描存款入账
+   1. EVM scan ： `cd scan/evm_scan && npm run dev`
+   2. Solana scan: `cd scan/solana_scan && npm run dev`
+   3. 执行 wallet 模块下 EVM 转账 ``
+8.  执行 wallet 模块下的 requestWithdraw.ts 测试提款
 
 服务推荐启动顺序：db_gateway -> risk_control -> signer  ->  wallet -> scan
 

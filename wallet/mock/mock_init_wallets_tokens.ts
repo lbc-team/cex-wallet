@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { getDbGatewayClient } from '../services/dbGatewayClient';
-import { HotWalletService } from '../services/hotWalletService';
-import { getDatabase } from '../db/connection';
+import { getDbGatewayClient } from '../src/services/dbGatewayClient';
+import { HotWalletService } from '../src/services/hotWalletService';
+import { getDatabase } from '../src/db/connection';
+import { WalletModel } from '../src/db/models/wallet';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -19,6 +20,43 @@ const logger = {
 
 async function insertMockData() {
   try {
+    // 0. 健康检查：确保 wallet 服务正在运行
+    logger.info('检查 wallet 服务健康状态...');
+    try {
+      const healthCheckUrl = 'http://localhost:3000/api/health';
+      const response = await fetch(healthCheckUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000) // 5秒超时
+      });
+
+      if (!response.ok) {
+        logger.error('Wallet 服务健康检查失败', {
+          status: response.status,
+          statusText: response.statusText
+        });
+        logger.error('请确保 wallet 服务正在运行 (端口: 3000)');
+        logger.error('启动命令: cd wallet && npm run dev');
+        process.exit(1);
+      }
+
+      logger.info('✓ Wallet 服务运行正常');
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        logger.error('Wallet 服务健康检查超时 (5秒)');
+      } else if (error.code === 'ECONNREFUSED') {
+        logger.error('无法连接到 Wallet 服务 (端口: 3000)');
+      } else {
+        logger.error('Wallet 服务健康检查失败:', error.message);
+      }
+      logger.error('');
+      logger.error('请确保 wallet 服务正在运行:');
+      logger.error('  1. 打开新终端');
+      logger.error('  2. cd /Users/emmett/openspace_code/cex-wallet/wallet');
+      logger.error('  3. npm run dev');
+      logger.error('');
+      process.exit(1);
+    }
+
     const dbGateway = getDbGatewayClient();
 
     // 1. 初始化系统用户
@@ -170,7 +208,7 @@ async function insertMockData() {
         await dbGateway.createToken({
           chain_type: 'evm',
           chain_id: 31337,
-          token_address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+          token_address: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
           token_symbol: 'USDT',
           token_name: 'MockU',
           decimals: 18,
@@ -238,7 +276,7 @@ async function insertMockData() {
         await dbGateway.createToken({
           chain_type: 'solana',
           chain_id: 900,
-          token_address: '0x0000000000000000000000000000000000000000',
+          token_address: '',
           token_symbol: 'SOL',
           token_name: 'Solana',
           decimals: 9,
@@ -294,13 +332,25 @@ async function insertMockData() {
 
     // 7. 显示插入的数据
     const tokens = await dbGateway.getTokens({ chain_id: 31337 });
-    logger.info('本地测试网络代币:', { count: tokens.length, tokens });
+    logger.info('本地 EVM 测试网络代币:', { count: tokens.length });
+
+    const solanaTokens = await dbGateway.getTokens({ chain_id: 900 });
+    logger.info('本地 Solana 测试网络代币:', { count: solanaTokens.length });
 
     const users = await dbGateway.getUsers({ user_type: 'normal' });
     logger.info('用户数据:', { count: users.length });
 
-    const wallets = await dbGateway.getWallets({ user_id: 1 });
-    logger.info('钱包数据:', { count: wallets.length });
+    const wallets = await dbGateway.getWallets({ chain_type: "evm" });
+    logger.info('EVM钱包数据:', { count: wallets.length });
+
+    const solanaWallets = await dbGateway.getWallets({ chain_type: "solana" });
+    logger.info('Solana钱包数据:', { count: solanaWallets.length });
+
+    // 8. 获取所有生成的 ATA 账户数量
+    const walletModel = new WalletModel(db);
+    // 显示 ATA 账户统计信息
+    const ataStats = await walletModel.getSolanaTokenAccountsStats();
+    logger.info('ATA账户统计:', ataStats);
 
     process.exit(0);
 
