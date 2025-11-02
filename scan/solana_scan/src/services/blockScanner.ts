@@ -212,11 +212,6 @@ export class BlockScanner {
         return;
       }
 
-      // 验证父区块（检测回滚）
-      if (block.parentSlot !== undefined && block.parentSlot !== null) {
-        await this.verifyParentBlock(slot, block.parentSlot, block.previousBlockhash);
-      }
-
       // 检查该 slot 是否已经 finalized（使用缓存）
       const finalizedSlot = await this.getCachedFinalizedSlot();
       const blockStatus = slot <= finalizedSlot ? 'finalized' : 'confirmed';
@@ -288,84 +283,6 @@ export class BlockScanner {
   }
 
   /**
-   * 验证父区块（检测回滚）
-   * 验证当前区块的 previousBlockhash 是否与数据库中父区块的 block_hash 匹配
-   */
-  private async verifyParentBlock(
-    currentSlot: number,
-    parentSlot: number,
-    previousBlockhash: string | undefined
-  ): Promise<void> {
-    try {
-      // 如果当前区块没有 previousBlockhash，无法验证
-      if (!previousBlockhash) {
-        logger.debug('当前区块缺少 previousBlockhash，无法验证父区块', { currentSlot, parentSlot });
-        return;
-      }
-
-      // 从数据库查询父区块信息
-      const dbParentSlot = await database.get(
-        'SELECT slot, block_hash, status FROM solana_slots WHERE slot = ?',
-        [parentSlot]
-      );
-
-      // 如果数据库中没有父区块记录，不需要检查（可能还未扫描到）
-      if (!dbParentSlot) {
-        logger.debug('数据库中未找到父区块记录', { currentSlot, parentSlot });
-        return;
-      }
-
-      // 如果父区块已经 finalized，不需要检查回滚
-      if (dbParentSlot.status === 'finalized') {
-        return;
-      }
-
-      // 如果父区块在数据库中是 skipped，但当前区块认为它有 previousBlockhash
-      // 说明父区块实际存在，需要重新扫描
-      if (dbParentSlot.status === 'skipped') {
-        logger.warn('父区块状态异常：数据库标记为 skipped 但链上存在', {
-          currentSlot,
-          parentSlot,
-          previousBlockhash
-        });
-        // 重新扫描父区块（会更新其 block_hash）
-        await this.scanSingleSlot(parentSlot);
-        return;
-      }
-
-      // 如果数据库中没有父区块的 block_hash，无法验证
-      if (!dbParentSlot.block_hash) {
-        logger.debug('父区块缺少 block_hash，无法验证', { parentSlot });
-        return;
-      }
-
-      // 验证当前区块的 previousBlockhash 是否等于数据库中父区块的 block_hash
-      if (previousBlockhash !== dbParentSlot.block_hash) {
-        // block_hash 不匹配，发生了回滚
-        logger.warn('检测到回滚：previousBlockhash 不匹配', {
-          currentSlot,
-          parentSlot,
-          previousBlockhash,
-          dbParentBlockHash: dbParentSlot.block_hash
-        });
-        await this.handleSlotReorg(parentSlot);
-        return;
-      }
-
-      // 验证通过
-      logger.debug('父区块验证通过', {
-        currentSlot,
-        parentSlot,
-        previousBlockhash
-      });
-
-    } catch (error) {
-      logger.error('验证父区块失败', { currentSlot, parentSlot, error });
-      // 验证失败不影响当前区块的处理
-    }
-  }
-
-  /**
    * 处理槽位回滚
    */
   private async handleSlotReorg(slot: number): Promise<void> {
@@ -384,6 +301,116 @@ export class BlockScanner {
       logger.info('槽位回滚处理完成', { slot });
     } catch (error) {
       logger.error('处理槽位回滚失败', { slot, error });
+    }
+  }
+
+  /**
+   * 重新验证最近的 confirmed 槽位
+   *
+   * 检测两种回滚情况：
+   * 1. 槽位从有区块变成 skipped（区块消失）
+   * 2. 区块哈希改变（区块内容变化）
+   *
+   * 优化策略：
+   * - 先检查最新的 confirmed 槽位
+   * - 如果最新的没有变化，直接返回 
+   * - 如果有变化，继续向上检查直到找到稳定的槽位
+   * - 最多检查 CONFIRMATION_THRESHOLD 个槽位
+   */
+  private async revalidateRecentConfirmedSlots(): Promise<void> {
+    try {
+      // 获取最近的 confirmed 槽位（降序排列，最新的在前面）
+      const confirmedSlots = await solanaSlotDAO.getRecentConfirmedSlots(config.confirmationThreshold);
+
+      if (confirmedSlots.length === 0) {
+        logger.debug('没有需要重新验证的confirmed槽位');
+        return;
+      }
+
+      logger.debug('开始重新验证confirmed槽位', {
+        totalConfirmed: confirmedSlots.length,
+        latestSlot: confirmedSlots[0].slot
+      });
+
+      let reorgCount = 0;
+      let checkedCount = 0;
+
+      // 从最新的槽位开始检查
+      for (const dbSlot of confirmedSlots) {
+        try {
+          checkedCount++;
+
+          // 从链上重新查询槽位信息
+          const chainBlock = await solanaClient.getBlock(dbSlot.slot);
+
+          // 情况1：槽位从有区块变成 skipped
+          if (!chainBlock) {
+            logger.warn('检测到回滚：槽位区块消失', {
+              slot: dbSlot.slot,
+              dbBlockHash: dbSlot.block_hash
+            });
+            await this.handleSlotReorg(dbSlot.slot);
+            reorgCount++;
+            continue; // 继续检查更早的槽位
+          }
+
+          // 情况2：区块哈希改变（区块内容变化）
+          if (dbSlot.block_hash && chainBlock.blockhash !== dbSlot.block_hash) {
+            logger.warn('检测到回滚：区块哈希改变', {
+              slot: dbSlot.slot,
+              dbBlockHash: dbSlot.block_hash,
+              chainBlockHash: chainBlock.blockhash
+            });
+            await this.handleSlotReorg(dbSlot.slot);
+            reorgCount++;
+            continue; // 继续检查更早的槽位
+          }
+
+          // 验证通过：最新的槽位没有变化
+          logger.debug('槽位验证通过', { slot: dbSlot.slot });
+
+          // 优化：如果最新的槽位没有变化，说明之前的槽位也不会有变化
+          // 可以安全地提前退出，无需继续检查
+          if (checkedCount === 1 && reorgCount === 0) {
+            logger.debug('最新槽位验证通过，跳过其余槽位检查', {
+              latestSlot: dbSlot.slot,
+              skippedCount: confirmedSlots.length - 1
+            });
+            return; // 早期退出
+          }
+
+          // 如果之前有回滚，继续检查直到找到稳定的槽位
+          // 找到第一个稳定的槽位后，可以停止检查
+          if (reorgCount > 0) {
+            logger.info('找到稳定槽位，停止继续检查', {
+              stableSlot: dbSlot.slot,
+              reorgCount,
+              checkedCount,
+              remainingSlots: confirmedSlots.length - checkedCount
+            });
+            break; // 找到稳定点，停止检查
+          }
+
+        } catch (error) {
+          logger.error('重新验证槽位失败', { slot: dbSlot.slot, error });
+          // 单个槽位验证失败不影响其他槽位
+        }
+      }
+
+      if (reorgCount > 0) {
+        logger.warn('重新验证完成：检测到回滚', {
+          checkedCount,
+          reorgCount,
+          totalConfirmed: confirmedSlots.length
+        });
+      } else {
+        logger.debug('重新验证完成：未检测到回滚', {
+          checkedCount
+        });
+      }
+
+    } catch (error) {
+      logger.error('重新验证confirmed槽位失败', { error });
     }
   }
 
@@ -452,6 +479,10 @@ export class BlockScanner {
       } else {
         logger.debug('没有新槽位');
       }
+
+      // 重新验证最近的 confirmed 槽位（检测回滚）
+      await this.revalidateRecentConfirmedSlots();
+
     } catch (error) {
       logger.error('扫描新槽位失败', { error });
     } finally {

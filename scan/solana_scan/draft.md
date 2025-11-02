@@ -42,6 +42,14 @@ Helius（支持 Reference Account 监听、Webhooks、SQL-like 过滤）
 一次监听多个地址： Web hook 回调
 
 
+不能像类似以太坊
+比较同一个 slot 的 blockhash 是否变化
+✅ 有效检测 reorg
+
+Solana 共识不依赖 blockhash 形成链结构
+
+只信任 finalized 
+ **Tower BFT 共识**，分叉选择由验证者投票决定
 
 ### 扫块
 

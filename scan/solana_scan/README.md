@@ -37,38 +37,7 @@ Solana区块链扫描器 - CEX钱包系统
 
 ## 数据库表
 
-### solana_slots 表
-```sql
-CREATE TABLE solana_slots (
-  slot INTEGER PRIMARY KEY,
-  block_hash TEXT,
-  parent_slot INTEGER,
-  block_time INTEGER,
-  status TEXT DEFAULT 'confirmed',  -- confirmed/finalized/skipped
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### solana_transactions 表
-```sql
-CREATE TABLE solana_transactions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  slot INTEGER,                      -- 槽位号
-  tx_hash TEXT UNIQUE NOT NULL,      -- 交易签名
-  from_addr TEXT,                    -- 发起地址
-  to_addr TEXT,                      -- 接收地址
-  token_mint TEXT,                   -- SPL Token Mint地址 (NULL表示SOL)
-  amount TEXT,                       -- 交易金额
-  type TEXT,                         -- deposit/withdraw/collect/rebalance
-  status TEXT DEFAULT 'confirmed',   -- confirmed/finalized/failed
-  block_time INTEGER,                -- 区块时间戳
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-注意：Solana交易使用独立的表，与EVM链的 `transactions` 表分离
+参考DB Gateway [database.md](../../db_gateway/database.md)
 
 ## 安装和配置
 
@@ -136,26 +105,48 @@ npm start
 ### 转账解析逻辑
 
 #### 1. SOL 转账
-- 比较 `preBalances` 和 `postBalances`
-- 余额增加的账户为接收方
-- 余额减少的账户为发送方
+- 解析 System Program 的 **parsed instructions**
+- 检查指令类型是否为 `transfer`
+- 从 `parsed.info` 中提取 `destination`（接收地址）、`source`（发送地址）、`lamports`（金额）
+- 只处理目标地址在监控列表中的转账
 
 #### 2. SPL Token / SPL Token 2022 转账
-- 解析 `instructions` 中的 Token Program 调用
+- 解析 `instructions` 和 `innerInstructions` 中的 Token Program 调用
 - 支持 `transfer` 和 `transferChecked` 指令
-- 从 `innerInstructions` 中提取内部转账
-- 使用 `preTokenBalances` 和 `postTokenBalances` 作为备用方案
+- **关键**：转账目标是 ATA (Associated Token Account) 地址，需要通过 `solana_token_accounts` 表映射回钱包地址
+- Mint 地址获取策略（优先级从高到低）：
+  1. `transferChecked` 指令的 `info.mint`（最直接）
+  2. 从缓存的 `ataToMintMap` 获取（性能最优）
+  3. 从 `postTokenBalances` / `preTokenBalances` 提取（备用方案，适用于新创建的 ATA）
+- 只保留钱包地址在监控列表中的转账
+
 
 ### 回滚处理
 
-Solana 的回滚较少见，但在网络分叉时可能发生：
+Solana 的回滚较少见，在实时性要求不高的情况下，可以直接同步 finalized 的区块。如果要应对回滚的话，由于 Solana 与以太坊"区块头 + 交易列表 + 父区块哈希"结构不一样，Solana 基于 PoH（Proof of History）时间序列 + slot 机制来组织数据，在区块结构中没有 parentHash 这样的共识字段。我们需要定期重新验证区块的 hash 是否变更。
 
-1. **检测回滚**: 定期检查最近的槽位是否仍然存在于链上
-2. **回滚操作**:
-   - 删除受影响槽位的 credit 记录
-   - 删除受影响槽位的 transaction 记录
-   - 将槽位状态标记为 `skipped`
-3. **重新扫描**: 从回滚点重新扫描新的区块
+
+**检测机制**（定期重新验证 - 优化版）：
+
+1. **增量检查策略**:
+   - 先检查**最新的** confirmed 槽位
+   - 如果最新的槽位没有变化 → **直接退出检查**，无需检查其余槽位
+   - 如果最新的槽位有变化 → 继续向上检查，直到找到稳定的槽位
+   - 最多检查 `CONFIRMATION_THRESHOLD` 个槽位（默认 32 个）
+   - 参考代码：`scan/solana_scan/src/services/blockScanner.ts:revalidateRecentConfirmedSlots()`
+
+
+2. **检测两种回滚情况**:
+   - **情况 1**: 槽位从有区块变成 skipped（区块消失）
+     - 数据库中有 block_hash，但链上查询返回 null
+   - **情况 2**: 区块哈希改变（区块内容变化）
+     - 链上的 blockhash 与数据库中的 block_hash 不一致
+
+3. **回滚处理**:
+   - 删除受影响槽位的 credit 记录（通过 `deleteCreditsBySlotRange`）
+   - 删除受影响槽位的 transaction 记录（通过 `deleteSolanaTransactionsBySlot`）
+   - 将槽位状态更新为 `skipped`
+
 
 ## 监控和调试
 

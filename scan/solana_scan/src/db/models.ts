@@ -114,6 +114,22 @@ export class SolanaSlotDAO {
   }
 
   /**
+   * 获取最近的 confirmed 状态的槽位（用于重新验证）
+   */
+  async getRecentConfirmedSlots(limit: number): Promise<SolanaSlot[]> {
+    try {
+      const rows = await database.all(
+        'SELECT * FROM solana_slots WHERE status = "confirmed" ORDER BY slot DESC LIMIT ?',
+        [limit]
+      );
+      return rows;
+    } catch (error) {
+      logger.error('获取最近confirmed槽位失败', { limit, error });
+      throw error;
+    }
+  }
+
+  /**
    * 检查槽位范围内是否有空槽
    */
   async checkForMissingSlots(startSlot: number, endSlot: number): Promise<number[]> {
