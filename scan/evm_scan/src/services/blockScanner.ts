@@ -248,12 +248,6 @@ export class BlockScanner {
       // 处理确认（这个可以在事务外进行）
       await confirmationManager.processConfirmations();
 
-      logger.debug('批量区块扫描远程事务提交成功', {
-        startBlock,
-        endBlock,
-        blocksProcessed: blocks.length,
-        depositsProcessed: deposits.length
-      });
 
     } catch (error) {
       logger.error('批量优化扫描失败，回退到逐个处理', { startBlock, endBlock, error });

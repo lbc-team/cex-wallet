@@ -23,7 +23,7 @@ async function insertMockData() {
     // 0. 健康检查：确保 wallet 服务正在运行
     logger.info('检查 wallet 服务健康状态...');
     try {
-      const healthCheckUrl = 'http://localhost:3000/api/health';
+      const healthCheckUrl = 'http://localhost:3000/health';
       const response = await fetch(healthCheckUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(5000) // 5秒超时
@@ -179,7 +179,7 @@ async function insertMockData() {
         await dbGateway.createToken({
           chain_type: 'evm',
           chain_id: 31337,
-          token_address: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+          token_address: '0x5fbdb2315678afecb367f032d93f642f64180aa3', // 统一使用小写
           token_symbol: 'OPS',
           token_name: 'OPS',
           decimals: 18,
@@ -208,7 +208,7 @@ async function insertMockData() {
         await dbGateway.createToken({
           chain_type: 'evm',
           chain_id: 31337,
-          token_address: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+          token_address: '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', // 统一使用小写
           token_symbol: 'USDT',
           token_name: 'MockU',
           decimals: 18,

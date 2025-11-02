@@ -239,7 +239,7 @@ export class ConfirmationManager {
           
           if (tx.token_addr && tx.token_addr !== '0x0000000000000000000000000000000000000000') {
             // 匹配链ID 的 ERC20代币
-            token = await tokenDAO.getTokenByAddress(tx.token_addr, 'eth', chainId);
+            token = await tokenDAO.getTokenByAddress(tx.token_addr, 'evm', chainId);
             tokenSymbol = token ? token.token_symbol : 'UNKNOWN';
           } else {
             // 原生代币（token_addr为null或全零地址），使用 is_native 字段查找

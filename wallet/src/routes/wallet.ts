@@ -344,34 +344,5 @@ export function walletRoutes(dbService: DatabaseReader): Router {
   });
 
 
-  // 获取网络状态和 Gas 信息
-  router.get('/network/status', async (req: Request, res: Response) => {
-    try {
-      const networkInfo = await chainConfigManager.getNetworkInfo(1); // 默认使用主网
-      
-      const response: ApiResponse = {
-        message: '获取网络状态成功',
-        data: {
-          chainId: networkInfo.chainId,
-          blockNumber: networkInfo.blockNumber.toString(),
-          baseFeePerGas: networkInfo.baseFeePerGas.toString(),
-          gasPrice: networkInfo.gasPrice.toString(),
-          networkCongestion: networkInfo.networkCongestion,
-          // 转换为 Gwei 显示
-          baseFeeGwei: (Number(networkInfo.baseFeePerGas) / 1e9).toFixed(2),
-          gasPriceGwei: (Number(networkInfo.gasPrice) / 1e9).toFixed(2)
-        }
-      };
-      
-      res.json(response);
-    } catch (error) {
-      const errorResponse: ApiResponse = { 
-        error: error instanceof Error ? error.message : '获取网络状态失败' 
-      };
-      res.status(500).json(errorResponse);
-    }
-  });
-
-
   return router;
 }
