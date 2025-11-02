@@ -86,16 +86,6 @@ export class ScanService {
   }
 
   /**
-   * 重启服务
-   */
-  async restart(): Promise<void> {
-    logger.info('重启扫描服务');
-    await this.stop();
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒
-    await this.start();
-  }
-
-  /**
    * 刷新缓存
    */
   async refreshCache(): Promise<void> {

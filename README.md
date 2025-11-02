@@ -47,8 +47,9 @@
 7. 启动两个 scan 服务， 扫描存款入账
    1. EVM scan ： `cd scan/evm_scan && npm run dev`
    2. Solana scan: `cd scan/solana_scan && npm run dev`
-   3. 执行 wallet 模块下 EVM 转账 ``
-8.  执行 wallet 模块下的 requestWithdraw.ts 测试提款
+   3. 模拟 EVM 链转账 `cd wallet && npm run mock:evm:transfer`
+   4. 模拟 Solana 链转账 `cd wallet && npm run mock:solana:transfer`
+8. 提款测试： 执行 wallet 模块下的 requestWithdraw.ts 测试提款
 
 服务推荐启动顺序：db_gateway -> risk_control -> signer  ->  wallet -> scan
 

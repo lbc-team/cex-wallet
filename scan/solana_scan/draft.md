@@ -2,11 +2,11 @@
 ## 文章
 
 
-1. 介绍PDA地址
+1. 介绍 PDA 地址
 
 问题： 
 1. 记录用户 ATA 么？（rent 租金谁付 ）、 预先计算地址（如何保存）
-2. 确认位： 60 ， 只在 finalized 
+2. 确认位： 32 ， 只在 finalized 
 
 数据库： ClickHouse BigQuery 列式数据库（OLAP）： 批量写入快，单条写入慢， 聚合、扫描型读取极快
 
