@@ -18,6 +18,10 @@
     "mock:withdraw": "ts-node mock/requestWithdraw.ts",
     "mock:withdraw:black": "ts-node mock/requestWithdrawToBlackAddr.ts",
     "mock:withdraw:needReview": "ts-node mock/requestWithdrawNeedReview.ts",
+    "mock:withdraw:solana": "ts-node mock/requestWithdrawOnSolana.ts",
+    "mock:withdraw:solana:sol": "ts-node mock/requestWithdrawOnSolana.ts SOL",
+    "mock:withdraw:solana:usdc": "ts-node mock/requestWithdrawOnSolana.ts USDC",
+    "mock:withdraw:solana:usdt": "ts-node mock/requestWithdrawOnSolana.ts USDT",
     "mock:approveReview": "ts-node mock/mockApproveReview.ts"
   },
   "keywords": [],
