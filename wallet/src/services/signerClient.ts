@@ -32,6 +32,8 @@ interface SignTransactionRequest {
   address: string;         // 发送方地址
   to: string;             // 接收方地址
   amount: string;         // 转账金额（最小单位）
+
+  // EVM 特定字段
   tokenAddress?: string;  // ERC20代币合约地址（可选，为空则为ETH转账）
   gas?: string;          // Gas限制（可选）
 
@@ -42,10 +44,17 @@ interface SignTransactionRequest {
   // Legacy gas 参数（向后兼容）
   gasPrice?: string;     // Gas价格（仅用于 Legacy 交易）
 
-  nonce: number;         // 交易nonce（必需）
+  nonce?: number;        // 交易nonce（EVM 必需）
+  type?: 0 | 2;         // 交易类型：0=Legacy, 2=EIP-1559（可选，默认为2）
+
+  // Solana 特定字段
+  tokenMint?: string;    // SPL Token Mint 地址（可选，为空则为 SOL 转账）
+  blockhash?: string;    // Solana blockhash（Solana 必需）
+  fee?: string;          // Solana 交易费用（lamports）
+
+  // 通用字段
   chainId: number;       // 链ID（必需）
   chainType: 'evm' | 'btc' | 'solana'; // 链类型（必需）
-  type?: 0 | 2;         // 交易类型：0=Legacy, 2=EIP-1559（可选，默认为2）
 }
 
 // 交易签名响应数据
@@ -194,7 +203,7 @@ export class SignerClient {
           amount: request.amount,
           ...(request.tokenAddress && { tokenAddress: request.tokenAddress }),
           chainId: request.chainId,
-          nonce: request.nonce
+          ...(request.nonce !== undefined && { nonce: request.nonce })
         },
         timestamp
       };
@@ -209,18 +218,25 @@ export class SignerClient {
       console.log('✅ SignerClient: 风控签名获取成功');
 
       // 3. 生成 wallet 服务自己的签名
-      const signPayload = JSON.stringify({
+      const signPayload: any = {
         operation_id: operationId,
         from: request.address,
         to: request.to,
         amount: request.amount,
-        tokenAddress: request.tokenAddress || null,
         chainId: request.chainId,
-        nonce: request.nonce,
         timestamp
-      });
+      };
 
-      const walletSignature = this.signMessage(signPayload);
+      // 根据链类型添加特定字段
+      if (request.chainType === 'solana') {
+        if (request.blockhash) signPayload.blockhash = request.blockhash;
+        if (request.tokenMint) signPayload.tokenMint = request.tokenMint;
+      } else if (request.chainType === 'evm') {
+        if (request.nonce !== undefined) signPayload.nonce = request.nonce;
+        if (request.tokenAddress) signPayload.tokenAddress = request.tokenAddress;
+      }
+
+      const walletSignature = this.signMessage(JSON.stringify(signPayload));
       console.log('✅ SignerClient: Wallet 服务签名生成成功');
 
       // 4. 请求 Signer 签名交易，携带双重签名

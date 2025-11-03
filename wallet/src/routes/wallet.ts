@@ -173,9 +173,21 @@ export function walletRoutes(dbService: DatabaseReader): Router {
       return;
     }
 
-    // 验证地址格式
-    if (!to.match(/^0x[a-fA-F0-9]{40}$/)) {
-      const errorResponse: ApiResponse = { error: '无效的目标地址格式' };
+    // 验证地址格式（根据链类型）
+    let isValidAddress = false;
+    if (chainType === 'evm') {
+      // EVM 地址: 0x + 40 个十六进制字符
+      isValidAddress = /^0x[a-fA-F0-9]{40}$/.test(to);
+    } else if (chainType === 'solana') {
+      // Solana 地址: Base58 编码，32-44 个字符
+      isValidAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(to);
+    } else if (chainType === 'btc') {
+      // BTC 地址: 支持 Legacy (P2PKH, P2SH) 和 Bech32 格式
+      isValidAddress = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,89}$/.test(to);
+    }
+
+    if (!isValidAddress) {
+      const errorResponse: ApiResponse = { error: `无效的${chainType.toUpperCase()}地址格式` };
       res.status(400).json(errorResponse);
       return;
     }

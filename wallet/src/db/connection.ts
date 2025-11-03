@@ -213,16 +213,35 @@ export class DatabaseConnection {
     return result?.id || null;
   }
 
-  // 获取没有钱包地址的系统用户ID
-  async getSystemUserIdWithoutWallet(userType: 'sys_hot_wallet' | 'sys_multisig'): Promise<number | null> {
-    const result = await this.queryOne(`
-      SELECT u.id 
-      FROM users u
-      LEFT JOIN wallets w ON u.id = w.user_id
-      WHERE u.user_type = ? AND w.id IS NULL
-      LIMIT 1
-    `, [userType]);
-    return result?.id || null;
+  // 获取在指定链类型上没有钱包的系统用户ID
+  async getSystemUserIdWithoutWallet(
+    userType: 'sys_hot_wallet' | 'sys_multisig',
+    chainType?: string
+  ): Promise<number | null> {
+    if (chainType) {
+      // 如果指定了链类型，查找在该链上没有钱包的系统用户
+      const result = await this.queryOne(`
+        SELECT u.id
+        FROM users u
+        WHERE u.user_type = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM wallets w
+          WHERE w.user_id = u.id AND w.chain_type = ?
+        )
+        LIMIT 1
+      `, [userType, chainType]);
+      return result?.id || null;
+    } else {
+      // 如果没有指定链类型，查找完全没有钱包的系统用户（向后兼容）
+      const result = await this.queryOne(`
+        SELECT u.id
+        FROM users u
+        LEFT JOIN wallets w ON u.id = w.user_id
+        WHERE u.user_type = ? AND w.id IS NULL
+        LIMIT 1
+      `, [userType]);
+      return result?.id || null;
+    }
   }
 
   // ========== 钱包管理相关方法 ==========

@@ -70,31 +70,63 @@ export function createSignerRoutes(addressService: AddressService): Router {
     try {
       const signRequest: SignTransactionRequest = req.body;
 
-      // 验证必需参数
-      if (!signRequest.address || !signRequest.to || !signRequest.amount ||
-          signRequest.nonce === undefined || !signRequest.chainId || !signRequest.chainType ||
-          !signRequest.operation_id || !signRequest.timestamp ||
-          !signRequest.risk_signature || !signRequest.wallet_signature) {
+      // 验证必需参数（根据链类型）
+      const missingParams: string[] = [];
+      if (!signRequest.address) missingParams.push('address');
+      if (!signRequest.to) missingParams.push('to');
+      if (!signRequest.amount) missingParams.push('amount');
+      if (!signRequest.chainId) missingParams.push('chainId');
+      if (!signRequest.chainType) missingParams.push('chainType');
+      if (!signRequest.operation_id) missingParams.push('operation_id');
+      if (!signRequest.timestamp) missingParams.push('timestamp');
+      if (!signRequest.risk_signature) missingParams.push('risk_signature');
+      if (!signRequest.wallet_signature) missingParams.push('wallet_signature');
+
+      // EVM 需要 nonce，Solana 需要 blockhash
+      if (signRequest.chainType === 'solana') {
+        if (!signRequest.blockhash) missingParams.push('blockhash');
+      } else if (signRequest.chainType === 'evm') {
+        if (signRequest.nonce === undefined) missingParams.push('nonce');
+      }
+
+      if (missingParams.length > 0) {
         const response: ApiResponse = {
           success: false,
-          error: '缺少必需参数: address, to, amount, nonce, chainId, chainType, operation_id, timestamp, risk_signature, wallet_signature'
+          error: `缺少必需参数: ${missingParams.join(', ')}`
         };
         return res.status(400).json(response);
       }
 
-      // 验证地址格式
-      if (!signRequest.address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      // 验证地址格式（根据链类型）
+      let isValidFromAddress = false;
+      let isValidToAddress = false;
+
+      if (signRequest.chainType === 'evm') {
+        // EVM 地址: 0x + 40 个十六进制字符
+        isValidFromAddress = /^0x[a-fA-F0-9]{40}$/.test(signRequest.address);
+        isValidToAddress = /^0x[a-fA-F0-9]{40}$/.test(signRequest.to);
+      } else if (signRequest.chainType === 'solana') {
+        // Solana 地址: Base58 编码，32-44 个字符
+        isValidFromAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(signRequest.address);
+        isValidToAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(signRequest.to);
+      } else if (signRequest.chainType === 'btc') {
+        // BTC 地址
+        isValidFromAddress = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,89}$/.test(signRequest.address);
+        isValidToAddress = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,89}$/.test(signRequest.to);
+      }
+
+      if (!isValidFromAddress) {
         const response: ApiResponse = {
           success: false,
-          error: '无效的发送方地址格式'
+          error: `无效的${signRequest.chainType.toUpperCase()}发送方地址格式`
         };
         return res.status(400).json(response);
       }
 
-      if (!signRequest.to.match(/^0x[a-fA-F0-9]{40}$/)) {
+      if (!isValidToAddress) {
         const response: ApiResponse = {
           success: false,
-          error: '无效的接收方地址格式'
+          error: `无效的${signRequest.chainType.toUpperCase()}接收方地址格式`
         };
         return res.status(400).json(response);
       }
@@ -110,13 +142,23 @@ export function createSignerRoutes(addressService: AddressService): Router {
         return res.status(400).json(response);
       }
 
-      // 如果有代币地址，验证格式
-      if (signRequest.tokenAddress && !signRequest.tokenAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-        const response: ApiResponse = {
-          success: false,
-          error: '无效的代币合约地址格式'
-        };
-        return res.status(400).json(response);
+      // 验证代币地址格式（根据链类型）
+      if (signRequest.chainType === 'evm' && signRequest.tokenAddress) {
+        if (!signRequest.tokenAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
+          const response: ApiResponse = {
+            success: false,
+            error: '无效的ERC20代币合约地址格式'
+          };
+          return res.status(400).json(response);
+        }
+      } else if (signRequest.chainType === 'solana' && signRequest.tokenMint) {
+        if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(signRequest.tokenMint)) {
+          const response: ApiResponse = {
+            success: false,
+            error: '无效的SPL代币Mint地址格式'
+          };
+          return res.status(400).json(response);
+        }
       }
 
       // 验证 EIP-1559 gas 参数格式

@@ -617,7 +617,7 @@ export class WalletBusinessService {
       let signRequest: any;
 
       if (params.chainType === 'solana') {
-        // Solana 签名请求
+        // Solana 签名请求（使用 blockhash 而不是 nonce）
         signRequest = {
           address: hotWallet.address,
           to: params.to,

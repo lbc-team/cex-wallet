@@ -89,10 +89,10 @@ export class HotWalletService {
     path: string;
   }> {
     try {
-      // 1. 查找没有钱包地址的系统用户
-      const systemUserId = await this.db.getSystemUserIdWithoutWallet('sys_hot_wallet');
+      // 1. 查找在指定链类型上没有钱包地址的系统用户
+      const systemUserId = await this.db.getSystemUserIdWithoutWallet('sys_hot_wallet', params.chainType);
       if (!systemUserId) {
-        throw new Error('没有可用的热钱包系统用户（所有系统用户都已分配钱包）');
+        throw new Error(`没有可用的热钱包系统用户（所有系统用户在 ${params.chainType} 链上都已分配钱包）`);
       }
 
       // 2. 通过 SignerService 创建钱包

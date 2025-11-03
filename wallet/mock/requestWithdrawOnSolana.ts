@@ -10,7 +10,7 @@ import axios from 'axios';
 // 配置参数
 const CONFIG = {
   WALLET_SERVICE_URL: 'http://localhost:3000',
-  USER_ID: 1,  // 使用普通用户（用户 2 是热钱包）
+  USER_ID: 3,  // 使用普通用户（用户 2 是热钱包）
   // Solana 测试地址 (需要替换为实际的 Solana 地址)
   TO_ADDRESS: 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH',
   AMOUNT_SOL: '0.01',  // 0.01 SOL
@@ -328,7 +328,7 @@ async function main(): Promise<void> {
 
   // 如果指定了代币符号，只测试该代币
   if (args.length > 0) {
-    const tokenSymbol = args[0].toUpperCase();
+    const tokenSymbol = args[0]!.toUpperCase();
     if (['SOL', 'USDC', 'USDT'].includes(tokenSymbol)) {
       await tester.runSingleTest(tokenSymbol as 'SOL' | 'USDC' | 'USDT');
     } else {
