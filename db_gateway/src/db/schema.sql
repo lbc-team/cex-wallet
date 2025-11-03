@@ -349,24 +349,23 @@ JOIN tokens t ON c.token_id = t.id
 GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
 HAVING total_balance > 0;
 
--- 2. 用户代币总余额视图（跨地址聚合）
+-- 2. 用户代币总余额视图（跨地址聚合，按 token_symbol 合并不同链）
 CREATE VIEW IF NOT EXISTS v_user_token_totals AS
 SELECT
   c.user_id,
-  c.token_id,
   c.token_symbol,
-  t.decimals,
+  -- 标准化金额：将所有金额转换到 18 位精度，然后求和
   SUM(CASE
     WHEN c.credit_type NOT IN ('freeze') AND (
       (c.credit_type = 'deposit' AND c.status = 'finalized') OR
       (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
     )
-    THEN CAST(c.amount AS REAL)
+    THEN CAST(c.amount AS REAL) * POWER(10, 18 - t.decimals)
     ELSE 0
   END) as total_available_balance,
   SUM(CASE
     WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
-    THEN ABS(CAST(c.amount AS REAL))
+    THEN ABS(CAST(c.amount AS REAL)) * POWER(10, 18 - t.decimals)
     ELSE 0
   END) as total_frozen_balance,
   SUM(CASE
@@ -374,35 +373,36 @@ SELECT
       (c.credit_type = 'deposit' AND c.status = 'finalized') OR
       (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
     )
-    THEN CAST(c.amount AS REAL)
+    THEN CAST(c.amount AS REAL) * POWER(10, 18 - t.decimals)
     ELSE 0
   END) as total_balance,
+  -- 格式化金额：从标准化的 18 位精度转换为人类可读格式
   PRINTF('%.6f', SUM(CASE
     WHEN c.credit_type NOT IN ('freeze') AND (
       (c.credit_type = 'deposit' AND c.status = 'finalized') OR
       (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
     )
-    THEN CAST(c.amount AS REAL)
+    THEN CAST(c.amount AS REAL) * POWER(10, 18 - t.decimals)
     ELSE 0
-  END) / POWER(10, t.decimals)) as total_available_formatted,
+  END) / POWER(10, 18)) as total_available_formatted,
   PRINTF('%.6f', SUM(CASE
     WHEN c.credit_type = 'deposit' AND c.status = 'frozen'
-    THEN ABS(CAST(c.amount AS REAL))
+    THEN ABS(CAST(c.amount AS REAL)) * POWER(10, 18 - t.decimals)
     ELSE 0
-  END) / POWER(10, t.decimals)) as total_frozen_formatted,
+  END) / POWER(10, 18)) as total_frozen_formatted,
   PRINTF('%.6f', SUM(CASE
     WHEN (
       (c.credit_type = 'deposit' AND c.status = 'finalized') OR
       (c.credit_type = 'withdraw' AND c.status IN ('confirmed', 'finalized'))
     )
-    THEN CAST(c.amount AS REAL)
+    THEN CAST(c.amount AS REAL) * POWER(10, 18 - t.decimals)
     ELSE 0
-  END) / POWER(10, t.decimals)) as total_balance_formatted,
+  END) / POWER(10, 18)) as total_balance_formatted,
   COUNT(DISTINCT c.address) as address_count,
   MAX(c.updated_at) as last_updated
 FROM credits c
 JOIN tokens t ON c.token_id = t.id
-GROUP BY c.user_id, c.token_id, c.token_symbol, t.decimals
+GROUP BY c.user_id, c.token_symbol
 HAVING total_balance > 0;
 
 -- 3. 用户余额统计视图
