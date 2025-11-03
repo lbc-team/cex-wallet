@@ -25,10 +25,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@solana-program/system": "^0.9.0",
     "@solana-program/token": "^0.7.0",
-    "@solana/addresses": "^4.0.0",
-    "@solana/spl-token": "^0.4.14",
-    "@solana/web3.js": "^1.98.4",
+    "@solana/kit": "^4.0.0",
     "@types/uuid": "^10.0.0",
     "axios": "^1.12.2",
     "dotenv": "^16.4.5",
@@ -39,6 +38,8 @@
     "viem": "^2.37.8"
   },
   "devDependencies": {
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
     "nodemon": "^3.1.10",

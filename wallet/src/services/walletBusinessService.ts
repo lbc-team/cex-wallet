@@ -538,7 +538,8 @@ export class WalletBusinessService {
       console.log('✅ 风控检查通过，提现记录已创建:', withdrawId);
 
       // 10. 选择热钱包
-      let gasEstimation;
+      let gasEstimation: any;
+      let solanaBlockhash: string | undefined;
       let hotWallet: {
         address: string;
         nonce: number;
@@ -570,17 +571,35 @@ export class WalletBusinessService {
           nonce: hotWallet.nonce
         });
 
-        // 8. 使用选中钱包重新估算 gas 费用（确保准确性）
-        if (tokenInfo.is_native) {
-          gasEstimation = await this.gasEstimationService.estimateGas({
-            chainId: params.chainId,
-            gasLimit: 21000n // ETH 转账的标准 gas
-          });
+        // 8. 估算交易费用（EVM 或 Solana）
+        if (params.chainType === 'solana') {
+          // Solana 链：获取最新的 blockhash
+          console.log('🔗 获取 Solana blockhash...');
+          const solanaRpc = chainConfigManager.getSolanaRpc();
+          const latestBlockhash = await ((solanaRpc as any).getLatestBlockhash().send());
+
+          solanaBlockhash = latestBlockhash.value.blockhash;
+          console.log('✅ Solana blockhash:', solanaBlockhash);
+
+          // Solana 固定费用（5000 lamports）
+          gasEstimation = {
+            fee: '5000',
+            blockhash: solanaBlockhash,
+            lastValidBlockHeight: latestBlockhash.value.lastValidBlockHeight.toString()
+          };
         } else {
-          gasEstimation = await this.gasEstimationService.estimateGas({
-            chainId: params.chainId,
-            gasLimit: 60000n // ERC20 转账的配置 gas 限制， TODO: 需要根据代币类型调整
-          });
+          // EVM 链：使用 gas 估算服务
+          if (tokenInfo.is_native) {
+            gasEstimation = await this.gasEstimationService.estimateGas({
+              chainId: params.chainId,
+              gasLimit: BigInt(21000) // ETH 转账的标准 gas
+            });
+          } else {
+            gasEstimation = await this.gasEstimationService.estimateGas({
+              chainId: params.chainId,
+              gasLimit: BigInt(60000) // ERC20 转账的配置 gas 限制， TODO: 需要根据代币类型调整
+            });
+          }
         }
       } catch (error) {
         // 更新提现状态为失败
@@ -594,35 +613,40 @@ export class WalletBusinessService {
         };
       }
 
-      // 8. 构建签名请求（使用自动估算的 gas 参数和获取的 nonce）
-      const signRequest: {
-        address: string;
-        to: string;
-        amount: string;
-        tokenAddress?: string;
-        gas: string;
-        maxFeePerGas: string;
-        maxPriorityFeePerGas: string;
-        nonce: number;
-        chainId: number;
-        chainType: 'evm' | 'btc' | 'solana';
-        type: 2; // 使用 EIP-1559
-      } = {
-        address: hotWallet.address, // 使用热钱包地址
-        to: params.to,
-        amount: actualAmount.toString(),
-        gas: gasEstimation.gasLimit,
-        maxFeePerGas: gasEstimation.maxFeePerGas,
-        maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
-        nonce: hotWallet.nonce,
-        chainId: params.chainId,
-        chainType: params.chainType,
-        type: 2
-      };
+      // 9. 构建签名请求（使用自动估算的 gas 参数和获取的 nonce）
+      let signRequest: any;
 
-      // 只有非原生代币才设置 tokenAddress
-      if (!tokenInfo.is_native && tokenInfo.token_address) {
-        signRequest.tokenAddress = tokenInfo.token_address;
+      if (params.chainType === 'solana') {
+        // Solana 签名请求
+        signRequest = {
+          address: hotWallet.address,
+          to: params.to,
+          amount: actualAmount.toString(),
+          tokenMint: tokenInfo.is_native ? undefined : tokenInfo.token_address,
+          blockhash: solanaBlockhash,
+          fee: gasEstimation?.fee,
+          chainId: params.chainId,
+          chainType: 'solana'
+        };
+      } else {
+        // EVM 签名请求
+        signRequest = {
+          address: hotWallet.address, // 使用热钱包地址
+          to: params.to,
+          amount: actualAmount.toString(),
+          gas: gasEstimation?.gasLimit,
+          maxFeePerGas: gasEstimation?.maxFeePerGas,
+          maxPriorityFeePerGas: gasEstimation?.maxPriorityFeePerGas,
+          nonce: hotWallet.nonce,
+          chainId: params.chainId,
+          chainType: params.chainType,
+          type: 2 // 使用 EIP-1559
+        };
+
+        // 只有非原生代币才设置 tokenAddress
+        if (!tokenInfo.is_native && tokenInfo.token_address) {
+          signRequest.tokenAddress = tokenInfo.token_address;
+        }
       }
 
       // 11. 请求 Signer 签名交易
@@ -654,19 +678,39 @@ export class WalletBusinessService {
       // 12. 发送交易到区块链网络
       let txHash: string;
       try {
-        // 根据chainId确定链类型
-        const chain = this.getChainByChainId(params.chainId);
-        const publicClient = this.getPublicClient(chain);
-        
-        // 发送已签名的交易
-        txHash = await publicClient.sendRawTransaction({
-          serializedTransaction: signResult.signedTransaction as `0x${string}`
-        });
-        
-        console.log(`交易已发送到网络，交易哈希: ${txHash}`);
-        
-        // 标记nonce已使用
-        await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, hotWallet.nonce);
+        if (params.chainType === 'solana') {
+          // Solana 交易发送
+          console.log('📤 发送 Solana 交易到网络...');
+          const solanaRpc = chainConfigManager.getSolanaRpc();
+
+          // signResult.signedTransaction 是 base64 编码的签名交易
+          const txSignature = await ((solanaRpc as any).sendTransaction(
+            Buffer.from(signResult.signedTransaction, 'base64') as any,
+            {
+              skipPreflight: false,
+              preflightCommitment: 'confirmed'
+            }
+          ).send());
+
+          txHash = txSignature;
+          console.log(`✅ Solana 交易已发送，签名: ${txHash}`);
+
+          // Solana 不需要 nonce 管理
+        } else {
+          // EVM 交易发送
+          const chain = this.getChainByChainId(params.chainId);
+          const publicClient = this.getPublicClient(chain);
+
+          // 发送已签名的交易
+          txHash = await publicClient.sendRawTransaction({
+            serializedTransaction: signResult.signedTransaction as `0x${string}`
+          });
+
+          console.log(`✅ EVM 交易已发送，哈希: ${txHash}`);
+
+          // 标记nonce已使用
+          await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, hotWallet.nonce);
+        }
       
         // 测试交易是否成功
         // const receipt: TransactionReceipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
@@ -692,9 +736,9 @@ export class WalletBusinessService {
       // 13. 更新提现状态为 pending，使用实际的交易哈希
       await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'pending', {
         tx_hash: txHash, // 使用发送交易后返回的真实哈希
-        gas_price: gasEstimation.gasPrice,
-        max_fee_per_gas: gasEstimation.maxFeePerGas,
-        max_priority_fee_per_gas: gasEstimation.maxPriorityFeePerGas
+        gas_price: gasEstimation?.gasPrice,
+        max_fee_per_gas: gasEstimation?.maxFeePerGas,
+        max_priority_fee_per_gas: gasEstimation?.maxPriorityFeePerGas
       });
 
       // 14. 创建 credit 流水记录（扣除用户余额）
@@ -739,10 +783,10 @@ export class WalletBusinessService {
           fee: withdrawFee,
           withdrawId: withdrawId,
           gasEstimation: {
-            gasLimit: gasEstimation.gasLimit,
-            maxFeePerGas: gasEstimation.maxFeePerGas,
-            maxPriorityFeePerGas: gasEstimation.maxPriorityFeePerGas,
-            networkCongestion: gasEstimation.networkCongestion
+            gasLimit: gasEstimation?.gasLimit,
+            maxFeePerGas: gasEstimation?.maxFeePerGas,
+            maxPriorityFeePerGas: gasEstimation?.maxPriorityFeePerGas,
+            networkCongestion: gasEstimation?.networkCongestion
           }
         }
       };

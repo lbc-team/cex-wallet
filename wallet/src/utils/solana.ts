@@ -1,5 +1,7 @@
+// Token 相关功能从 @solana-program/token 导入（@solana/kit 不包含 Token 程序）
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
-import { address } from '@solana/addresses';
+// 通用功能从 @solana/kit 导入
+import { address } from '@solana/kit';
 
 /**
  * 计算 ATA (Associated Token Account) 地址

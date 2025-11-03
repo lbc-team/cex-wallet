@@ -120,19 +120,37 @@ async function insertMockData() {
     const db = getDatabase();
     await db.connect();
     const hotWalletService = new HotWalletService(db);
+
+    // 3.1 创建 EVM 热钱包
     try {
       const hotWallet = await hotWalletService.createHotWallet({
         chainType: 'evm'
       });
 
-      logger.info('热钱包创建成功:', {
+      logger.info('EVM 热钱包创建成功:', {
         walletId: hotWallet.walletId,
         address: hotWallet.address,
         device: hotWallet.device,
         path: hotWallet.path
       });
     } catch (error) {
-      logger.error('创建热钱包失败:', error);
+      logger.error('创建 EVM 热钱包失败:', error);
+    }
+
+    // 3.2 创建 Solana 热钱包
+    try {
+      const solanaHotWallet = await hotWalletService.createHotWallet({
+        chainType: 'solana'
+      });
+
+      logger.info('Solana 热钱包创建成功:', {
+        walletId: solanaHotWallet.walletId,
+        address: solanaHotWallet.address,
+        device: solanaHotWallet.device,
+        path: solanaHotWallet.path
+      });
+    } catch (error) {
+      logger.error('创建 Solana 热钱包失败:', error);
     }
 
     // 4. 插入代币配置

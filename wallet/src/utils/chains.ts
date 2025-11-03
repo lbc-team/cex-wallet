@@ -1,8 +1,9 @@
 import { createPublicClient, http, parseUnits } from 'viem';
 import { mainnet, sepolia, bsc, bscTestnet, localhost } from 'viem/chains';
+import { createSolanaRpc, type Rpc } from '@solana/kit';
 
 // 支持的链类型
-export type SupportedChain = 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost';
+export type SupportedChain = 'mainnet' | 'sepolia' | 'bsc' | 'bscTestnet' | 'localhost' | 'solana';
 
 // 链配置接口
 export interface ChainConfig {
@@ -10,6 +11,7 @@ export interface ChainConfig {
   rpcUrl: string;
   name: string;
   chainId: number;
+  chainType: 'evm' | 'solana';  // 添加链类型标识
 }
 
 /**
@@ -19,6 +21,7 @@ export class ChainConfigManager {
   private static instance: ChainConfigManager;
   private chainConfigs: Map<SupportedChain, ChainConfig> = new Map();
   private publicClients: Map<SupportedChain, any> = new Map();
+  private solanaRpcClient: Rpc<any> | null = null;  // Solana RPC 客户端
 
   private constructor() {
     this.initializeChainConfigs();
@@ -44,7 +47,8 @@ export class ChainConfigManager {
       sepolia: process.env.SEPOLIA_RPC_URL || 'https://eth-sepolia.public.blastapi.io',
       bsc: process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org/',
       bscTestnet: process.env.BSC_TESTNET_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/',
-      localhost: process.env.LOCALHOST_RPC_URL || 'http://127.0.0.1:8545'
+      localhost: process.env.LOCALHOST_RPC_URL || 'http://127.0.0.1:8545',
+      solana: process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899'
     };
 
     // 以太坊主网
@@ -52,7 +56,8 @@ export class ChainConfigManager {
       chain: mainnet,
       rpcUrl: defaultRpcUrls.mainnet,
       name: 'Ethereum Mainnet',
-      chainId: 1
+      chainId: 1,
+      chainType: 'evm'
     });
 
     // 以太坊测试网 (Sepolia)
@@ -60,7 +65,8 @@ export class ChainConfigManager {
       chain: sepolia,
       rpcUrl: defaultRpcUrls.sepolia,
       name: 'Ethereum Sepolia',
-      chainId: 11155111
+      chainId: 11155111,
+      chainType: 'evm'
     });
 
     // BSC 主网
@@ -68,7 +74,8 @@ export class ChainConfigManager {
       chain: bsc,
       rpcUrl: defaultRpcUrls.bsc,
       name: 'BNB Smart Chain',
-      chainId: 56
+      chainId: 56,
+      chainType: 'evm'
     });
 
     // BSC 测试网
@@ -76,7 +83,8 @@ export class ChainConfigManager {
       chain: bscTestnet,
       rpcUrl: defaultRpcUrls.bscTestnet,
       name: 'BNB Smart Chain Testnet',
-      chainId: 97
+      chainId: 97,
+      chainType: 'evm'
     });
 
     // 本地开发网络
@@ -84,7 +92,17 @@ export class ChainConfigManager {
       chain: localhost,
       rpcUrl: defaultRpcUrls.localhost,
       name: 'Localhost',
-      chainId: 31337
+      chainId: 31337,
+      chainType: 'evm'
+    });
+
+    // Solana 本地测试网
+    this.chainConfigs.set('solana', {
+      chain: null,  // Solana 不使用 viem chain
+      rpcUrl: defaultRpcUrls.solana,
+      name: 'Solana Local',
+      chainId: 900,
+      chainType: 'solana'
     });
   }
 
@@ -118,6 +136,8 @@ export class ChainConfigManager {
       case 1337:
       case 31337:
         return 'localhost';
+      case 900:
+        return 'solana';
       default:
         throw new Error(`Unsupported chainId: ${chainId}`);
     }
@@ -191,7 +211,7 @@ export class ChainConfigManager {
         publicClient.getGasPrice()
       ]);
 
-      const baseFeePerGas = block.baseFeePerGas || 0n;
+      const baseFeePerGas = block.baseFeePerGas || BigInt(0);
       const networkCongestion = this.assessNetworkCongestion(baseFeePerGas);
 
       return {
@@ -218,6 +238,20 @@ export class ChainConfigManager {
     } else {
       return 'low';
     }
+  }
+
+  /**
+   * 获取 Solana RPC 客户端
+   */
+  public getSolanaRpc(): Rpc<any> {
+    if (!this.solanaRpcClient) {
+      const config = this.chainConfigs.get('solana');
+      if (!config) {
+        throw new Error('Solana chain config not found');
+      }
+      this.solanaRpcClient = createSolanaRpc(config.rpcUrl);
+    }
+    return this.solanaRpcClient;
   }
 }
 
