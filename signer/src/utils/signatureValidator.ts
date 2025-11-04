@@ -32,9 +32,20 @@ export class SignatureValidator {
       const signature = this.hexToUint8Array(signatureHex);
       const publicKey = this.hexToUint8Array(publicKeyHex);
 
-      return nacl.sign.detached.verify(messageBytes, signature, publicKey);
+      const isValid = nacl.sign.detached.verify(messageBytes, signature, publicKey);
+      
+      if (!isValid) {
+        console.error('❌ 签名验证失败');
+        console.error('消息:', message);
+        console.error('签名:', signatureHex);
+        console.error('公钥:', publicKeyHex);
+      }
+      
+      return isValid;
     } catch (error) {
       console.error('签名验证异常:', error);
+      console.error('消息:', message);
+      console.error('签名:', signatureHex);
       return false;
     }
   }
@@ -46,7 +57,6 @@ export class SignatureValidator {
     to: string;
     amount: string;
     tokenAddress?: string;
-    tokenMint?: string;
     tokenType?: string;
     chainId: number;
     nonce: number;
@@ -62,7 +72,6 @@ export class SignatureValidator {
       to: params.to,
       amount: params.amount,
       tokenAddress: params.tokenAddress ?? null,
-      tokenMint: params.tokenMint ?? null,
       tokenType: params.tokenType ?? null,
       chainId: params.chainId,
       nonce: params.nonce,
@@ -86,7 +95,6 @@ export class SignatureValidator {
       to: string;
       amount: string;
       tokenAddress?: string;
-      tokenMint?: string;
       tokenType?: string;
       chainId: number;
       nonce: number;
@@ -100,6 +108,8 @@ export class SignatureValidator {
   ): boolean {
     // 构造签名负载（与 risk_control 服务一致）
     const payload = this.buildSignaturePayload(params);
+    
+    console.log('🔍 Signer 风控验证载荷:', payload);
 
     return this.verify(payload, riskSignature, riskPublicKey);
   }
@@ -115,7 +125,6 @@ export class SignatureValidator {
       to: string;
       amount: string;
       tokenAddress?: string;
-      tokenMint?: string;
       tokenType?: string;
       chainId: number;
       nonce: number;
@@ -129,6 +138,8 @@ export class SignatureValidator {
   ): boolean {
     // 构造签名负载（与 wallet 服务一致）
     const payload = this.buildSignaturePayload(params);
+    
+    console.log('🔍 Signer Wallet 验证载荷:', payload);
 
     return this.verify(payload, walletSignature, walletPublicKey);
   }

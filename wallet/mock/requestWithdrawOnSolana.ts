@@ -242,9 +242,7 @@ class SolanaWithdrawTester {
    * 运行所有测试
    */
   async runAllTests(): Promise<void> {
-    console.log('='.repeat(80));
     console.log('=== Solana 链提现测试 ===');
-    console.log('='.repeat(80));
     console.log('配置信息:');
     console.log('  用户ID:', CONFIG.USER_ID);
     console.log('  提现地址:', CONFIG.TO_ADDRESS);
@@ -277,16 +275,13 @@ class SolanaWithdrawTester {
     // 5. 测试 USDT 提现
     await this.testUSDTWithdraw();
 
-    console.log('\n='.repeat(80));
     console.log('=== 所有测试完成 ===');
-    console.log('='.repeat(80));
   }
 
   /**
    * 运行单个代币测试
    */
   async runSingleTest(tokenSymbol: 'SOL' | 'USDC' | 'USDT'): Promise<void> {
-    console.log('='.repeat(80));
     console.log(`=== Solana ${tokenSymbol} 提现测试 ===`);
     console.log('='.repeat(80));
 
@@ -313,9 +308,7 @@ class SolanaWithdrawTester {
         break;
     }
 
-    console.log('\n='.repeat(80));
     console.log('=== 测试完成 ===');
-    console.log('='.repeat(80));
   }
 }
 

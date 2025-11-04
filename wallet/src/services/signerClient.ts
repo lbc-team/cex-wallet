@@ -52,6 +52,7 @@ interface SignTransactionRequest {
   lastValidBlockHeight?: string; // Solana 交易的最后有效区块高度
   fee?: string;          // Solana 交易费用（lamports）
   tokenType?: string;    // 代币类型：spl-token / spl-token-2022 等
+  // 注意：对于 Solana，tokenAddress 在 SPL Token 时是 mint 地址，在原生 SOL 时为 undefined
 
   // 通用字段
   chainId: number;       // 链ID（必需）
@@ -259,6 +260,7 @@ export class SignerClient {
       // 3. 生成 wallet 服务自己的签名
       const signPayload = this.buildSignaturePayload(operationId, request, normalizedNonce, timestamp);
 
+      console.log('📋 SignerClient: Wallet 签名载荷:', JSON.stringify(signPayload, null, 2));
       const walletSignature = this.signMessage(JSON.stringify(signPayload));
       console.log('✅ SignerClient: Wallet 服务签名生成成功');
 
@@ -268,6 +270,7 @@ export class SignerClient {
         `${this.signerBaseUrl}/api/signer/sign-transaction`,
         {
           ...request,
+          tokenAddress: request.tokenAddress ?? null, // 确保 tokenAddress 字段存在，即使为 null
           nonce: normalizedNonce,
           operation_id: operationId,
           timestamp,

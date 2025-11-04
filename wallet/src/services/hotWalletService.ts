@@ -22,7 +22,8 @@ export class HotWalletService {
     // 1. 从数据库获取当前 nonce
     const currentNonce = await this.db.getCurrentNonce(address, chainId);
     console.log('从数据库获取nonce:', currentNonce);
-    // 2. 如果数据库中没有记录（返回-1），从链上获取并保存
+    
+    // 2. 如果数据库中没有记录（返回-1），从链上获取并保存（仅 EVM 链）
     if (currentNonce === -1) {
       try {
         const { chainConfigManager } = await import('../utils/chains');

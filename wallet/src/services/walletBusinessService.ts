@@ -33,7 +33,7 @@ export class WalletBusinessService {
    */
   private async selectHotWallet(params: {
     chainId: number;
-    chainType: string;
+    chainType: 'evm' | 'btc' | 'solana';
     requiredAmount: string;
     tokenId: number;
   }): Promise<{
@@ -74,10 +74,13 @@ export class WalletBusinessService {
         
         if (isBigIntStringGreaterOrEqual(normalizedBalance, normalizedRequiredAmount)) {
           // 获取钱包的 nonce 和用户ID
-          const nonce = await this.hotWalletService.getCurrentNonce(
-            wallet.address, 
-            params.chainId
-          );
+          let nonce: number = 0;
+          if (params.chainType === 'evm') {
+            nonce = await this.hotWalletService.getCurrentNonce(
+              wallet.address, 
+              params.chainId
+            );
+          }
 
           // 获取钱包信息以获取用户ID
           const walletInfo = await this.dbReader.getConnection().getWallet(wallet.address);
@@ -628,7 +631,7 @@ export class WalletBusinessService {
           address: hotWallet.address,
           to: params.to,
           amount: actualAmount.toString(),
-          tokenAddress: tokenInfo.is_native ? undefined : tokenInfo.token_address,
+          tokenAddress: tokenInfo.is_native ? undefined : tokenInfo.token_address, // 对于 Solana，tokenAddress 在 SPL Token 时是 mint 地址
           blockhash: solanaBlockhash,
           lastValidBlockHeight: gasEstimation?.lastValidBlockHeight,
           fee: gasEstimation?.fee,

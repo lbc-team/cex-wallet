@@ -199,10 +199,20 @@ export class RiskController {
    */
   withdrawRiskAssessment = async (req: Request, res: Response) => {
     try {
+      logger.info('📥 Risk: 收到提现风控评估请求', {
+        body: req.body,
+        operation_id: req.body?.operation_id
+      });
+
       const { operation_id, transaction, timestamp } = req.body;
 
       // 验证必需参数
       if (!operation_id || !transaction || !timestamp) {
+        logger.warn('❌ Risk: 缺少必需参数', {
+          has_operation_id: !!operation_id,
+          has_transaction: !!transaction,
+          has_timestamp: !!timestamp
+        });
         return res.status(400).json({
           success: false,
           error: {
@@ -212,6 +222,12 @@ export class RiskController {
           }
         });
       }
+
+      logger.info('📋 Risk: 解析交易参数', {
+        operation_id,
+        transaction: JSON.stringify(transaction, null, 2),
+        timestamp
+      });
 
       const {
         from,
@@ -227,6 +243,20 @@ export class RiskController {
         fee
       } = transaction;
 
+      logger.info('📋 Risk: 提取的交易字段', {
+        from,
+        to,
+        amount,
+        tokenAddress: tokenAddress || null,
+        tokenType: tokenType || null,
+        chainId,
+        chainType,
+        nonce,
+        blockhash: blockhash || null,
+        lastValidBlockHeight: lastValidBlockHeight || null,
+        fee: fee || null
+      });
+
       if (!from || !to || !amount || chainId === undefined || nonce === undefined) {
         return res.status(400).json({
           success: false,
@@ -241,7 +271,13 @@ export class RiskController {
       const normalizedChainType: 'evm' | 'btc' | 'solana' =
         chainType === 'solana' ? 'solana' : chainType === 'btc' ? 'btc' : 'evm';
 
+      logger.info('🔍 Risk: 规范化链类型', {
+        original: chainType,
+        normalized: normalizedChainType
+      });
+
       // 检查该 operation_id 是否已存在评估记录（人工审核通过的情况）
+      logger.info('🔍 Risk: 检查已存在的评估记录', { operation_id });
       const existingAssessment = await this.riskAssessmentModel.findByOperationId(operation_id);
 
       if (existingAssessment) {
@@ -254,25 +290,48 @@ export class RiskController {
           });
 
           // 重新生成签名（因为现在有了 from 和 nonce）
-          const signPayload = JSON.stringify(
-            this.buildSignaturePayload({
-              operation_id,
-              chainType: normalizedChainType,
-              from,
-              to,
-              amount,
-              tokenAddress,
-              tokenType,
-              chainId,
-              nonce,
-              blockhash,
-              lastValidBlockHeight,
-              fee,
-              timestamp
-            })
-          );
+          logger.info('📝 Risk: 构建签名载荷（人工审核通过）', {
+            operation_id,
+            chainType: normalizedChainType,
+            from,
+            to,
+            amount,
+            tokenAddress: tokenAddress || null,
+            tokenType: tokenType || null,
+            chainId,
+            nonce,
+            blockhash: blockhash || null,
+            lastValidBlockHeight: lastValidBlockHeight || null,
+            fee: fee || null,
+            timestamp
+          });
 
+          const signaturePayload = this.buildSignaturePayload({
+            operation_id,
+            chainType: normalizedChainType,
+            from,
+            to,
+            amount,
+            tokenAddress,
+            tokenType,
+            chainId,
+            nonce,
+            blockhash,
+            lastValidBlockHeight,
+            fee,
+            timestamp
+          });
+          
+          logger.info('📋 Risk 签名载荷（对象）:', signaturePayload);
+          const signPayload = JSON.stringify(signaturePayload);
+          logger.info('📋 Risk 签名载荷（JSON字符串）:', signPayload);
+
+          logger.info('🔐 Risk: 开始生成签名');
           const riskSignature = this.riskService.signMessage(signPayload);
+          logger.info('✅ Risk: 签名生成成功', {
+            signature: riskSignature,
+            signatureLength: riskSignature.length
+          });
 
           // 更新评估记录，添加新的签名
           await this.riskAssessmentModel.update(existingAssessment.id!, {
@@ -297,6 +356,12 @@ export class RiskController {
             expires_at: new Date(timestamp + 5 * 60 * 1000).toISOString()
           });
 
+          logger.info('✅ Risk: 返回人工审核通过的响应', {
+            operation_id,
+            risk_signature: riskSignature,
+            decision: 'approve'
+          });
+
           return res.status(200).json({
             success: true,
             risk_signature: riskSignature,
@@ -308,11 +373,20 @@ export class RiskController {
       }
 
       // 风控检查
+      logger.info('🔍 Risk: 开始风控检查', {
+        operation_id,
+        from,
+        to,
+        amount,
+        chainType: normalizedChainType
+      });
+
       let decision: 'approve' | 'freeze' | 'reject' | 'manual_review' = 'approve'; // 默认批准
       const reasons: string[] = [];
       let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
 
       // 1. 检查目标地址黑名单
+      logger.info('🔍 Risk: 检查目标地址黑名单', { to, chainType: normalizedChainType });
       const addressRisk = await this.addressRiskModel.checkAddress(to, normalizedChainType);
 
       if (addressRisk && addressRisk.risk_type === 'blacklist') {
@@ -334,28 +408,46 @@ export class RiskController {
 
       // 如果被拒绝，直接返回，不生成签名
       if (decision === 'reject') {
+        logger.info('📝 Risk: 构建拒绝操作的签名载荷', {
+          operation_id,
+          chainType: normalizedChainType,
+          from,
+          to,
+          amount,
+          tokenAddress: tokenAddress || null,
+          tokenType: tokenType || null,
+          chainId,
+          nonce,
+          blockhash: blockhash || null,
+          lastValidBlockHeight: lastValidBlockHeight || null,
+          fee: fee || null,
+          timestamp
+        });
+
+        const denySignaturePayload = this.buildSignaturePayload({
+          operation_id,
+          chainType: normalizedChainType,
+          from,
+          to,
+          amount,
+          tokenAddress,
+          tokenType,
+          chainId,
+          nonce,
+          blockhash,
+          lastValidBlockHeight,
+          fee,
+          timestamp
+        });
+
+        logger.info('📋 Risk 拒绝操作的签名载荷:', denySignaturePayload);
+
         // 记录到数据库
         await this.riskAssessmentModel.create({
           operation_id,
           table_name: undefined,
           action: 'withdraw',
-          operation_data: JSON.stringify(
-            this.buildSignaturePayload({
-              operation_id,
-              chainType: normalizedChainType,
-              from,
-              to,
-              amount,
-              tokenAddress,
-              tokenType,
-              chainId,
-              nonce,
-              blockhash,
-              lastValidBlockHeight,
-              fee,
-              timestamp
-            })
-          ),
+          operation_data: JSON.stringify(denySignaturePayload),
           risk_level: riskLevel,
           decision: 'deny',
           reasons: reasons.length > 0 ? JSON.stringify(reasons) : undefined,
@@ -388,24 +480,48 @@ export class RiskController {
       }
 
       // 通过风控检查，生成签名（复用 RiskAssessmentService 的 signer）
-      const signPayload = JSON.stringify(
-        this.buildSignaturePayload({
-          operation_id,
-          chainType: normalizedChainType,
-          from,
-          to,
-          amount,
-          tokenAddress,
-          tokenType,
-          chainId,
-          nonce,
-          blockhash,
-          fee,
-          timestamp
-        })
-      );
+      logger.info('📝 Risk: 构建签名载荷（自动通过）', {
+        operation_id,
+        chainType: normalizedChainType,
+        from,
+        to,
+        amount,
+        tokenAddress: tokenAddress || null,
+        tokenType: tokenType || null,
+        chainId,
+        nonce,
+        blockhash: blockhash || null,
+        lastValidBlockHeight: lastValidBlockHeight || null,
+        fee: fee || null,
+        timestamp
+      });
 
+      const signaturePayload = this.buildSignaturePayload({
+        operation_id,
+        chainType: normalizedChainType,
+        from,
+        to,
+        amount,
+        tokenAddress,
+        tokenType,
+        chainId,
+        nonce,
+        blockhash,
+        lastValidBlockHeight,
+        fee,
+        timestamp
+      });
+      
+      logger.info('📋 Risk 签名载荷（对象）:', signaturePayload);
+      const signPayload = JSON.stringify(signaturePayload);
+      logger.info('📋 Risk 签名载荷（JSON字符串）:', signPayload);
+
+      logger.info('🔐 Risk: 开始生成签名');
       const riskSignature = this.riskService.signMessage(signPayload);
+      logger.info('✅ Risk: 签名生成成功', {
+        signature: riskSignature,
+        signatureLength: riskSignature.length
+      });
 
       // 记录到数据库
       // 计算签名过期时间（5分钟后）
@@ -427,6 +543,7 @@ export class RiskController {
             chainId,
             nonce,
             blockhash,
+            lastValidBlockHeight,
             fee,
             timestamp
           })
@@ -445,6 +562,14 @@ export class RiskController {
         amount,
         decision,
         risk_level: riskLevel
+      });
+
+      logger.info('✅ Risk: 返回自动通过的响应', {
+        operation_id,
+        risk_signature: riskSignature,
+        decision,
+        timestamp,
+        reasons: reasons.length > 0 ? reasons : undefined
       });
 
       return res.status(200).json({
