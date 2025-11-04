@@ -10,6 +10,7 @@ import {
 } from '@solana/web3.js';
 import {
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   getAssociatedTokenAddress,
   createAssociatedTokenAccountInstruction,
   createTransferInstruction
@@ -162,6 +163,7 @@ interface TokenInfo {
   mint: string;
   decimals: number;
   payerTokenAccount: string;
+  tokenType?: string; // 'spl-token' | 'spl-token-2022'
 }
 
 interface DeployedTokens {
@@ -204,6 +206,14 @@ async function transferTokensToAll(): Promise<void> {
     const mintPubkey = new PublicKey(tokenInfo.mint);
     const payerTokenAccount = new PublicKey(tokenInfo.payerTokenAccount);
 
+    // 根据 tokenType 选择正确的程序 ID
+    const tokenProgramId = tokenInfo.tokenType === 'spl-token-2022' 
+      ? TOKEN_2022_PROGRAM_ID 
+      : TOKEN_PROGRAM_ID;
+    
+    console.log(`   Token 类型: ${tokenInfo.tokenType || 'spl-token'}`);
+    console.log(`   程序 ID: ${tokenProgramId.toBase58()}`);
+
     // 每个token转账25个（考虑decimals）
     const transferAmount = 25 * Math.pow(10, tokenInfo.decimals);
 
@@ -211,12 +221,12 @@ async function transferTokensToAll(): Promise<void> {
       try {
         const toPubkey = new PublicKey(address);
 
-        // 获取目标地址的ATA
+        // 获取目标地址的ATA（需要传入正确的程序 ID）
         const toTokenAccount = await getAssociatedTokenAddress(
           mintPubkey,
           toPubkey,
           false,
-          TOKEN_PROGRAM_ID
+          tokenProgramId
         );
 
         // 检查ATA是否存在
@@ -232,7 +242,7 @@ async function transferTokensToAll(): Promise<void> {
               toTokenAccount,   // ATA address
               toPubkey,        // owner
               mintPubkey,      // mint
-              TOKEN_PROGRAM_ID
+              tokenProgramId    // 使用正确的程序 ID
             )
           );
         }
@@ -245,7 +255,7 @@ async function transferTokensToAll(): Promise<void> {
             payer.publicKey,    // owner
             transferAmount,     // amount
             [],                 // multi signers
-            TOKEN_PROGRAM_ID
+            tokenProgramId      // 使用正确的程序 ID
           )
         );
 

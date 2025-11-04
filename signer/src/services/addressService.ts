@@ -601,13 +601,22 @@ export class AddressService {
             tokenProgram: tokenProgramAddress
           });
 
-          instruction = getTransferInstruction({
+          const baseInstruction = getTransferInstruction({
             source: sourceAta,
             destination: destAta,
             authority: solanaSigner,
-            amount: BigInt(request.amount),
-            tokenProgram: tokenProgramAddress
+            amount: BigInt(request.amount)
           });
+          
+          // 如果是 token-2022，创建新的 instruction 对象并设置正确的 program ID
+          if (request.tokenType === 'spl-token-2022') {
+            instruction = {
+              ...baseInstruction,
+              programAddress: tokenProgramAddress
+            } as typeof baseInstruction;
+          } else {
+            instruction = baseInstruction;
+          }
         } else {
           // SOL 原生代币转账
           console.log('💎 构建 SOL 转账指令');

@@ -6,6 +6,10 @@ sqlite3 wallet.db "SELECT * FROM solana_transactions;"
 
 sqlite3 wallet.db "SELECT * FROM users;"
 
+sqlite3 wallet.db "SELECT * FROM tokens;"
+
+sqlite3 wallet.db "SELECT * FROM wallets;"
+
 sqlite3 wallet.db "SELECT * FROM blocks;"
 
 sqlite3 wallet.db "SELECT * FROM credits;"

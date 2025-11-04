@@ -14,7 +14,7 @@
       "name": "Tether USD (Test)",
       "mint": "utSi6U6UhwaArZD88AJFDUCmoxk9ojU21PzCSrRCz3B",
       "decimals": 6,
-      "payerTokenAccount": "6GtCVx1YjyYKAQrE51j5sLbER51Rmqg2x4o4f5xfCSmh",
+      "payerTokenAccount": "HrdVFLELenJ2BeXAmLcaHCFBggB4X3v8w37T6AxG7oaB",
       "tokenType": "spl-token-2022"
     }
   ]
