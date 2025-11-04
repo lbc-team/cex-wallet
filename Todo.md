@@ -7,7 +7,9 @@
 [] ETH 入账不支持合约内部转账（internal value transfer）。
 方案：可选集成 trace（如 debug_traceBlock） 
 
-[] 多链扩展: BTC Solana
+[] 暂时不支持提现到 ATA 地址未创建的情况
+
+[] 多链扩展: BTC 
 
 [] 资金归集
 

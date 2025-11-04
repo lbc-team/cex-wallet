@@ -151,8 +151,8 @@ export function createSignerRoutes(addressService: AddressService): Router {
           };
           return res.status(400).json(response);
         }
-      } else if (signRequest.chainType === 'solana' && signRequest.tokenMint) {
-        if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(signRequest.tokenMint)) {
+      } else if (signRequest.chainType === 'solana' && signRequest.tokenAddress) {
+        if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(signRequest.tokenAddress)) {
           const response: ApiResponse = {
             success: false,
             error: '无效的SPL代币Mint地址格式'

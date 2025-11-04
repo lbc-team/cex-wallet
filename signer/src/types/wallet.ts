@@ -41,8 +41,8 @@ export interface SignTransactionRequest {
   type?: 0 | 2;         // 交易类型：0=Legacy, 2=EIP-1559（可选，默认为2）
 
   // Solana 特定字段
-  tokenMint?: string;    // SPL Token Mint 地址（可选，为空则为 SOL 转账）
   tokenType?: string;    // 代币类型：'spl-token' | 'spl-token-2022'（可选，默认为 'spl-token'）
+  // 注意：对于 Solana，tokenAddress 在 SPL Token 时是 mint 地址，在原生 SOL 时为 undefined
   blockhash?: string;    // Solana blockhash（Solana 必需）
   lastValidBlockHeight?: string; // Solana 交易的最后有效区块高度
   fee?: string;          // Solana 交易费用（lamports）

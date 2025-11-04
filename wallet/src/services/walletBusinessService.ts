@@ -697,10 +697,11 @@ export class WalletBusinessService {
 
           // signResult.signedTransaction 是 base64 编码的签名交易
           const txSignature = await ((solanaRpc as any).sendTransaction(
-            Buffer.from(signResult.signedTransaction, 'base64') as any,
+            signResult.signedTransaction,
             {
               skipPreflight: false,
-              preflightCommitment: 'confirmed'
+              preflightCommitment: 'confirmed',
+              encoding: 'base64'
             }
           ).send());
 

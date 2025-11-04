@@ -6,6 +6,7 @@ import { chainConfigManager } from '../utils/chains';
 
 // API响应接口
 interface ApiResponse<T = any> {
+  success?: boolean;
   message?: string;
   error?: string;
   data?: T;
@@ -227,12 +228,16 @@ export function walletRoutes(dbService: DatabaseReader): Router {
     
     if (result.success) {
       const successResponse: ApiResponse = {
+        success: true,
         message: '提现签名成功',
         data: result.data
       };
       res.json(successResponse);
     } else {
-      const errorResponse: ApiResponse = { error: result.error || '提现失败' };
+      const errorResponse: ApiResponse = {
+        success: false,
+        error: result.error || '提现失败'
+      };
 
       // 根据错误类型设置不同的状态码
       if (result.error?.includes('余额不足')) {

@@ -11,8 +11,7 @@ import axios from 'axios';
 const CONFIG = {
   WALLET_SERVICE_URL: 'http://localhost:3000',
   USER_ID: 3,  // 使用普通用户（用户 2 是热钱包）
-  // Solana 测试地址 (需要替换为实际的 Solana 地址)
-  TO_ADDRESS: 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH',
+  TO_ADDRESS: '6oLiQn73H8EWnbo5sSuFx1V4KNAasBgFP39puLR9Emaw',
   AMOUNT_SOL: '0.01',  // 0.01 SOL
   AMOUNT_USDC: '10',    // 10 USDC
   AMOUNT_USDT: '10',    // 10 USDT
