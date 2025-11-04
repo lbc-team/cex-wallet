@@ -10,7 +10,7 @@
  */
 
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { createMint, mintTo, getOrCreateAssociatedTokenAccount } from '@solana/spl-token';
+import { createMint, mintTo, getOrCreateAssociatedTokenAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -78,17 +78,19 @@ async function deployTokens() {
     );
     console.log('✅ USDC Mint 地址:', usdcMint.toBase58());
 
-    // 部署第二个 Token (USDT)
-    console.log('\n📦 部署 Token 2: Mock USDT');
+    // 部署第二个 Token (USDT) - 使用 Token2022 程序
+    console.log('\n📦 部署 Token 2: Mock Token2022 USDT');
     const usdtMint = await createMint(
       connection,
       payer,
       payer.publicKey,      // mint authority
       payer.publicKey,      // freeze authority
       6,                    // decimals (USDT 使用 6 位小数)
-      usdtMintKeypair       // 使用指定的 mint keypair
+      usdtMintKeypair,      // 使用指定的 mint keypair
+      undefined,            // multisig
+      TOKEN_2022_PROGRAM_ID // 使用 Token2022 程序
     );
-    console.log('✅ USDT Mint 地址:', usdtMint.toBase58());
+    console.log('✅ USDT (Token2022) Mint 地址:', usdtMint.toBase58());
 
     // 创建 token account 并铸造一些代币给 payer（用于测试）
     console.log('\n🏦 为 Payer 创建 Token Accounts 并铸造代币...');
@@ -111,13 +113,18 @@ async function deployTokens() {
     );
     console.log('✅ 铸造 1,000,000 USDC');
 
+    // 对于 Token2022，需要指定 programId 参数
     const usdtTokenAccount = await getOrCreateAssociatedTokenAccount(
       connection,
       payer,
       usdtMint,
-      payer.publicKey
+      payer.publicKey,
+      false,                  // allowOwnerOffCurve
+      'confirmed',            // commitment
+      undefined,              // confirmOptions
+      TOKEN_2022_PROGRAM_ID  // programId - 使用 Token2022 程序
     );
-    console.log('USDT Token Account:', usdtTokenAccount.address.toBase58());
+    console.log('USDT (Token2022) Token Account:', usdtTokenAccount.address.toBase58());
 
     await mintTo(
       connection,
@@ -125,9 +132,12 @@ async function deployTokens() {
       usdtMint,
       usdtTokenAccount.address,
       payer.publicKey,
-      1000000 * 1e6 // 1,000,000 USDT
+      1000000 * 1e6,         // 1,000,000 USDT
+      undefined,             // multiSigners
+      undefined,             // confirmOptions
+      TOKEN_2022_PROGRAM_ID  // programId - 使用 Token2022 程序
     );
-    console.log('✅ 铸造 1,000,000 USDT');
+    console.log('✅ 铸造 1,000,000 USDT (Token2022)');
 
     // 保存 mint 地址到文件
     const tokenInfo = {
@@ -138,14 +148,16 @@ async function deployTokens() {
           name: 'USD Coin (Test)',
           mint: usdcMint.toBase58(),
           decimals: 6,
-          payerTokenAccount: usdcTokenAccount.address.toBase58()
+          payerTokenAccount: usdcTokenAccount.address.toBase58(),
+          tokenType: 'spl-token'
         },
         {
           symbol: 'USDT',
           name: 'Tether USD (Test)',
           mint: usdtMint.toBase58(),
           decimals: 6,
-          payerTokenAccount: usdtTokenAccount.address.toBase58()
+          payerTokenAccount: usdtTokenAccount.address.toBase58(),
+          tokenType: 'spl-token-2022'
         }
       ]
     };

@@ -46,6 +46,7 @@ export interface Token {
   token_address?: string;
   token_symbol: string;
   token_name?: string;
+  token_type?: string | null;
   decimals: number;
   is_native: boolean;
   collect_amount: string;

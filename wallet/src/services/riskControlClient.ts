@@ -36,8 +36,13 @@ export interface TransactionSignRequest {
     to: string;
     amount: string;
     tokenAddress?: string;
+    tokenType?: string;
     chainId: number;
+    chainType: 'evm' | 'btc' | 'solana';
     nonce: number;
+    blockhash?: string;
+    lastValidBlockHeight?: string;
+    fee?: string;
   };
   timestamp: number;
 }

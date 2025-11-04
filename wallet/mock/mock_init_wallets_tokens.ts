@@ -137,21 +137,6 @@ async function insertMockData() {
       logger.error('创建 EVM 热钱包失败:', error);
     }
 
-    // 3.2 创建 Solana 热钱包
-    try {
-      const solanaHotWallet = await hotWalletService.createHotWallet({
-        chainType: 'solana'
-      });
-
-      logger.info('Solana 热钱包创建成功:', {
-        walletId: solanaHotWallet.walletId,
-        address: solanaHotWallet.address,
-        device: solanaHotWallet.device,
-        path: solanaHotWallet.path
-      });
-    } catch (error) {
-      logger.error('创建 Solana 热钱包失败:', error);
-    }
 
     // 4. 插入代币配置
     logger.info('插入代币配置...');
@@ -171,6 +156,7 @@ async function insertMockData() {
           token_address: '0x0000000000000000000000000000000000000000',
           token_symbol: 'ETH',
           token_name: 'ETH',
+          token_type: 'erc20',
           decimals: 18,
           is_native: true,
           collect_amount: '100000000000000',
@@ -200,6 +186,7 @@ async function insertMockData() {
           token_address: '0x5fbdb2315678afecb367f032d93f642f64180aa3', // 统一使用小写
           token_symbol: 'OPS',
           token_name: 'OPS',
+          token_type: 'erc20',
           decimals: 18,
           is_native: false,
           collect_amount: '10000000000000000000',
@@ -229,6 +216,7 @@ async function insertMockData() {
           token_address: '0xe7f1725e7734ce288f8367e1bb143e90bb3f0512', // 统一使用小写
           token_symbol: 'USDT',
           token_name: 'MockU',
+          token_type: 'erc20',
           decimals: 18,
           is_native: false,
           collect_amount: '10000000000000000000',
@@ -264,6 +252,7 @@ async function insertMockData() {
               token_address: token.mint,
               token_symbol: token.symbol,
               token_name: token.name,
+              token_type: token.tokenType || 'spl-token',  // 使用 tokenType 字段
               decimals: token.decimals,
               is_native: false,
               collect_amount: '1000000',  // 1 token (with 6 decimals)
@@ -271,7 +260,7 @@ async function insertMockData() {
               min_withdraw_amount: '1000000',  // 1 token
               status: 1
             });
-            logger.info(`${token.symbol} (Solana) 代币配置创建成功`);
+            logger.info(`${token.symbol} (Solana, ${token.tokenType || 'spl-token'}) 代币配置创建成功`);
           } else {
             logger.info(`${token.symbol} (Solana) 代币配置已存在`);
           }
@@ -314,6 +303,8 @@ async function insertMockData() {
 
     logger.info('代币配置插入完成');
 
+
+
     // 5. 通过 API 创建用户钱包地址（EVM）
     logger.info('通过 API 创建用户钱包地址（EVM）...');
     for (let i = 1; i <= 10; i++) {
@@ -330,6 +321,25 @@ async function insertMockData() {
         logger.error(`用户 ${i} EVM 钱包创建请求失败:`, error);
       }
     }
+
+
+
+    // 创建 Solana 热钱包
+    try {
+      const solanaHotWallet = await hotWalletService.createHotWallet({
+        chainType: 'solana'
+      });
+
+      logger.info('Solana 热钱包创建成功:', {
+        walletId: solanaHotWallet.walletId,
+        address: solanaHotWallet.address,
+        device: solanaHotWallet.device,
+        path: solanaHotWallet.path
+      });
+    } catch (error) {
+      logger.error('创建 Solana 热钱包失败:', error);
+    }
+    
 
     // 6. 通过 API 创建用户 Solana 钱包地址
     logger.info('通过 API 创建用户 Solana 钱包地址...');

@@ -43,6 +43,7 @@ export interface SignTransactionRequest {
   // Solana 特定字段
   tokenMint?: string;    // SPL Token Mint 地址（可选，为空则为 SOL 转账）
   blockhash?: string;    // Solana blockhash（Solana 必需）
+  lastValidBlockHeight?: string; // Solana 交易的最后有效区块高度
   fee?: string;          // Solana 交易费用（lamports）
 
   // 通用字段

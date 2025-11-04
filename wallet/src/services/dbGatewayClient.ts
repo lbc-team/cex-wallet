@@ -226,6 +226,7 @@ export class DbGatewayClient {
     token_address?: string;
     token_symbol: string;
     token_name?: string;
+    token_type?: string;
     decimals?: number;
     is_native?: boolean;
     collect_amount?: string;
@@ -240,6 +241,7 @@ export class DbGatewayClient {
         token_address: params.token_address || null,
         token_symbol: params.token_symbol,
         token_name: params.token_name || null,
+        token_type: params.token_type || null,
         decimals: params.decimals !== undefined ? params.decimals : 18,
         is_native: params.is_native ? 1 : 0,
         collect_amount: params.collect_amount || '0',

@@ -152,9 +152,7 @@ class SolanaWithdrawTester {
    * 显示提现结果
    */
   displayResult(response: WithdrawResponse, tokenSymbol: string): void {
-    console.log('\n' + '='.repeat(80));
     console.log(`${tokenSymbol} 提现结果:`);
-    console.log('='.repeat(80));
 
     if (response.success && response.data) {
       console.log('✅ 提现请求成功!');

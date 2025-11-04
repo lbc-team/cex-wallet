@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   token_address TEXT,                      -- 代币合约地址（原生代币为空）
   token_symbol TEXT NOT NULL,              -- USDC/ETH/BTC/SOL
   token_name TEXT,                         -- USD Coin/Ethereum/Bitcoin
+  token_type TEXT,                         -- 代币类型：erc20/spl-token/spl-token-2022 等
   decimals INTEGER DEFAULT 18,             -- 代币精度
   is_native BOOLEAN DEFAULT 0,             -- 是否为链原生代币
   collect_amount TEXT DEFAULT '0',         -- 归集金额阈值
@@ -353,7 +354,9 @@ HAVING total_balance > 0;
 CREATE VIEW IF NOT EXISTS v_user_token_totals AS
 SELECT
   c.user_id,
+  c.token_id,
   c.token_symbol,
+  MIN(t.decimals) as decimals,
   -- 标准化金额：将所有金额转换到 18 位精度，然后求和
   SUM(CASE
     WHEN c.credit_type NOT IN ('freeze') AND (
@@ -402,7 +405,7 @@ SELECT
   MAX(c.updated_at) as last_updated
 FROM credits c
 JOIN tokens t ON c.token_id = t.id
-GROUP BY c.user_id, c.token_symbol
+GROUP BY c.user_id, c.token_id, c.token_symbol
 HAVING total_balance > 0;
 
 -- 3. 用户余额统计视图

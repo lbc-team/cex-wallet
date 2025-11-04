@@ -3,18 +3,29 @@ import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/t
 // 通用功能从 @solana/kit 导入
 import { address } from '@solana/kit';
 
+// Token2022 程序地址
+const TOKEN_2022_PROGRAM_ADDRESS = address('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+
 /**
  * 计算 ATA (Associated Token Account) 地址
  * @param ownerAddress 钱包地址 (owner)
  * @param mintAddress Token Mint 地址
+ * @param tokenType 代币类型：'spl-token' | 'spl-token-2022'，默认为 'spl-token'
  * @returns ATA 地址
  */
-export async function getAssociatedTokenAddress(ownerAddress: string, mintAddress: string): Promise<string> {
+export async function getAssociatedTokenAddress(
+  ownerAddress: string,
+  mintAddress: string,
+  tokenType: 'spl-token' | 'spl-token-2022' = 'spl-token'
+): Promise<string> {
   try {
+    // 根据 tokenType 选择正确的程序地址
+    const tokenProgramAddress = tokenType === 'spl-token-2022' ? TOKEN_2022_PROGRAM_ADDRESS : TOKEN_PROGRAM_ADDRESS;
+
     const [ataAddress] = await findAssociatedTokenPda({
       owner: address(ownerAddress),
       mint: address(mintAddress),
-      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      tokenProgram: tokenProgramAddress,
     });
 
     return ataAddress;

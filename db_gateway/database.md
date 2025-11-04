@@ -149,6 +149,7 @@ node dist/scripts/createTables.js
 | token_address | TEXT | 代币合约地址（原生代币为空）， 如果是Solana 则是 mint account  |
 | token_symbol | TEXT | 代币符号：USDC/ETH/BTC/SOL 等 |
 | token_name | TEXT | 代币全名：USD Coin/Ethereum/Bitcoin 等 |
+| token_type | TEXT | 代币类型：如 `erc20`、`spl-token`、`spl-token-2022` |
 | decimals | INTEGER | 代币精度（小数位数） |
 | is_native | BOOLEAN | 是否为链原生代币（ETH/BTC/SOL等） |
 | collect_amount | TEXT | 归集金额阈值，大整数存储 |
@@ -272,6 +273,22 @@ user_withdraw_request → risk_reviewing → signing → pending → processing 
 
 ### 余额聚合视图用户代币总余额 （[v_user_token_totals](./src/db/connection.ts)）
 
+| 字段 | 说明 |
+|------|------|
+| user_id | 用户 ID |
+| token_id | 代币 ID（引用 `tokens.id`） |
+| token_symbol | 代币符号 |
+| decimals | 代币精度（取关联代币 `decimals` 的最小值，用于统一换算） |
+| total_available_balance | 可用余额（统一换算为 18 位精度的数值） |
+| total_frozen_balance | 冻结余额（18 位精度） |
+| total_balance | 总余额（18 位精度） |
+| total_available_formatted | 可用余额的格式化字符串 |
+| total_frozen_formatted | 冻结余额的格式化字符串 |
+| total_balance_formatted | 总余额的格式化字符串 |
+| address_count | 持有该代币的钱包地址数量 |
+| last_updated | 最近一次余额变动时间 |
+
+> 说明：由于数值均经过 18 位精度标准化，业务层在计算最小单位时可结合 `decimals` 还原为原始精度；当同一代币符号存在跨链配置时，`decimals` 取关联代币的最小精度以便统一展示。
 
 ## Solana 扫描模块相关表
 
@@ -381,5 +398,3 @@ SELECT wallet_address
 FROM solana_token_accounts
 WHERE ata_address = 'ATA_ADDRESS_HERE';
 ```
-
-

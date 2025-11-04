@@ -304,9 +304,15 @@ POST /api/assess
     from: string;          // 热钱包地址
     to: string;            // 提现目标地址
     amount: string;        // 提现金额（最小单位）
-    tokenAddress?: string; // 代币合约地址（可选）
+    tokenAddress?: string; // ERC20 合约地址（可选）
+    tokenMint?: string;    // SPL Token Mint（Solana 可选）
+    tokenType?: string;    // 代币类型：erc20/spl-token/spl-token-2022/native/sol-native
     chainId: number;       // 链ID
+    chainType: 'evm' | 'btc' | 'solana'; // 链类型
     nonce: number;         // 交易 nonce
+    blockhash?: string;    // Solana blockhash
+    lastValidBlockHeight?: string; // Solana 最后有效区块高度
+    fee?: string;          // Solana 手续费（lamports）
   };
   timestamp: number;       // 时间戳
 }

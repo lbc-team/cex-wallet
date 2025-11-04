@@ -48,9 +48,10 @@ interface SignTransactionRequest {
   type?: 0 | 2;         // 交易类型：0=Legacy, 2=EIP-1559（可选，默认为2）
 
   // Solana 特定字段
-  tokenMint?: string;    // SPL Token Mint 地址（可选，为空则为 SOL 转账）
   blockhash?: string;    // Solana blockhash（Solana 必需）
+  lastValidBlockHeight?: string; // Solana 交易的最后有效区块高度
   fee?: string;          // Solana 交易费用（lamports）
+  tokenType?: string;    // 代币类型：spl-token / spl-token-2022 等
 
   // 通用字段
   chainId: number;       // 链ID（必需）
@@ -124,6 +125,32 @@ export class SignerClient {
   }
 
   /**
+   * 构建链无关的签名载荷，保持字段顺序一致
+   */
+  private buildSignaturePayload(
+    operationId: string,
+    request: SignTransactionRequest,
+    nonce: number,
+    timestamp: number
+  ): Record<string, any> {
+    return {
+      operation_id: operationId,
+      chainType: request.chainType,
+      from: request.address,
+      to: request.to,
+      amount: request.amount,
+      tokenAddress: request.tokenAddress ?? null,
+      tokenType: request.tokenType ?? null,
+      chainId: request.chainId,
+      nonce,
+      blockhash: request.blockhash ?? null,
+      lastValidBlockHeight: request.lastValidBlockHeight ?? null,
+      fee: request.fee ?? null,
+      timestamp
+    };
+  }
+
+  /**
    * 向 signer 模块请求创建新钱包
    */
   async createWallet(chainType: 'evm' | 'btc' | 'solana'): Promise<WalletData> {
@@ -192,19 +219,31 @@ export class SignerClient {
       // 1. 生成 operation_id 和 timestamp（如果提供了 existingOperationId 则使用它）
       const operationId = existingOperationId || uuidv4();
       const timestamp = Date.now();
+      const normalizedNonce = request.nonce ?? 0;
+
+      if (request.chainType === 'evm' && request.nonce === undefined) {
+        throw new Error('EVM 交易必须提供 nonce');
+      }
 
       // 2. 请求风控签名
       console.log('🛡️ SignerClient: 请求风控签名...');
+      const riskTransactionPayload: TransactionSignRequest['transaction'] = {
+        from: request.address,
+        to: request.to,
+        amount: request.amount,
+        chainId: request.chainId,
+        chainType: request.chainType,
+        nonce: normalizedNonce,
+        ...(request.tokenAddress && { tokenAddress: request.tokenAddress }),
+        ...(request.tokenType && { tokenType: request.tokenType }),
+        ...(request.blockhash && { blockhash: request.blockhash }),
+        ...(request.lastValidBlockHeight && { lastValidBlockHeight: request.lastValidBlockHeight }),
+        ...(request.fee && { fee: request.fee })
+      };
+
       const riskSignRequest: TransactionSignRequest = {
         operation_id: operationId,
-        transaction: {
-          from: request.address,
-          to: request.to,
-          amount: request.amount,
-          ...(request.tokenAddress && { tokenAddress: request.tokenAddress }),
-          chainId: request.chainId,
-          ...(request.nonce !== undefined && { nonce: request.nonce })
-        },
+        transaction: riskTransactionPayload,
         timestamp
       };
 
@@ -218,23 +257,7 @@ export class SignerClient {
       console.log('✅ SignerClient: 风控签名获取成功');
 
       // 3. 生成 wallet 服务自己的签名
-      const signPayload: any = {
-        operation_id: operationId,
-        from: request.address,
-        to: request.to,
-        amount: request.amount,
-        chainId: request.chainId,
-        timestamp
-      };
-
-      // 根据链类型添加特定字段
-      if (request.chainType === 'solana') {
-        if (request.blockhash) signPayload.blockhash = request.blockhash;
-        if (request.tokenMint) signPayload.tokenMint = request.tokenMint;
-      } else if (request.chainType === 'evm') {
-        if (request.nonce !== undefined) signPayload.nonce = request.nonce;
-        if (request.tokenAddress) signPayload.tokenAddress = request.tokenAddress;
-      }
+      const signPayload = this.buildSignaturePayload(operationId, request, normalizedNonce, timestamp);
 
       const walletSignature = this.signMessage(JSON.stringify(signPayload));
       console.log('✅ SignerClient: Wallet 服务签名生成成功');
@@ -245,6 +268,7 @@ export class SignerClient {
         `${this.signerBaseUrl}/api/signer/sign-transaction`,
         {
           ...request,
+          nonce: normalizedNonce,
           operation_id: operationId,
           timestamp,
           risk_signature: riskSignResult.risk_signature,
@@ -300,17 +324,16 @@ export class SignerClient {
     console.log('📥 SignerClient: 使用已有风控签名请求签名');
 
     try {
+      const normalizedNonce = request.nonce ?? 0;
+
+      if (request.chainType === 'evm' && request.nonce === undefined) {
+        throw new Error('EVM 交易必须提供 nonce');
+      }
+
       // 1. 生成 wallet 服务自己的签名
-      const signPayload = JSON.stringify({
-        operation_id: operationId,
-        from: request.address,
-        to: request.to,
-        amount: request.amount,
-        tokenAddress: request.tokenAddress || null,
-        chainId: request.chainId,
-        nonce: request.nonce,
-        timestamp
-      });
+      const signPayload = JSON.stringify(
+        this.buildSignaturePayload(operationId, request, normalizedNonce, timestamp)
+      );
 
       const walletSignature = this.signMessage(signPayload);
       console.log('✅ SignerClient: Wallet 服务签名生成成功');
@@ -321,6 +344,7 @@ export class SignerClient {
         `${this.signerBaseUrl}/api/signer/sign-transaction`,
         {
           ...request,
+          nonce: normalizedNonce,
           operation_id: operationId,
           timestamp,
           risk_signature: riskSignature,

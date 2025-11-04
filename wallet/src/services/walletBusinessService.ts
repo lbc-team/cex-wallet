@@ -227,9 +227,13 @@ export class WalletBusinessService {
             }
 
             try {
+              // 根据 token_type 确定代币类型，默认为 spl-token
+              const tokenType = (token.token_type === 'spl-token-2022' ? 'spl-token-2022' : 'spl-token') as 'spl-token' | 'spl-token-2022';
+              
               const ataAddress = await getAssociatedTokenAddress(
                 walletData.address,
-                token.token_address
+                token.token_address,
+                tokenType
               );
 
               // 通过 db_gateway 保存 ATA 记录
@@ -241,7 +245,7 @@ export class WalletBusinessService {
                 ata_address: ataAddress
               });
 
-              console.log(`✅ 保存 ATA: ${token.token_symbol} -> ${ataAddress.substring(0, 8)}...`);
+              console.log(`✅ 保存 ATA: ${token.token_symbol} (${tokenType}) -> ${ataAddress.substring(0, 8)}...`);
             } catch (error) {
               console.error(`❌ 为代币 ${token.token_symbol} 生成 ATA 失败:`, error);
               // 继续处理其他代币
@@ -579,13 +583,15 @@ export class WalletBusinessService {
           const latestBlockhash = await ((solanaRpc as any).getLatestBlockhash().send());
 
           solanaBlockhash = latestBlockhash.value.blockhash;
+          const solanaLastValidBlockHeight = latestBlockhash.value.lastValidBlockHeight.toString();
           console.log('✅ Solana blockhash:', solanaBlockhash);
+          console.log('✅ Solana lastValidBlockHeight:', solanaLastValidBlockHeight);
 
           // Solana 固定费用（5000 lamports）
           gasEstimation = {
             fee: '5000',
             blockhash: solanaBlockhash,
-            lastValidBlockHeight: latestBlockhash.value.lastValidBlockHeight.toString()
+            lastValidBlockHeight: solanaLastValidBlockHeight
           };
         } else {
           // EVM 链：使用 gas 估算服务
@@ -622,9 +628,11 @@ export class WalletBusinessService {
           address: hotWallet.address,
           to: params.to,
           amount: actualAmount.toString(),
-          tokenMint: tokenInfo.is_native ? undefined : tokenInfo.token_address,
+          tokenAddress: tokenInfo.is_native ? undefined : tokenInfo.token_address,
           blockhash: solanaBlockhash,
+          lastValidBlockHeight: gasEstimation?.lastValidBlockHeight,
           fee: gasEstimation?.fee,
+          tokenType: tokenInfo.token_type || (tokenInfo.is_native ? 'sol-native' : 'spl-token'),
           chainId: params.chainId,
           chainType: 'solana'
         };
@@ -640,7 +648,8 @@ export class WalletBusinessService {
           nonce: hotWallet.nonce,
           chainId: params.chainId,
           chainType: params.chainType,
-          type: 2 // 使用 EIP-1559
+          type: 2, // 使用 EIP-1559
+          tokenType: tokenInfo.token_type || (tokenInfo.is_native ? 'native' : 'erc20')
         };
 
         // 只有非原生代币才设置 tokenAddress
@@ -876,6 +885,7 @@ export class WalletBusinessService {
         chainId: number;
         chainType: 'evm' | 'btc' | 'solana';
         type: 2;
+        tokenType?: string;
       } = {
         address: hotWallet.address,
         to: withdraw.to_address,
@@ -886,7 +896,8 @@ export class WalletBusinessService {
         nonce: hotWallet.nonce,
         chainId: withdraw.chain_id,
         chainType: withdraw.chain_type,
-        type: 2
+        type: 2,
+        tokenType: tokenInfo.token_type || (tokenInfo.is_native ? 'native' : 'erc20')
       };
 
       // 只有非原生代币才设置 tokenAddress

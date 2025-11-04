@@ -152,9 +152,13 @@ export class HotWalletService {
             }
 
             try {
+              // 根据 token_type 确定代币类型，默认为 spl-token
+              const tokenType = (token.token_type === 'spl-token-2022' ? 'spl-token-2022' : 'spl-token') as 'spl-token' | 'spl-token-2022';
+              
               const ataAddress = await getAssociatedTokenAddress(
                 address,
-                token.token_address
+                token.token_address,
+                tokenType
               );
 
               // 通过 db_gateway 保存 ATA 记录
@@ -166,7 +170,7 @@ export class HotWalletService {
                 ata_address: ataAddress
               });
 
-              console.log(`✅ 保存 ATA: ${token.token_symbol} -> ${ataAddress.substring(0, 8)}...`);
+              console.log(`✅ 保存 ATA: ${token.token_symbol} (${tokenType}) -> ${ataAddress.substring(0, 8)}...`);
             } catch (error) {
               console.error(`❌ 为代币 ${token.token_symbol} 生成 ATA 失败:`, error);
               // 继续处理其他代币

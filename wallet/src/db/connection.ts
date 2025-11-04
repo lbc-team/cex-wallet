@@ -135,13 +135,14 @@ export class DatabaseConnection {
     token_address: string | null;
     token_symbol: string;
     token_name: string | null;
+    token_type: string | null;
     decimals: number;
     is_native: boolean;
     withdraw_fee: string;
     min_withdraw_amount: string;
   } | null> {
     const result = await this.queryOne(
-      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE token_symbol = ? AND chain_id = ? AND status = 1 LIMIT 1',
+      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, token_type, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE token_symbol = ? AND chain_id = ? AND status = 1 LIMIT 1',
       [symbol, chainId]
     );
     return result || null;
@@ -155,11 +156,12 @@ export class DatabaseConnection {
     token_address: string | null;
     token_symbol: string;
     token_name: string | null;
+    token_type: string | null;
     decimals: number;
     is_native: boolean;
   } | null> {
     const result = await this.queryOne(
-      'SELECT * FROM tokens WHERE token_address = ? AND status = 1 LIMIT 1',
+      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, token_type, decimals, is_native FROM tokens WHERE token_address = ? AND status = 1 LIMIT 1',
       [address]
     );
     return result || null;
@@ -174,13 +176,14 @@ export class DatabaseConnection {
     token_symbol: string;
     symbol: string;
     token_name: string | null;
+    token_type: string | null;
     decimals: number;
     is_native: boolean;
     withdraw_fee: string;
     min_withdraw_amount: string;
   } | null> {
     const result = await this.queryOne(
-      'SELECT id, chain_type, chain_id, token_address, token_symbol as symbol, token_symbol, token_name, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE id = ? AND status = 1 LIMIT 1',
+      'SELECT id, chain_type, chain_id, token_address, token_symbol as symbol, token_symbol, token_name, token_type, decimals, is_native, withdraw_fee, min_withdraw_amount FROM tokens WHERE id = ? AND status = 1 LIMIT 1',
       [tokenId]
     );
     return result || null;
@@ -194,11 +197,12 @@ export class DatabaseConnection {
     token_address: string | null;
     token_symbol: string;
     token_name: string | null;
+    token_type: string | null;
     decimals: number;
     is_native: boolean;
   }[]> {
     const results = await this.query(
-      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, decimals, is_native FROM tokens WHERE chain_type = ? AND status = 1',
+      'SELECT id, chain_type, chain_id, token_address, token_symbol, token_name, token_type, decimals, is_native FROM tokens WHERE chain_type = ? AND status = 1',
       [chainType]
     );
     return results || [];

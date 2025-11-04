@@ -213,7 +213,19 @@ export class RiskController {
         });
       }
 
-      const { from, to, amount, tokenAddress, chainId, nonce } = transaction;
+      const {
+        from,
+        to,
+        amount,
+        tokenAddress,
+        tokenType,
+        chainId,
+        chainType,
+        nonce,
+        blockhash,
+        lastValidBlockHeight,
+        fee
+      } = transaction;
 
       if (!from || !to || !amount || chainId === undefined || nonce === undefined) {
         return res.status(400).json({
@@ -225,6 +237,9 @@ export class RiskController {
           }
         });
       }
+
+      const normalizedChainType: 'evm' | 'btc' | 'solana' =
+        chainType === 'solana' ? 'solana' : chainType === 'btc' ? 'btc' : 'evm';
 
       // 检查该 operation_id 是否已存在评估记录（人工审核通过的情况）
       const existingAssessment = await this.riskAssessmentModel.findByOperationId(operation_id);
@@ -239,29 +254,44 @@ export class RiskController {
           });
 
           // 重新生成签名（因为现在有了 from 和 nonce）
-          const signPayload = JSON.stringify({
-            operation_id,
-            from,
-            to,
-            amount,
-            tokenAddress: tokenAddress || null,
-            chainId,
-            nonce,
-            timestamp
-          });
+          const signPayload = JSON.stringify(
+            this.buildSignaturePayload({
+              operation_id,
+              chainType: normalizedChainType,
+              from,
+              to,
+              amount,
+              tokenAddress,
+              tokenType,
+              chainId,
+              nonce,
+              blockhash,
+              lastValidBlockHeight,
+              fee,
+              timestamp
+            })
+          );
 
           const riskSignature = this.riskService.signMessage(signPayload);
 
           // 更新评估记录，添加新的签名
           await this.riskAssessmentModel.update(existingAssessment.id!, {
             operation_data: JSON.stringify({
-              from,
-              to,
-              amount,
-              tokenAddress: tokenAddress || null,
-              chainId,
-              nonce,
-              timestamp
+              ...this.buildSignaturePayload({
+                operation_id,
+                chainType: normalizedChainType,
+                from,
+                to,
+                amount,
+                tokenAddress,
+                tokenType,
+                chainId,
+                nonce,
+                blockhash,
+                lastValidBlockHeight,
+                fee,
+                timestamp
+              })
             }),
             risk_signature: riskSignature,
             expires_at: new Date(timestamp + 5 * 60 * 1000).toISOString()
@@ -283,11 +313,7 @@ export class RiskController {
       let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
 
       // 1. 检查目标地址黑名单
-      // 根据 chainId 判断链类型
-      let chainTypeStr: 'evm' | 'btc' | 'solana' = 'evm';
-      // 简化处理，假设都是 EVM 链，未来可以根据 chainId 映射
-
-      const addressRisk = await this.addressRiskModel.checkAddress(to, chainTypeStr);
+      const addressRisk = await this.addressRiskModel.checkAddress(to, normalizedChainType);
 
       if (addressRisk && addressRisk.risk_type === 'blacklist') {
         decision = 'reject';
@@ -313,15 +339,23 @@ export class RiskController {
           operation_id,
           table_name: undefined,
           action: 'withdraw',
-          operation_data: JSON.stringify({
-            from,
-            to,
-            amount,
-            tokenAddress: tokenAddress || null,
-            chainId,
-            nonce,
-            timestamp
-          }),
+          operation_data: JSON.stringify(
+            this.buildSignaturePayload({
+              operation_id,
+              chainType: normalizedChainType,
+              from,
+              to,
+              amount,
+              tokenAddress,
+              tokenType,
+              chainId,
+              nonce,
+              blockhash,
+              lastValidBlockHeight,
+              fee,
+              timestamp
+            })
+          ),
           risk_level: riskLevel,
           decision: 'deny',
           reasons: reasons.length > 0 ? JSON.stringify(reasons) : undefined,
@@ -354,16 +388,22 @@ export class RiskController {
       }
 
       // 通过风控检查，生成签名（复用 RiskAssessmentService 的 signer）
-      const signPayload = JSON.stringify({
-        operation_id,
-        from,
-        to,
-        amount,
-        tokenAddress: tokenAddress || null,
-        chainId,
-        nonce,
-        timestamp
-      });
+      const signPayload = JSON.stringify(
+        this.buildSignaturePayload({
+          operation_id,
+          chainType: normalizedChainType,
+          from,
+          to,
+          amount,
+          tokenAddress,
+          tokenType,
+          chainId,
+          nonce,
+          blockhash,
+          fee,
+          timestamp
+        })
+      );
 
       const riskSignature = this.riskService.signMessage(signPayload);
 
@@ -375,15 +415,22 @@ export class RiskController {
         operation_id,
         table_name: undefined,  // 提现不对应具体数据库表
         action: 'withdraw',
-        operation_data: JSON.stringify({
-          from,
-          to,
-          amount,
-          tokenAddress: tokenAddress || null,
-          chainId,
-          nonce,
-          timestamp
-        }),
+        operation_data: JSON.stringify(
+          this.buildSignaturePayload({
+            operation_id,
+            chainType: normalizedChainType,
+            from,
+            to,
+            amount,
+            tokenAddress,
+            tokenType,
+            chainId,
+            nonce,
+            blockhash,
+            fee,
+            timestamp
+          })
+        ),
         risk_level: riskLevel,
         decision: decision === 'approve' ? 'auto_approve' : 'manual_review',
         reasons: reasons.length > 0 ? JSON.stringify(reasons) : undefined,
@@ -482,4 +529,36 @@ export class RiskController {
       });
     }
   };
+
+  private buildSignaturePayload(params: {
+    operation_id: string;
+    chainType: 'evm' | 'btc' | 'solana';
+    from: string;
+    to: string;
+    amount: string;
+    tokenAddress?: string;
+    tokenType?: string;
+    chainId: number;
+    nonce: number;
+    blockhash?: string;
+    lastValidBlockHeight?: string;
+    fee?: string;
+    timestamp: number;
+  }): Record<string, any> {
+    return {
+      operation_id: params.operation_id,
+      chainType: params.chainType,
+      from: params.from,
+      to: params.to,
+      amount: params.amount,
+      tokenAddress: params.tokenAddress ?? null,
+      tokenType: params.tokenType ?? null,
+      chainId: params.chainId,
+      nonce: params.nonce,
+      blockhash: params.blockhash ?? null,
+      lastValidBlockHeight: params.lastValidBlockHeight ?? null,
+      fee: params.fee ?? null,
+      timestamp: params.timestamp
+    };
+  }
 }

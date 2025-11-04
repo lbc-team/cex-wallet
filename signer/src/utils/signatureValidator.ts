@@ -39,32 +39,67 @@ export class SignatureValidator {
     }
   }
 
+  private static buildSignaturePayload(params: {
+    operationId: string;
+    chainType: 'evm' | 'btc' | 'solana';
+    from: string;
+    to: string;
+    amount: string;
+    tokenAddress?: string;
+    tokenMint?: string;
+    tokenType?: string;
+    chainId: number;
+    nonce: number;
+    blockhash?: string;
+    lastValidBlockHeight?: string;
+    fee?: string;
+    timestamp: number;
+  }): string {
+    const payload = {
+      operation_id: params.operationId,
+      chainType: params.chainType,
+      from: params.from,
+      to: params.to,
+      amount: params.amount,
+      tokenAddress: params.tokenAddress ?? null,
+      tokenMint: params.tokenMint ?? null,
+      tokenType: params.tokenType ?? null,
+      chainId: params.chainId,
+      nonce: params.nonce,
+      blockhash: params.blockhash ?? null,
+      lastValidBlockHeight: params.lastValidBlockHeight ?? null,
+      fee: params.fee ?? null,
+      timestamp: params.timestamp
+    };
+
+    return JSON.stringify(payload);
+  }
+
   /**
    * 验证风控签名
    */
   public static verifyRiskSignature(
-    operationId: string,
-    from: string,
-    to: string,
-    amount: string,
-    tokenAddress: string | undefined,
-    chainId: number,
-    nonce: number,
-    timestamp: number,
+    params: {
+      operationId: string;
+      chainType: 'evm' | 'btc' | 'solana';
+      from: string;
+      to: string;
+      amount: string;
+      tokenAddress?: string;
+      tokenMint?: string;
+      tokenType?: string;
+      chainId: number;
+      nonce: number;
+      blockhash?: string;
+      lastValidBlockHeight?: string;
+      fee?: string;
+      timestamp: number;
+    },
     riskSignature: string,
     riskPublicKey: string
   ): boolean {
     // 构造签名负载（与 risk_control 服务一致）
-    const payload = JSON.stringify({
-      operation_id: operationId,
-      from,
-      to,
-      amount,
-      tokenAddress: tokenAddress || null,
-      chainId,
-      nonce,
-      timestamp
-    });
+    const payload = this.buildSignaturePayload(params);
 
     return this.verify(payload, riskSignature, riskPublicKey);
   }
@@ -73,28 +108,27 @@ export class SignatureValidator {
    * 验证 wallet 服务签名
    */
   public static verifyWalletSignature(
-    operationId: string,
-    from: string,
-    to: string,
-    amount: string,
-    tokenAddress: string | undefined,
-    chainId: number,
-    nonce: number,
-    timestamp: number,
+    params: {
+      operationId: string;
+      chainType: 'evm' | 'btc' | 'solana';
+      from: string;
+      to: string;
+      amount: string;
+      tokenAddress?: string;
+      tokenMint?: string;
+      tokenType?: string;
+      chainId: number;
+      nonce: number;
+      blockhash?: string;
+      lastValidBlockHeight?: string;
+      fee?: string;
+      timestamp: number;
+    },
     walletSignature: string,
     walletPublicKey: string
   ): boolean {
     // 构造签名负载（与 wallet 服务一致）
-    const payload = JSON.stringify({
-      operation_id: operationId,
-      from,
-      to,
-      amount,
-      tokenAddress: tokenAddress || null,
-      chainId,
-      nonce,
-      timestamp
-    });
+    const payload = this.buildSignaturePayload(params);
 
     return this.verify(payload, walletSignature, walletPublicKey);
   }

@@ -24,6 +24,8 @@ import { getTransferInstruction, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS }
 import { derivePath } from 'ed25519-hd-key';
 import bs58 from 'bs58';
 
+const TOKEN_PROGRAM_2022_ADDRESS = solanaAddress('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+
 export class AddressService {
   private defaultDerivationPaths: DerivationPath = {
     evm: "m/44'/60'/0'/0/0",
@@ -406,15 +408,25 @@ export class AddressService {
       console.log('✅ 时间戳验证通过');
 
       // 验证风控签名（使用构造函数中加载的公钥）
+      const signatureParams = {
+        operationId: request.operation_id,
+        chainType: request.chainType,
+        from: request.address,
+        to: request.to,
+        amount: request.amount,
+        tokenAddress: request.tokenAddress,
+        tokenMint: request.tokenMint,
+        tokenType: request.tokenType,
+        chainId: request.chainId,
+        nonce: request.nonce ?? 0,
+        blockhash: request.blockhash,
+        lastValidBlockHeight: request.lastValidBlockHeight,
+        fee: request.fee,
+        timestamp: request.timestamp
+      };
+
       const riskSignValid = SignatureValidator.verifyRiskSignature(
-        request.operation_id,
-        request.address,
-        request.to,
-        request.amount,
-        request.tokenAddress,
-        request.chainId,
-        request.nonce ?? 0,  // Solana 不使用 nonce，使用 0 作为默认值
-        request.timestamp,
+        signatureParams,
         request.risk_signature,
         this.riskPublicKey
       );
@@ -432,14 +444,7 @@ export class AddressService {
 
       // 验证 wallet 服务签名（使用构造函数中加载的公钥）
       const walletSignValid = SignatureValidator.verifyWalletSignature(
-        request.operation_id,
-        request.address,
-        request.to,
-        request.amount,
-        request.tokenAddress,
-        request.chainId,
-        request.nonce ?? 0,  // Solana 不使用 nonce，使用 0 作为默认值
-        request.timestamp,
+        signatureParams,
         request.wallet_signature,
         this.walletPublicKey
       );
@@ -580,24 +585,28 @@ export class AddressService {
           // SPL Token 转账
           console.log('📦 构建 SPL Token 转账指令');
 
+          const tokenProgramAddress =
+            request.tokenType === 'spl-token-2022' ? TOKEN_PROGRAM_2022_ADDRESS : TOKEN_PROGRAM_ADDRESS;
+
           // 计算源和目标 ATA 地址
           const [sourceAta] = await findAssociatedTokenPda({
             owner: solanaAddress(request.address),
             mint: solanaAddress(request.tokenMint),
-            tokenProgram: TOKEN_PROGRAM_ADDRESS
+            tokenProgram: tokenProgramAddress
           });
 
           const [destAta] = await findAssociatedTokenPda({
             owner: solanaAddress(request.to),
             mint: solanaAddress(request.tokenMint),
-            tokenProgram: TOKEN_PROGRAM_ADDRESS
+            tokenProgram: tokenProgramAddress
           });
 
           instruction = getTransferInstruction({
             source: sourceAta,
             destination: destAta,
             authority: solanaSigner,
-            amount: BigInt(request.amount)
+            amount: BigInt(request.amount),
+            tokenProgram: tokenProgramAddress
           });
         } else {
           // SOL 原生代币转账
@@ -616,7 +625,9 @@ export class AddressService {
           tx => setTransactionMessageFeePayer(solanaSigner.address, tx),
           tx => setTransactionMessageLifetimeUsingBlockhash({
             blockhash: request.blockhash as any,  // 类型断言
-            lastValidBlockHeight: BigInt(99999999)  // 使用一个大的值
+            lastValidBlockHeight: request.lastValidBlockHeight
+              ? BigInt(request.lastValidBlockHeight)
+              : BigInt(99999999)
           }, tx),
           tx => appendTransactionMessageInstruction(instruction, tx)
         );
