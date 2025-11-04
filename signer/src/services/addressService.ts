@@ -2,28 +2,14 @@
 import { mnemonicToSeedSync } from '@scure/bip39';
 import { HDKey } from '@scure/bip32';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, parseEther, parseUnits, encodeAbiParameters, keccak256, serializeTransaction } from 'viem';
-import { mainnet } from 'viem/chains';
 import { Wallet, CreateWalletResponse, DerivationPath, SignTransactionRequest, SignTransactionResponse } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
 import { SignatureValidator } from '../utils/signatureValidator';
-import {
-  createKeyPairSignerFromPrivateKeyBytes,
-  address as solanaAddress,
-  pipe,
-  createTransactionMessage,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  appendTransactionMessageInstruction,
-  signTransactionMessageWithSigners,
-  getBase64EncodedWireTransaction
-} from '@solana/kit';
-import { getTransferSolInstruction } from '@solana-program/system';
-import { getTransferInstruction, findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
+import { createKeyPairSignerFromPrivateKeyBytes } from '@solana/kit';
 import { derivePath } from 'ed25519-hd-key';
-import bs58 from 'bs58';
-
-const TOKEN_PROGRAM_2022_ADDRESS = solanaAddress('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+import { signEvmTransaction } from './signers/evmSigner';
+import { signSolanaTransaction } from './signers/solanaSigner';
+import { signBtcTransaction } from './signers/btcSigner';
 
 export class AddressService {
   private defaultDerivationPaths: DerivationPath = {
@@ -461,294 +447,33 @@ export class AddressService {
       console.log('✅ Wallet 服务签名验证通过');
       console.log('✅ 双重签名验证全部通过');
 
-      // 2. 根据链类型分别处理
-      let signedTransaction: string;
-      let transactionHash: string;
-
       if (request.chainType === 'evm') {
-        // EVM 链：查找地址对应的路径信息
-        const addressInfo = await this.db.findAddressByAddress(request.address);
-        if (!addressInfo) {
-          const error = `地址 ${request.address} 未找到，请确保地址是通过此系统生成的`;
-          console.error('❌ 地址查找失败:', error);
-          return {
-            success: false,
-            error
-          };
-        }
-
-        // 重新生成私钥（基于路径）
         const mnemonic = this.getMnemonicFromEnv();
-        const pathParts = addressInfo.path.split('/');
-        const index = pathParts[pathParts.length - 1];
-        console.log('📍 派生路径:', addressInfo.path);
-        
-        const accountData = this.createEvmAccountWithPrivateKey(mnemonic, index);
-        console.log('✅ 账户数据生成完成，地址:', accountData.address);
-
-        if (accountData.address.toLowerCase() !== request.address.toLowerCase()) {
-          const error = '地址验证失败，密码可能不正确';
-          console.error('❌ 地址验证失败:');
-          console.error('   生成的地址:', accountData.address);
-          console.error('   请求的地址:', request.address);
-          return {
-            success: false,
-            error
-          };
-        }
-
-        // 创建账户对象
-        const account = privateKeyToAccount(accountData.privateKey);
-        console.log('✅ 签名账户地址:', account.address);
-
-        // 使用传入的 nonce（现在 nonce 是必需参数）
-        const nonce = request.nonce;
-        console.log('🔢 使用nonce:', nonce);
-
-        // 确定交易类型（EIP-1559 或 Legacy）
-        const isEip1559 = request.type === 2;
-        console.log('💡 交易类型:', isEip1559 ? 'EIP-1559' : 'Legacy', '(type=' + request.type + ')');
-
-        // 根据链类型构建基础交易参数
-        let baseTransaction: any;
-        console.log('💰 处理EVM链交易 :', request.chainId, '代币地址:', request.tokenAddress || '原生代币');
-        console.log('💵 转账金额:', request.amount);
-        console.log('⛽ Gas限制:', request.gas);
-        
-        // EVM 链交易
-        baseTransaction = {
-          to: request.tokenAddress ? (request.tokenAddress as `0x${string}`) : (request.to as `0x${string}`),
-          value: request.tokenAddress ? BigInt(0) : BigInt(request.amount),
-          gas: request.gas ? BigInt(request.gas) : (request.tokenAddress ? BigInt(100000) : BigInt(21000)), // ERC20需要更多gas
-          nonce,
-          chainId: request.chainId // 使用传入的链ID
-        };
-        
-        // 添加交易数据（如果是ERC20）
-        if (request.tokenAddress) {
-          const encodedData = this.encodeERC20Transfer(request.to, request.amount);
-          (baseTransaction as any).data = encodedData;
-          console.log('✅ ERC20数据编码完成:', encodedData);
-        }
-
-        let transaction: any;
-
-        // 构建最终交易
-        if (isEip1559) {
-          console.log('🚀 构建EIP-1559交易');
-          // EIP-1559 交易
-          const maxPriorityFee = request.maxPriorityFeePerGas 
-            ? BigInt(request.maxPriorityFeePerGas) 
-            : this.getDefaultPriorityFee();
-
-          const maxFeePerGas = request.maxFeePerGas 
-            ? BigInt(request.maxFeePerGas)
-            : this.getDefaultMaxFeePerGas(); // 使用默认值，不联网获取
-
-          console.log('💰 最大费用:', maxFeePerGas.toString());
-          console.log('🎯 优先费用:', maxPriorityFee.toString());
-
-          transaction = {
-            ...baseTransaction,
-            type: 'eip1559' as const,
-            maxFeePerGas,
-            maxPriorityFeePerGas: maxPriorityFee
-          };
-          console.log('✅ EIP-1559交易构建完成');
-        } else {
-          console.log('🏁 构建Legacy交易');
-          // Legacy 交易
-          const gasPrice = request.gasPrice 
-            ? BigInt(request.gasPrice) 
-            : this.getDefaultGasPrice(); // 使用默认值，不联网获取
-
-          console.log('💰 Gas价格:', gasPrice.toString());
-
-          transaction = {
-            ...baseTransaction,
-            gasPrice
-          };
-          console.log('✅ Legacy交易构建完成');
-        }
-        console.log('📝 最终交易对象:', JSON.stringify(transaction, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2));
-
-        // 签名交易
-        console.log('📝 开始签名交易...');
-        signedTransaction = await account.signTransaction(transaction);
-        console.log('📄 已签名交易 (前64字符):', signedTransaction.substring(0, 64) + '...');
-        
-        transactionHash = this.getTransactionHash(signedTransaction);
-        console.log('🔑 交易哈希:', transactionHash);
-
-        return {
-          success: true,
-          data: {
-            signedTransaction,
-            transactionHash
-          }
-        };
-        
-      } else if (request.chainType === 'btc') {
-        console.error('❌ Bitcoin 链签名功能尚未实现');
-        return {
-          success: false,
-          error: 'Bitcoin 链签名功能尚未实现'
-        };
-      } else if (request.chainType === 'solana') {
-        console.log('💰 处理 Solana 链交易:', request.chainId, '代币:', request.tokenAddress || 'SOL');
-        console.log('💵 转账金额:', request.amount);
-
-        // 验证 Solana 必需参数
-        if (!request.blockhash) {
-          console.error('❌ 缺少 Solana blockhash 参数');
-          return {
-            success: false,
-            error: 'Solana 交易缺少 blockhash 参数'
-          };
-        }
-
-        // 1. 查找地址对应的路径信息（需要移到这里，因为 Solana 需要重新生成 signer）
-        const solanaAddressInfo = await this.db.findAddressByAddress(request.address);
-        if (!solanaAddressInfo) {
-          const error = `地址 ${request.address} 未找到，请确保地址是通过此系统生成的`;
-          console.error('❌ 地址查找失败:', error);
-          return {
-            success: false,
-            error
-          };
-        }
-
-        // 2. 重新生成 Solana signer
-        const solanaMnemonic = this.getMnemonicFromEnv();
-        const solanaPathParts = solanaAddressInfo.path.split('/');
-        const solanaIndex = solanaPathParts[solanaPathParts.length - 1].replace("'", "");
-
-        const solanaSeed = mnemonicToSeedSync(solanaMnemonic, this.password);
-        const solanaSeedHex = Buffer.from(solanaSeed).toString('hex');
-        const solanaDerivedSeed = derivePath(solanaAddressInfo.path, solanaSeedHex).key;
-
-        const solanaSigner = await createKeyPairSignerFromPrivateKeyBytes(solanaDerivedSeed);
-        console.log('✅ Solana Signer 地址:', solanaSigner.address);
-        console.log('🔍 Solana Signer 对象:', JSON.stringify({
-          address: solanaSigner.address,
-          hasSignMessages: typeof (solanaSigner as any).signMessages === 'function'
-        }, null, 2));
-
-        // 验证地址匹配
-        if (solanaSigner.address !== request.address) {
-          const error = 'Solana 地址验证失败，密码可能不正确';
-          console.error('❌ 地址验证失败:');
-          console.error('   生成的地址:', solanaSigner.address);
-          console.error('   请求的地址:', request.address);
-          return {
-            success: false,
-            error
-          };
-        }
-
-        // 3. 构建 Solana 交易
-        let instruction;
-
-        if (request.tokenAddress) {
-          // SPL Token 转账（对于 Solana，tokenAddress 就是 mint 地址）
-          console.log('📦 构建 SPL Token 转账指令');
-
-          const tokenProgramAddress =
-            request.tokenType === 'spl-token-2022' ? TOKEN_PROGRAM_2022_ADDRESS : TOKEN_PROGRAM_ADDRESS;
-
-          // 计算源和目标 ATA 地址
-          const [sourceAta] = await findAssociatedTokenPda({
-            owner: solanaAddress(request.address),
-            mint: solanaAddress(request.tokenAddress),
-            tokenProgram: tokenProgramAddress
-          });
-
-          const [destAta] = await findAssociatedTokenPda({
-            owner: solanaAddress(request.to),
-            mint: solanaAddress(request.tokenAddress),
-            tokenProgram: tokenProgramAddress
-          });
-
-          const baseInstruction = getTransferInstruction({
-            source: sourceAta,
-            destination: destAta,
-            authority: solanaSigner,
-            amount: BigInt(request.amount)
-          });
-          
-          // 如果是 token-2022，创建新的 instruction 对象并设置正确的 program ID
-          if (request.tokenType === 'spl-token-2022') {
-            instruction = {
-              ...baseInstruction,
-              programAddress: tokenProgramAddress
-            } as typeof baseInstruction;
-          } else {
-            instruction = baseInstruction;
-          }
-        } else {
-          // SOL 原生代币转账
-          console.log('💎 构建 SOL 转账指令');
-
-          instruction = getTransferSolInstruction({
-            source: solanaSigner,
-            destination: solanaAddress(request.to),
-            amount: BigInt(request.amount)
-          });
-        }
-
-        // 4. 构建交易消息并签名
-        const lifetimeConstraint = {
-          blockhash: request.blockhash as any, // request 中的 blockhash 已经是最新值
-          lastValidBlockHeight: request.lastValidBlockHeight
-            ? BigInt(request.lastValidBlockHeight)
-            : BigInt(99999999)
-        };
-
-        const transactionMessage = pipe(
-          createTransactionMessage({ version: 0 }),
-          tx => setTransactionMessageFeePayerSigner(solanaSigner, tx),
-          tx => setTransactionMessageLifetimeUsingBlockhash(lifetimeConstraint, tx),
-          tx => appendTransactionMessageInstruction(instruction, tx)
-        );
-
-        console.log('✅ Solana 交易消息构建完成');
-
-        // 5. 使用 signer 自动签名
-        const signedTx = await signTransactionMessageWithSigners(transactionMessage);
-
-        // 6. 序列化为 base64
-        signedTransaction = getBase64EncodedWireTransaction(signedTx);
-
-        // 7. 计算交易签名（Base58 编码）
-        const txSignature = signedTx.signatures[solanaSigner.address];
-        if (!txSignature) {
-          return {
-            success: false,
-            error: 'Solana 交易签名失败'
-          };
-        }
-
-        // 将 Uint8Array 签名转换为 Base58
-        transactionHash = bs58.encode(new Uint8Array(txSignature));
-
-        console.log('✅ Solana 交易签名完成');
-        console.log('📤 签名后的交易 (Base64):', signedTransaction.substring(0, 50) + '...');
-        console.log('🔖 交易签名 (Base58):', transactionHash);
-
-        return {
-          success: true,
-          data: {
-            signedTransaction,
-            transactionHash
-          }
-        };
-      } else {
-        console.error('❌ 不支持的链类型:', request.chainType);
-        return {
-          success: false,
-          error: `不支持的链类型: ${request.chainType}`
-        };
+        return signEvmTransaction(request, {
+          db: this.db,
+          mnemonic,
+          password: this.password
+        });
       }
+
+      if (request.chainType === 'solana') {
+        const mnemonic = this.getMnemonicFromEnv();
+        return signSolanaTransaction(request, {
+          db: this.db,
+          mnemonic,
+          password: this.password
+        });
+      }
+
+      if (request.chainType === 'btc') {
+        return signBtcTransaction();
+      }
+
+      console.error('❌ 不支持的链类型:', request.chainType);
+      return {
+        success: false,
+        error: `不支持的链类型: ${request.chainType}`
+      };
 
     } catch (error) {
       console.error('❌ 交易签名失败:');
@@ -762,87 +487,6 @@ export class AddressService {
         error: `交易签名失败: ${error instanceof Error ? error.message : '未知错误'}`
       };
     }
-  }
-
-  /**
-   * 创建EVM账户并包含私钥（仅用于签名）
-   */
-  private createEvmAccountWithPrivateKey(mnemonic: string, index: string): { address: string; privateKey: `0x${string}` } {
-    const fullPath = `m/44'/60'/0'/0/${index}`;
-    
-    // 使用密码生成种子
-    const seed = mnemonicToSeedSync(mnemonic, this.password);
-    
-    // 从种子创建 HD 密钥
-    const hdKey = HDKey.fromMasterSeed(seed);
-    
-    // 派生到指定路径
-    const derivedKey = hdKey.derive(fullPath);
-    
-    if (!derivedKey.privateKey) {
-      throw new Error('无法派生私钥');
-    }
-    
-    // 从私钥创建账户（转换为十六进制字符串）
-    const privateKeyHex = `0x${Buffer.from(derivedKey.privateKey).toString('hex')}` as `0x${string}`;
-    const account = privateKeyToAccount(privateKeyHex);
-    
-    return {
-      address: account.address,
-      privateKey: privateKeyHex
-    };
-  }
-
-  /**
-   * 编码 ERC20 transfer 方法调用
-   */
-  private encodeERC20Transfer(to: string, amount: string): `0x${string}` {
-    // ERC20 transfer 方法签名: transfer(address,uint256)
-    const methodId = '0xa9059cbb'; // keccak256('transfer(address,uint256)').slice(0, 8)
-    
-    const encodedParams = encodeAbiParameters(
-      [
-        { type: 'address' },
-        { type: 'uint256' }
-      ],
-      [to as `0x${string}`, BigInt(amount)]
-    );
-    
-    return `${methodId}${encodedParams.slice(2)}` as `0x${string}`;
-  }
-
-  /**
-   * 计算交易哈希
-   */
-  private getTransactionHash(signedTransaction: string): string {
-    // 对于已签名的交易，我们可以使用 keccak256 计算哈希
-    return keccak256(signedTransaction as `0x${string}`);
-  }
-
-  /**
-   * 获取默认优先费用（矿工小费）
-   */
-  private getDefaultPriorityFee(): bigint {
-    // 默认设置为 2 Gwei 的优先费用
-    // 在实际应用中，可以根据网络拥堵情况动态调整
-    return parseUnits('2', 9); // 2 Gwei = 2 * 10^9 wei
-  }
-
-  /**
-   * 获取默认最大费用（EIP-1559）
-   */
-  private getDefaultMaxFeePerGas(): bigint {
-    // 默认设置为 30 Gwei 的最大费用
-    // 包含基础费用和优先费用
-    return parseUnits('30', 9); // 30 Gwei = 30 * 10^9 wei
-  }
-
-  /**
-   * 获取默认 Gas 价格（Legacy 交易）
-   */
-  private getDefaultGasPrice(): bigint {
-    // 默认设置为 25 Gwei 的 gas 价格
-    return parseUnits('25', 9); // 25 Gwei = 25 * 10^9 wei
   }
 
 }

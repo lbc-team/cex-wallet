@@ -15,7 +15,7 @@
     "mock:init": "ts-node mock/mock_init_wallets_tokens.ts",
     "mock:evm:transfer": "bash mock/transfer_token.sh",
     "mock:solana:transfer": "ts-node mock/solanaTransferToWallets.ts",
-    "mock:withdraw": "ts-node mock/requestWithdraw.ts",
+    "mock:withdraw:evm": "ts-node mock/requestWithdrawOnEVM.ts",
     "mock:withdraw:black": "ts-node mock/requestWithdrawToBlackAddr.ts",
     "mock:withdraw:needReview": "ts-node mock/requestWithdrawNeedReview.ts",
     "mock:withdraw:solana": "ts-node mock/requestWithdrawOnSolana.ts",
