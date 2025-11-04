@@ -18,6 +18,7 @@ import { SignTransactionRequest, SignTransactionResponse } from '../../types/wal
 import { DatabaseConnection } from '../../db/connection';
 
 const TOKEN_PROGRAM_2022_ADDRESS = solanaAddress('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+const SOLANA_BASE_PATH = "m/44'/501'/0'";
 
 export interface SolanaSignerDependencies {
   db: DatabaseConnection;
@@ -52,11 +53,7 @@ export async function signSolanaTransaction(
     };
   }
 
-  const solanaSeed = mnemonicToSeedSync(mnemonic, password);
-  const solanaSeedHex = Buffer.from(solanaSeed).toString('hex');
-  const derivedSeed = derivePath(solanaAddressInfo.path, solanaSeedHex).key;
-
-  const solanaSigner = await createKeyPairSignerFromPrivateKeyBytes(derivedSeed);
+  const solanaSigner = await deriveSolanaSignerFromPath(mnemonic, password, solanaAddressInfo.path);
   console.log('✅ Solana Signer 地址:', solanaSigner.address);
   console.log(
     '🔍 Solana Signer 对象:',
@@ -167,4 +164,44 @@ async function buildInstruction(request: SignTransactionRequest, solanaSigner: a
     destination: solanaAddress(request.to),
     amount: BigInt(request.amount)
   });
+}
+
+export async function deriveSolanaSignerFromPath(
+  mnemonic: string,
+  password: string,
+  path: string
+) {
+  const solanaSeed = mnemonicToSeedSync(mnemonic, password);
+  const solanaSeedHex = Buffer.from(solanaSeed).toString('hex');
+  const derivedSeed = derivePath(path, solanaSeedHex).key;
+  return createKeyPairSignerFromPrivateKeyBytes(derivedSeed);
+}
+
+export async function deriveSolanaAccountFromIndex(
+  mnemonic: string,
+  password: string,
+  index: string
+) {
+  const path = getSolanaDerivationPath(index);
+  const signer = await deriveSolanaSignerFromPath(mnemonic, password, path);
+  return {
+    address: signer.address,
+    path
+  };
+}
+
+export async function deriveSolanaAccountFromPath(
+  mnemonic: string,
+  password: string,
+  path: string
+) {
+  const signer = await deriveSolanaSignerFromPath(mnemonic, password, path);
+  return {
+    address: signer.address,
+    path
+  };
+}
+
+export function getSolanaDerivationPath(index: string): string {
+  return `${SOLANA_BASE_PATH}/${index}'`;
 }

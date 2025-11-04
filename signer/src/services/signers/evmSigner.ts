@@ -6,6 +6,7 @@ import { SignTransactionRequest, SignTransactionResponse } from '../../types/wal
 import { DatabaseConnection } from '../../db/connection';
 
 type HexString = `0x${string}`;
+const EVM_BASE_PATH = "m/44'/60'/0'/0";
 
 export interface EvmSignerDependencies {
   db: DatabaseConnection;
@@ -29,11 +30,9 @@ export async function signEvmTransaction(
     };
   }
 
-  const pathParts = addressInfo.path.split('/');
-  const index = pathParts[pathParts.length - 1];
   console.log('📍 派生路径:', addressInfo.path);
 
-  const accountData = deriveEvmAccount(mnemonic, password, index);
+  const accountData = deriveEvmAccountFromPath(mnemonic, password, addressInfo.path);
   console.log('✅ 账户数据生成完成，地址:', accountData.address);
 
   if (accountData.address.toLowerCase() !== request.address.toLowerCase()) {
@@ -128,12 +127,14 @@ export async function signEvmTransaction(
   };
 }
 
-function deriveEvmAccount(mnemonic: string, password: string, index: string): { address: string; privateKey: HexString } {
-  const fullPath = `m/44'/60'/0'/0/${index}`;
-
+export function deriveEvmAccountFromPath(
+  mnemonic: string,
+  password: string,
+  path: string
+): { address: string; privateKey: HexString } {
   const seed = mnemonicToSeedSync(mnemonic, password);
   const hdKey = HDKey.fromMasterSeed(seed);
-  const derivedKey = hdKey.derive(fullPath);
+  const derivedKey = hdKey.derive(path);
 
   if (!derivedKey.privateKey) {
     throw new Error('无法派生私钥');
@@ -146,6 +147,20 @@ function deriveEvmAccount(mnemonic: string, password: string, index: string): { 
     address: account.address,
     privateKey: privateKeyHex
   };
+}
+
+export function deriveEvmAccountFromIndex(
+  mnemonic: string,
+  password: string,
+  index: string
+): { address: string; privateKey: HexString; path: string } {
+  const path = getEvmDerivationPath(index);
+  const { address, privateKey } = deriveEvmAccountFromPath(mnemonic, password, path);
+  return { address, privateKey, path };
+}
+
+export function getEvmDerivationPath(index: string): string {
+  return `${EVM_BASE_PATH}/${index}`;
 }
 
 function encodeErc20Transfer(to: string, amount: string): HexString {

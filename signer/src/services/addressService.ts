@@ -1,14 +1,16 @@
 
-import { mnemonicToSeedSync } from '@scure/bip39';
-import { HDKey } from '@scure/bip32';
-import { privateKeyToAccount } from 'viem/accounts';
 import { Wallet, CreateWalletResponse, DerivationPath, SignTransactionRequest, SignTransactionResponse } from '../types/wallet';
 import { DatabaseConnection } from '../db/connection';
 import { SignatureValidator } from '../utils/signatureValidator';
-import { createKeyPairSignerFromPrivateKeyBytes } from '@solana/kit';
-import { derivePath } from 'ed25519-hd-key';
-import { signEvmTransaction } from './signers/evmSigner';
-import { signSolanaTransaction } from './signers/solanaSigner';
+import {
+  signEvmTransaction,
+  deriveEvmAccountFromPath,
+  deriveEvmAccountFromIndex
+} from './signers/evmSigner';
+import {
+  signSolanaTransaction,
+  deriveSolanaAccountFromPath
+} from './signers/solanaSigner';
 import { signBtcTransaction } from './signers/btcSigner';
 
 export class AddressService {
@@ -63,61 +65,6 @@ export class AddressService {
   }
 
   /**
-   * 使用密码创建账户（支持 BIP39 passphrase）
-   */
-  private createEvmAccount(mnemonic: string, index: string): any {
-    const fullPath = `m/44'/60'/0'/0/${index}`;
-
-    // 使用密码生成种子
-    const seed = mnemonicToSeedSync(mnemonic, this.password);
-
-    // 从种子创建 HD 密钥
-    const hdKey = HDKey.fromMasterSeed(seed);
-
-    // 派生到指定路径
-    const derivedKey = hdKey.derive(fullPath);
-
-    if (!derivedKey.privateKey) {
-      throw new Error('无法派生私钥');
-    }
-
-    // 从私钥创建账户（转换为十六进制字符串）
-    const privateKeyHex = `0x${Buffer.from(derivedKey.privateKey).toString('hex')}`;
-    const account = privateKeyToAccount(privateKeyHex as `0x${string}`);
-
-    // 返回账户信息
-    return {
-      address: account.address,
-      // privateKey: derivedKey.privateKey,
-      path: fullPath
-    };
-  }
-
-  /**
-   * 创建 Solana 账户
-   */
-  private async createSolanaAccount(mnemonic: string, index: string): Promise<any> {
-    const fullPath = `m/44'/501'/0'/${index}'`;
-
-    // 使用密码生成种子
-    const seed = mnemonicToSeedSync(mnemonic, this.password);
-
-    // 使用 ed25519-hd-key 派生 Solana 密钥
-    // derivePath 期望传入十六进制字符串
-    const seedHex = Buffer.from(seed).toString('hex');
-    const derivedSeed = derivePath(fullPath, seedHex).key;
-
-    // 从派生的 32 字节私钥创建 Signer (使用 @solana/kit)
-    const signer = await createKeyPairSignerFromPrivateKeyBytes(derivedSeed);
-
-    // 返回账户信息
-    return {
-      address: signer.address,
-      path: fullPath
-    };
-  }
-
-  /**
    * 等待数据库初始化完成
    */
   private async waitForDatabaseInitialization(): Promise<void> {
@@ -155,10 +102,7 @@ export class AddressService {
         const validationPath = firstAddressData.path;
         
         // 从路径中提取索引（最后一部分）
-        const pathParts = validationPath.split('/');
-        const index = pathParts[pathParts.length - 1];
-        
-        const validationAccount = this.createEvmAccount(mnemonic, index);
+        const validationAccount = deriveEvmAccountFromPath(mnemonic, this.password, validationPath);
         
         // 比较生成的地址与存储的地址
         if (validationAccount.address === firstAddressData.address) {
@@ -184,13 +128,10 @@ export class AddressService {
       const mnemonic = this.getMnemonicFromEnv();
       const validationIndex = "0"; // 验证地址使用索引 0
       
-      const validationAccount = this.createEvmAccount(mnemonic, validationIndex);
-      
-      // 构建完整路径用于存储
-      const validationPath = `m/44'/60'/0'/0/${validationIndex}`;
+      const validationAccount = deriveEvmAccountFromIndex(mnemonic, this.password, validationIndex);
       
       // 保存验证地址到数据库，使用 currentIndex = 0
-      await this.db.addGeneratedAddress(validationAccount.address, validationPath, 0, 'evm');
+      await this.db.addGeneratedAddress(validationAccount.address, validationAccount.path, 0, 'evm');
       
       console.log(`验证地址已创建: ${validationAccount.address}`);
       
@@ -236,33 +177,29 @@ export class AddressService {
       let account;
 
       switch (chainType) {
-        case 'evm':
-          const evmPathParts = derivationPath.split('/');
-          const evmIndex = evmPathParts[evmPathParts.length - 1];
-
-          const evmAccountData = this.createEvmAccount(mnemonic, evmIndex);
+        case 'evm': {
+          const evmAccountData = deriveEvmAccountFromPath(mnemonic, this.password, derivationPath);
           account = {
             address: evmAccountData.address,
           };
-          console.log('EVM accountData', { address: evmAccountData.address, path: evmAccountData.path });
+          console.log('EVM accountData', { address: evmAccountData.address, path: derivationPath });
           break;
+        }
         case 'btc':
           // 比特币钱包创建（ 未来支持：bitcoinjs-lib bip39 tiny-secp256k1）
           return {
             success: false,
             error: '比特币钱包创建暂未实现'
           };
-        case 'solana':
+        case 'solana': {
           // Solana钱包创建
-          const solanaPathParts = derivationPath.split('/');
-          const solanaIndex = solanaPathParts[solanaPathParts.length - 1].replace("'", "");
-
-          const solanaAccountData = await this.createSolanaAccount(mnemonic, solanaIndex);
+          const solanaAccountData = await deriveSolanaAccountFromPath(mnemonic, this.password, derivationPath);
           account = {
             address: solanaAccountData.address,
           };
-          console.log('Solana accountData', { address: solanaAccountData.address, path: solanaAccountData.path });
+          console.log('Solana accountData', { address: solanaAccountData.address, path: derivationPath });
           break;
+        }
         default:
           return {
             success: false,
