@@ -426,6 +426,7 @@ export class WalletBusinessService {
       };
     };
     error?: string;
+    errorDetail?: string;
   }> {
     let withdrawId: number | undefined;
     
@@ -734,15 +735,21 @@ export class WalletBusinessService {
       
       } catch (error) {
         console.error('发送交易失败:', error);
+        const detailedError = this.formatDetailedError(error);
+        console.error('发送交易失败详细信息:', detailedError);
+
+        const responseMessage = this.buildErrorResponse('发送交易失败', error, detailedError);
+        console.error('发送交易失败响应消息:', responseMessage);
         
         // 更新提现状态为失败
         await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
-          error_message: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
+          error_message: responseMessage
         });
         
         return {
           success: false,
-          error: `发送交易失败: ${error instanceof Error ? error.message : String(error)}`
+          error: responseMessage,
+          errorDetail: detailedError
         };
       }
 
@@ -805,11 +812,13 @@ export class WalletBusinessService {
       };
 
     } catch (error) {
+      const detailedError = this.formatDetailedError(error);
+
       // 如果有 withdrawId，更新提现状态为失败
       if (withdrawId !== undefined) {
         try {
           await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
-            error_message: error instanceof Error ? error.message : '提现失败'
+            error_message: this.buildErrorResponse('提现失败', error, detailedError)
           });
         } catch (updateError) {
           console.error('更新提现状态失败:', updateError);
@@ -818,7 +827,8 @@ export class WalletBusinessService {
       
       return {
         success: false,
-        error: error instanceof Error ? error.message : '提现失败'
+        error: this.buildErrorResponse('提现失败', error, detailedError),
+        errorDetail: detailedError
       };
     }
   }
@@ -1036,5 +1046,63 @@ export class WalletBusinessService {
     }
   }
 
+  private buildErrorResponse(prefix: string, error: unknown, detailedError?: string): string {
+    const baseMessage = error instanceof Error ? error.message : String(error ?? '未知错误');
+    const detail = detailedError ?? this.formatDetailedError(error);
+    const combined = `${prefix}: ${baseMessage}`;
+    const messageWithDetail = `${combined}\n详细信息: ${detail}`;
+    return messageWithDetail.length > 4000 ? `${messageWithDetail.slice(0, 4000)}...` : messageWithDetail;
+  }
+
+  private formatDetailedError(error: unknown): string {
+    try {
+      const normalized = this.normalizeErrorObject(error, new WeakSet());
+      return JSON.stringify(normalized, (key, value) => (typeof value === 'bigint' ? value.toString() : value), 2);
+    } catch {
+      return typeof error === 'string' ? error : String(error ?? '未知错误');
+    }
+  }
+
+  private normalizeErrorObject(value: unknown, seen: WeakSet<object>): unknown {
+    if (value instanceof Error) {
+      const base: Record<string, unknown> = {
+        name: value.name,
+        message: value.message
+      };
+      if (value.stack) {
+        base.stack = value.stack;
+      }
+      const ownProps = Object.getOwnPropertyNames(value);
+      for (const prop of ownProps) {
+        if (prop === 'name' || prop === 'message' || prop === 'stack') continue;
+        const propValue = (value as any)[prop];
+        base[prop] = this.normalizeErrorObject(propValue, seen);
+      }
+      return base;
+    }
+
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(item => this.normalizeErrorObject(item, seen));
+    }
+
+    if (value && typeof value === 'object') {
+      if (seen.has(value as object)) {
+        return '[Circular]';
+      }
+      seen.add(value as object);
+      const result: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        result[key] = this.normalizeErrorObject(val, seen);
+      }
+      seen.delete(value as object);
+      return result;
+    }
+
+    return value;
+  }
 
 }

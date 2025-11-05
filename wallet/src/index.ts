@@ -6,6 +6,7 @@ import { internalRoutes } from './routes/internal';
 
 // API响应接口
 interface ApiResponse<T = any> {
+  details?: unknown;
   message?: string;
   error?: string;
   data?: T;

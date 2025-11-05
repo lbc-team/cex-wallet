@@ -24,6 +24,7 @@ interface WithdrawRequest {
   to: string;
   amount: string;
   tokenSymbol: string;
+  tokenType?: string;
   chainId: number;
   chainType: string;
 }
@@ -218,10 +219,10 @@ class SolanaWithdrawTester {
   }
 
   /**
-   * 测试 USDT (SPL Token) 提现
+   * 测试 USDT (Token-2022) 提现
    */
   async testUSDTWithdraw(): Promise<void> {
-    console.log('\n--- 测试 USDT (SPL Token) 提现 ---');
+    console.log('\n--- 测试 USDT (SPL Token 2022) 提现 ---');
     console.log('提现金额:', CONFIG.AMOUNT_USDT, 'USDT');
 
     const withdrawRequest: WithdrawRequest = {
@@ -229,6 +230,7 @@ class SolanaWithdrawTester {
       to: CONFIG.TO_ADDRESS,
       amount: CONFIG.AMOUNT_USDT,
       tokenSymbol: 'USDT',
+      tokenType: 'spl-token-2022',
       chainId: CONFIG.CHAIN_ID,
       chainType: CONFIG.CHAIN_TYPE
     };
