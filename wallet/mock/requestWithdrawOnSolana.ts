@@ -13,8 +13,8 @@ const CONFIG = {
   USER_ID: 3,  // 使用普通用户（用户 2 是热钱包）
   TO_ADDRESS: '6oLiQn73H8EWnbo5sSuFx1V4KNAasBgFP39puLR9Emaw',
   AMOUNT_SOL: '0.01',  // 0.01 SOL
-  AMOUNT_USDC: '10',    // 10 USDC
-  AMOUNT_USDT: '10',    // 10 USDT
+  AMOUNT_USDC: '3',    // 10 USDC
+  AMOUNT_USDT: '3',    // 10 USDT
   CHAIN_ID: 900,        // Solana 本地测试网
   CHAIN_TYPE: 'solana'
 } as const;

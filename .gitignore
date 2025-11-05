@@ -2,3 +2,5 @@
 .claude/settings.local.json
 test-ledger/
 articles/
+
+.unotes/

@@ -49,7 +49,10 @@
    2. Solana scan: `cd scan/solana_scan && npm run dev`
    3. 模拟 EVM 链转账 `cd wallet && npm run mock:evm:transfer`
    4. 模拟 Solana 链转账 `cd wallet && npm run mock:solana:transfer`
-8. 提款测试： 执行 wallet 模块下的 requestWithdraw.ts 测试提款
+8. 提款测试
+   1. 模拟在 EVM 取款： `cd wallet && npm run mock:withdraw:evm` 
+   2. 审核取款: `cd wallet && npm run mock:approveReview`
+   3. 模拟在 Solana 取款： `cd wallet && npm run mock:withdraw:solana:sol` 
 
 服务推荐启动顺序：db_gateway -> risk_control -> signer  ->  wallet -> scan
 
