@@ -227,8 +227,8 @@ export class SolanaWithdrawMonitor {
         return;
       }
 
-      const slot = transaction.slot;
-      const blockTime = transaction.blockTime;
+      const slot = Number(transaction.slot);
+      const blockTime = transaction.blockTime ? Number(transaction.blockTime) : null;
       const isSuccess = !transaction.meta?.err;
 
       logger.info('获取到 Solana 交易信息', {
@@ -342,10 +342,10 @@ export class SolanaWithdrawMonitor {
         return;
       }
 
-      const transactionSlot = transaction.slot;
+      const transactionSlot = Number(transaction.slot);
 
       // 获取 finalized slot
-      const finalizedSlot = await solanaClient.getSlot({ commitment: 'finalized' });
+      const finalizedSlot = Number(await solanaClient.getSlot({ commitment: 'finalized' }));
 
       // 判断交易是否已经 finalized
       const isFinalized = transactionSlot <= finalizedSlot;
@@ -406,9 +406,8 @@ export class SolanaWithdrawMonitor {
     blockTime?: number | null;
     txHash: string;
   }): Promise<void> {
-    await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'confirmed', {
-      block_number: updateData.slot
-    });
+    // withdraws 表不存在 block_number 列，slot信息保存在 credits 表中
+    await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'confirmed', {});
   }
 
   /**
@@ -419,8 +418,8 @@ export class SolanaWithdrawMonitor {
     blockTime?: number | null;
     errorMessage: string;
   }): Promise<void> {
+    // withdraws 表不存在 block_number 列，slot信息保存在 credits 表中
     await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
-      block_number: updateData.slot,
       error_message: updateData.errorMessage
     });
   }

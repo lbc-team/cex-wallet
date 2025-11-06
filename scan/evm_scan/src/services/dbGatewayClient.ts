@@ -25,6 +25,31 @@ interface GatewayResponse {
   };
 }
 
+function sanitizeValue<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    const numericValue = Number(value);
+    return (Number.isSafeInteger(numericValue) ? numericValue : value.toString()) as unknown as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeValue(item)) as unknown as T;
+  }
+
+  if (typeof value === 'object') {
+    const sanitized: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value as Record<string, any>)) {
+      sanitized[key] = sanitizeValue(val);
+    }
+    return sanitized as T;
+  }
+
+  return value;
+}
+
 // DB Gateway Client - 封装对 db_gateway API 的调用
 export class DbGatewayClient {
   private baseUrl: string;
@@ -51,6 +76,10 @@ export class DbGatewayClient {
       const timestamp = Date.now();  // 业务层生成 timestamp
       let riskSignature: string | undefined;
 
+      // Sanitize data and conditions early to handle BigInt serialization
+      const sanitizedData = sanitizeValue(data ?? null);
+      const sanitizedConditions = sanitizeValue(conditions ?? null);
+
       // 如果是敏感操作，先请求风控评估
       if (operationType === 'sensitive') {
         const riskResult = await this.riskControlClient.requestRiskAssessment({
@@ -58,27 +87,81 @@ export class DbGatewayClient {
           operation_type: operationType,
           table,
           action,
-          data,
-          conditions,
+          data: sanitizedData === null ? undefined : sanitizedData,
+          conditions: sanitizedConditions === null ? undefined : sanitizedConditions,
           timestamp  // 传递业务层的 timestamp 给风控
         });
 
         // 使用风控返回的签名（风控使用相同的 timestamp 签名）
         riskSignature = riskResult.risk_signature;
 
+        // Risk control may modify data/conditions
+        let finalData = sanitizedData;
+        let finalConditions = sanitizedConditions;
+
         // 如果风控修改了数据（如冻结状态），使用风控返回的数据
-        if (riskResult.db_operation?.data) {
-          data = riskResult.db_operation.data;
+        if (riskResult.db_operation?.data !== undefined) {
+          finalData = sanitizeValue(riskResult.db_operation.data);
         }
+
+        if (riskResult.db_operation?.conditions !== undefined) {
+          finalConditions = sanitizeValue(riskResult.db_operation.conditions);
+        }
+
+        const signaturePayload: SignaturePayload = {
+          operation_id: operationId,
+          operation_type: operationType,
+          table,
+          action,
+          data: finalData,
+          conditions: finalConditions,
+          timestamp
+        };
+
+        // 生成业务签名
+        const signature = this.signer.sign(signaturePayload);
+
+        const gatewayRequest: GatewayRequest = {
+          operation_id: operationId,
+          operation_type: operationType,
+          table,
+          action,
+          data: finalData === null ? undefined : finalData,
+          conditions: finalConditions === null ? undefined : finalConditions,
+          business_signature: signature,
+          risk_signature: riskSignature,
+          timestamp
+        };
+
+        const response = await fetch(`${this.baseUrl}/api/database/execute`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(gatewayRequest)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({})) as GatewayResponse;
+          throw new Error(`API调用失败: ${response.status} - ${errorData.error?.message || '操作失败'}`);
+        }
+
+        const apiResult = await response.json() as GatewayResponse;
+        if (!apiResult.success) {
+          throw new Error(`操作失败: ${apiResult.error?.message || '未知错误'}`);
+        }
+
+        return apiResult.data;
       }
 
+      // Non-sensitive operations: use sanitized data directly
       const signaturePayload: SignaturePayload = {
         operation_id: operationId,
         operation_type: operationType,
         table,
         action,
-        data: data || null,
-        conditions: conditions || null,
+        data: sanitizedData,
+        conditions: sanitizedConditions,
         timestamp
       };
 
@@ -90,8 +173,8 @@ export class DbGatewayClient {
         operation_type: operationType,
         table,
         action,
-        data,
-        conditions,
+        data: sanitizedData === null ? undefined : sanitizedData,
+        conditions: sanitizedConditions === null ? undefined : sanitizedConditions,
         business_signature: signature,
         risk_signature: riskSignature,
         timestamp
