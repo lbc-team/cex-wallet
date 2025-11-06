@@ -8,6 +8,7 @@ import { normalizeBigIntString, isBigIntStringGreaterOrEqual } from '../utils/nu
 import { chainConfigManager, SupportedChain } from '../utils/chains';
 import { type TransactionReceipt } from 'viem';
 import { getAssociatedTokenAddress } from '../utils/solana';
+import { WithdrawHandlerFactory, WithdrawContext } from './withdraw';
 
 // 钱包业务逻辑服务
 export class WalletBusinessService {
@@ -17,6 +18,7 @@ export class WalletBusinessService {
   private gasEstimationService: GasEstimationService;
   private hotWalletService: HotWalletService;
   private dbGatewayClient = getDbGatewayClient();
+  private withdrawHandlerFactory: WithdrawHandlerFactory;
 
   constructor(dbReader: DatabaseReader) {
     this.dbReader = dbReader;
@@ -24,6 +26,10 @@ export class WalletBusinessService {
     this.balanceService = new BalanceService(dbReader);
     this.gasEstimationService = new GasEstimationService();
     this.hotWalletService = new HotWalletService(dbReader.getConnection());
+    this.withdrawHandlerFactory = new WithdrawHandlerFactory(
+      this.gasEstimationService,
+      this.hotWalletService
+    );
   }
 
 
@@ -545,16 +551,15 @@ export class WalletBusinessService {
 
       console.log('✅ 风控检查通过，提现记录已创建:', withdrawId);
 
-      // 10. 选择热钱包
-      let gasEstimation: any;
-      let solanaBlockhash: string | undefined;
+      // 10. 选择热钱包并准备交易参数
+      let transactionParams: any;
       let hotWallet: {
         address: string;
         nonce: number;
         device?: string;
         userId: number;
       };
-      
+
       try {
         // 选择合适的热钱包
         const walletSelection = await this.selectHotWallet({
@@ -572,97 +577,66 @@ export class WalletBusinessService {
         }
 
         hotWallet = walletSelection.wallet!;
-        
+
         // 更新提现状态为 signing（填充 from 地址等信息）
         await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'signing', {
           from_address: hotWallet.address,
           nonce: hotWallet.nonce
         });
 
-        // 8. 估算交易费用（EVM 或 Solana）
-        if (params.chainType === 'solana') {
-          // Solana 链：获取最新的 blockhash
-          console.log('🔗 获取 Solana blockhash...');
-          const solanaRpc = chainConfigManager.getSolanaRpc();
-          const latestBlockhash = await ((solanaRpc as any).getLatestBlockhash().send());
+        // 构建提现上下文
+        const withdrawContext: WithdrawContext = {
+          userId: params.userId,
+          to: params.to,
+          amount: params.amount,
+          tokenSymbol: params.tokenSymbol,
+          chainId: params.chainId,
+          chainType: params.chainType,
+          tokenInfo,
+          requestedAmountBigInt,
+          withdrawFee,
+          actualAmount,
+          withdrawId,
+          hotWallet
+        };
 
-          solanaBlockhash = latestBlockhash.value.blockhash;
-          const solanaLastValidBlockHeight = latestBlockhash.value.lastValidBlockHeight.toString();
-          console.log('✅ Solana blockhash:', solanaBlockhash);
-          console.log('✅ Solana lastValidBlockHeight:', solanaLastValidBlockHeight);
+        // 获取链特定的处理器
+        const handler = this.withdrawHandlerFactory.getHandler(params.chainType);
 
-          // Solana 固定费用（5000 lamports）， 并不参与签名，只是和EVM 请求兼容
-          gasEstimation = {
-            fee: '5000',
-            blockhash: solanaBlockhash,
-            lastValidBlockHeight: solanaLastValidBlockHeight
-          };
-        } else {
-          // EVM 链：使用 gas 估算服务
-          if (tokenInfo.is_native) {
-            gasEstimation = await this.gasEstimationService.estimateGas({
-              chainId: params.chainId,
-              gasLimit: BigInt(21000) // ETH 转账的标准 gas
-            });
-          } else {
-            gasEstimation = await this.gasEstimationService.estimateGas({
-              chainId: params.chainId,
-              gasLimit: BigInt(60000) // ERC20 转账的配置 gas 限制， TODO: 需要根据代币类型调整
-            });
-          }
-        }
+        // 准备交易参数（包括 gas 估算或 blockhash）
+        transactionParams = await handler.prepareTransactionParams(withdrawContext, tokenInfo);
       } catch (error) {
         // 更新提现状态为失败
         await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
-          error_message: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
+          error_message: `选择热钱包或准备交易参数失败: ${error instanceof Error ? error.message : '未知错误'}`
         });
-        
+
         return {
           success: false,
-          error: `选择热钱包或获取 nonce 失败: ${error instanceof Error ? error.message : '未知错误'}`
+          error: `选择热钱包或准备交易参数失败: ${error instanceof Error ? error.message : '未知错误'}`
         };
       }
 
-      // 9. 构建签名请求（使用自动估算的 gas 参数和获取的 nonce）
-      let signRequest: any;
+      // 11. 构建签名请求
+      const withdrawContext: WithdrawContext = {
+        userId: params.userId,
+        to: params.to,
+        amount: params.amount,
+        tokenSymbol: params.tokenSymbol,
+        chainId: params.chainId,
+        chainType: params.chainType,
+        tokenInfo,
+        requestedAmountBigInt,
+        withdrawFee,
+        actualAmount,
+        withdrawId,
+        hotWallet
+      };
 
-      if (params.chainType === 'solana') {
-        // Solana 签名请求（使用 blockhash 而不是 nonce）
-        signRequest = {
-          address: hotWallet.address,
-          to: params.to,
-          amount: actualAmount.toString(),
-          tokenAddress: tokenInfo.is_native ? undefined : tokenInfo.token_address, // 对于 Solana，tokenAddress 在 SPL Token 时是 mint 地址
-          blockhash: solanaBlockhash,
-          lastValidBlockHeight: gasEstimation?.lastValidBlockHeight,
-          fee: gasEstimation?.fee,
-          tokenType: tokenInfo.token_type || (tokenInfo.is_native ? 'sol-native' : 'spl-token'),
-          chainId: params.chainId,
-          chainType: 'solana'
-        };
-      } else {
-        // EVM 签名请求
-        signRequest = {
-          address: hotWallet.address, // 使用热钱包地址
-          to: params.to,
-          amount: actualAmount.toString(),
-          gas: gasEstimation?.gasLimit,
-          maxFeePerGas: gasEstimation?.maxFeePerGas,
-          maxPriorityFeePerGas: gasEstimation?.maxPriorityFeePerGas,
-          nonce: hotWallet.nonce,
-          chainId: params.chainId,
-          chainType: params.chainType,
-          type: 2, // 使用 EIP-1559
-          tokenType: tokenInfo.token_type || (tokenInfo.is_native ? 'native' : 'erc20')
-        };
+      const handler = this.withdrawHandlerFactory.getHandler(params.chainType);
+      const signRequest = handler.buildSignRequest(withdrawContext, transactionParams, tokenInfo);
 
-        // 只有非原生代币才设置 tokenAddress
-        if (!tokenInfo.is_native && tokenInfo.token_address) {
-          signRequest.tokenAddress = tokenInfo.token_address;
-        }
-      }
-
-      // 11. 请求 Signer 签名交易
+      // 12. 请求 Signer 签名交易
       console.log('🔐 WalletBusinessService: 准备调用Signer签名');
       console.log('📤 发送给Signer的请求参数:', JSON.stringify(signRequest, null, 2));
 
@@ -688,51 +662,14 @@ export class WalletBusinessService {
         };
       }
 
-      // 12. 发送交易到区块链网络
+      // 13. 发送交易到区块链网络
       let txHash: string;
       try {
-        if (params.chainType === 'solana') {
-          // Solana 交易发送
-          console.log('📤 发送 Solana 交易到网络...');
-          const solanaRpc = chainConfigManager.getSolanaRpc();
+        // 使用处理器发送交易
+        txHash = await handler.sendTransaction(signResult.signedTransaction, withdrawContext);
 
-          // signResult.signedTransaction 是 base64 编码的签名交易
-          const txSignature = await ((solanaRpc as any).sendTransaction(
-            signResult.signedTransaction,
-            {
-              skipPreflight: false,
-              preflightCommitment: 'confirmed',
-              encoding: 'base64'
-            }
-          ).send());
-
-          txHash = txSignature;
-          console.log(`✅ Solana 交易已发送，签名: ${txHash}`);
-
-          // Solana 不需要 nonce 管理
-        } else {
-          // EVM 交易发送
-          const chain = this.getChainByChainId(params.chainId);
-          const publicClient = this.getPublicClient(chain);
-
-          // 发送已签名的交易
-          txHash = await publicClient.sendRawTransaction({
-            serializedTransaction: signResult.signedTransaction as `0x${string}`
-          });
-
-          console.log(`✅ EVM 交易已发送，哈希: ${txHash}`);
-
-          // 标记nonce已使用
-          await this.hotWalletService.markNonceUsed(hotWallet.address, params.chainId, hotWallet.nonce);
-        }
-      
-        // 测试交易是否成功
-        // const receipt: TransactionReceipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
-        // console.log('交易状态:', receipt.status === 'success' ? '成功' : '失败')
-        // console.log('区块号:', receipt.blockNumber)
-        // console.log('Gas 使用量:', receipt.gasUsed.toString())
-      
-      
+        // 执行发送后的清理工作（如标记 nonce 已使用）
+        await handler.afterSendTransaction(txHash, withdrawContext, transactionParams);
       } catch (error) {
         console.error('发送交易失败:', error);
         const detailedError = this.formatDetailedError(error);
@@ -740,12 +677,12 @@ export class WalletBusinessService {
 
         const responseMessage = this.buildErrorResponse('发送交易失败', error, detailedError);
         console.error('发送交易失败响应消息:', responseMessage);
-        
+
         // 更新提现状态为失败
         await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'failed', {
           error_message: responseMessage
         });
-        
+
         return {
           success: false,
           error: responseMessage,
@@ -753,7 +690,8 @@ export class WalletBusinessService {
         };
       }
 
-      // 13. 更新提现状态为 pending，使用实际的交易哈希
+      // 14. 更新提现状态为 pending，使用实际的交易哈希
+      const gasEstimation = transactionParams.gasEstimation;
       await this.dbGatewayClient.updateWithdrawStatus(withdrawId, 'pending', {
         tx_hash: txHash, // 使用发送交易后返回的真实哈希
         gas_price: gasEstimation?.gasPrice,
@@ -761,7 +699,7 @@ export class WalletBusinessService {
         max_priority_fee_per_gas: gasEstimation?.maxPriorityFeePerGas
       });
 
-      // 14. 创建 credit 流水记录（扣除用户余额）
+      // 15. 创建 credit 流水记录（扣除用户余额）
       await this.dbGatewayClient.createCredit({
         user_id: params.userId,
         token_id: tokenInfo.id,
@@ -777,7 +715,7 @@ export class WalletBusinessService {
         status: 'pending'
       });
 
-      // 15. 创建热钱包 credit 流水记录（热钱包支出）
+      // 16. 创建热钱包 credit 流水记录（热钱包支出）
       await this.dbGatewayClient.createCredit({
         user_id: hotWallet.userId,
         token_id: tokenInfo.id,
