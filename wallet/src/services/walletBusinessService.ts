@@ -591,7 +591,7 @@ export class WalletBusinessService {
           console.log('✅ Solana blockhash:', solanaBlockhash);
           console.log('✅ Solana lastValidBlockHeight:', solanaLastValidBlockHeight);
 
-          // Solana 固定费用（5000 lamports）
+          // Solana 固定费用（5000 lamports）， 并不参与签名，只是和EVM 请求兼容
           gasEstimation = {
             fee: '5000',
             blockhash: solanaBlockhash,

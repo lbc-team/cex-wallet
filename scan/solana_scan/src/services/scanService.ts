@@ -1,5 +1,7 @@
 import { blockScanner } from './blockScanner';
 import { transactionParser } from './txParser';
+import SolanaWithdrawMonitor from './withdrawMonitor';
+import { database } from '../db/connection';
 import logger from '../utils/logger';
 import config from '../config';
 
@@ -17,10 +19,19 @@ export interface ScanServiceStatus {
     lastAddressUpdate: number;
     lastTokenUpdate: number;
   };
+  withdrawMonitorStats?: {
+    isRunning: boolean;
+    monitorInterval: number;
+  };
 }
 
 export class ScanService {
   private isRunning: boolean = false;
+  private withdrawMonitor: SolanaWithdrawMonitor;
+
+  constructor() {
+    this.withdrawMonitor = new SolanaWithdrawMonitor();
+  }
 
   /**
    * 启动扫描服务
@@ -40,11 +51,15 @@ export class ScanService {
       // 启动区块扫描器
       await blockScanner.startScanning();
 
+      // 启动提现监控服务
+      await this.withdrawMonitor.start();
+
       this.isRunning = true;
       logger.info('Solana扫描服务启动成功', {
         startSlot: config.startSlot,
         confirmationThreshold: config.confirmationThreshold,
-        scanInterval: config.scanInterval
+        scanInterval: config.scanInterval,
+        withdrawMonitorEnabled: true
       });
     } catch (error) {
       logger.error('启动扫描服务失败', { error });
@@ -66,6 +81,9 @@ export class ScanService {
     try {
       // 停止区块扫描器
       blockScanner.stopScanning();
+
+      // 停止提现监控服务
+      await this.withdrawMonitor.stop();
 
       this.isRunning = false;
       logger.info('扫描服务已停止');
@@ -90,11 +108,13 @@ export class ScanService {
     try {
       const scanProgress = await blockScanner.getScanProgress();
       const parserStats = transactionParser.getStats();
+      const withdrawMonitorStats = this.withdrawMonitor.getStatus();
 
       return {
         isRunning: this.isRunning,
         scanProgress,
-        parserStats
+        parserStats,
+        withdrawMonitorStats
       };
     } catch (error) {
       logger.error('获取服务状态失败', { error });

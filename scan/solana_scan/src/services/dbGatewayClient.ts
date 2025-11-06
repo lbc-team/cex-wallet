@@ -532,6 +532,75 @@ export class DbGatewayClient {
       return 0;
     }
   }
+
+  /**
+   * 更新提现记录状态
+   */
+  async updateWithdrawStatus(
+    withdrawId: number,
+    status: 'pending' | 'signing' | 'confirmed' | 'finalized' | 'failed',
+    additionalData?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      const data = {
+        status,
+        updated_at: new Date().toISOString(),
+        ...additionalData
+      };
+
+      await this.executeOperation(
+        'withdraws',
+        'update',
+        'sensitive',
+        data,
+        { id: withdrawId }
+      );
+
+      return true;
+    } catch (error) {
+      logger.error('更新提现状态失败', { withdrawId, status, error: normalizeError(error) });
+      return false;
+    }
+  }
+
+  /**
+   * 根据 reference_id 更新 credit 状态
+   */
+  async updateCreditStatusByReferenceId(
+    referenceId: string,
+    referenceType: string,
+    status: 'pending' | 'confirmed' | 'finalized' | 'failed',
+    additionalData?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      const data = {
+        status,
+        updated_at: new Date().toISOString(),
+        ...additionalData
+      };
+
+      await this.executeOperation(
+        'credits',
+        'update',
+        'sensitive',
+        data,
+        {
+          reference_id: referenceId,
+          reference_type: referenceType
+        }
+      );
+
+      return true;
+    } catch (error) {
+      logger.error('更新Credit状态失败', {
+        referenceId,
+        referenceType,
+        status,
+        error: normalizeError(error)
+      });
+      return false;
+    }
+  }
 }
 
 // 单例实例

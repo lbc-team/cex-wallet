@@ -1,4 +1,4 @@
-import { createSolanaRpc, Commitment } from '@solana/kit';
+import { createSolanaRpc, Commitment, address } from '@solana/kit';
 import config from '../config';
 import logger from './logger';
 
@@ -204,6 +204,79 @@ export class SolanaClient {
    */
   async getFinalizedSlot(): Promise<number> {
     return this.getLatestSlot('finalized');
+  }
+
+  /**
+   * 获取槽位（支持不同的 commitment 级别）
+   */
+  async getSlot(options?: { commitment?: Commitment }): Promise<number> {
+    return this.getLatestSlot(options?.commitment || 'confirmed');
+  }
+
+  /**
+   * 获取交易详情
+   */
+  async getTransaction(
+    signature: string,
+    options?: {
+      commitment?: Commitment;
+      maxSupportedTransactionVersion?: number;
+    }
+  ): Promise<any | null> {
+    try {
+      const config: any = {
+        commitment: options?.commitment || 'confirmed',
+        maxSupportedTransactionVersion: options?.maxSupportedTransactionVersion ?? 0,
+        encoding: 'jsonParsed'
+      };
+
+      // 将字符串签名转换为 Signature 类型
+      const sig = signature as any; // @solana/kit 的 Signature 类型
+      const transaction = await this.rpc.getTransaction(sig, config).send();
+
+      if (!transaction) {
+        logger.debug('交易未找到', { signature });
+        return null;
+      }
+
+      logger.debug('获取交易成功', {
+        signature,
+        slot: transaction.slot,
+        blockTime: transaction.blockTime
+      });
+
+      return transaction;
+    } catch (error: any) {
+      // 如果是交易未找到的错误，返回 null 而不是抛出异常
+      if (
+        error?.message?.includes('not found') ||
+        error?.message?.includes('could not find')
+      ) {
+        logger.debug('交易未找到', { signature });
+        return null;
+      }
+
+      logger.error('获取交易失败', { signature, error });
+
+      // 尝试使用备份连接
+      if (this.backupRpc) {
+        try {
+          logger.info('尝试使用备份连接获取交易', { signature });
+          const backupConfig: any = {
+            commitment: options?.commitment || 'confirmed',
+            maxSupportedTransactionVersion: options?.maxSupportedTransactionVersion ?? 0,
+            encoding: 'jsonParsed'
+          };
+          const sig = signature as any;
+          const transaction = await this.backupRpc.getTransaction(sig, backupConfig).send();
+          return transaction;
+        } catch (backupError) {
+          logger.error('备份连接获取交易也失败', { signature, backupError });
+        }
+      }
+
+      throw error;
+    }
   }
 
   /**
