@@ -91,6 +91,7 @@ export class ConfirmationManager {
       });
 
       // 决定使用的确认策略
+      //TODO hy 这里看下是要确认什么东西，以及确认的时机，为什么要确认
       if (config.useNetworkFinality && this.networkSupportsFinality) {
         await this.processWithNetworkFinality(pendingTransactions);
       } else {

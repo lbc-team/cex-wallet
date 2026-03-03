@@ -133,6 +133,7 @@ export class TransactionAnalyzer {
       const tokenAddressList = Array.from(this.supportedTokens.keys()).filter(key => key !== 'native');
 
       // 批量获取多个区块的相关转账（使用 bloom 过滤器预筛选）
+      // TODO hy 如何用 bloom 过滤器预筛选？
       const transferData = await viemClient.getUserTransfersInBlocks(
         fromBlock,
         toBlock,
@@ -143,6 +144,7 @@ export class TransactionAnalyzer {
       // 处理ERC20转账日志
       for (const log of transferData.erc20Logs) {
         try {
+          // TODO hy
           const deposit = await this.processERC20TransferLog(log);
           if (deposit) {
             deposits.push(deposit);
@@ -159,6 +161,7 @@ export class TransactionAnalyzer {
       // 处理ETH转账
       for (const ethTx of transferData.ethTransactions) {
         try {
+          // TODO hy
           const deposit = await this.processEthTransfer(ethTx);
           if (deposit) {
             deposits.push(deposit);

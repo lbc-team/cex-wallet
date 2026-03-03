@@ -63,6 +63,7 @@ export class DbGatewayClient {
 
   /**
    * 通用数据库操作执行方法
+   * TODO hy 这里重点看下如何风控签名的
    */
   private async executeOperation(
     table: string,

@@ -191,6 +191,7 @@ export class BlockScanner {
 
         // 检查重组（只需检查第一个区块，如果有重组会处理整个范围）
         if (blockNumber === startBlock) {
+          // TODO hy 如何判断是重组的？
           reorgInfo = await reorgHandler.checkAndHandleReorg(blockNumber, block.hash!);
           if (reorgInfo) {
             reorgDetected = true;
@@ -216,6 +217,7 @@ export class BlockScanner {
         for (let rescanBlock = rescanStart; rescanBlock <= rescanEnd; rescanBlock++) {
           
           const chainBlock = await viemClient.getBlock(rescanBlock);
+          // TODO hy如何重组的？
           if (chainBlock) {
             await this.processValidBlock(rescanBlock, chainBlock);
           }
