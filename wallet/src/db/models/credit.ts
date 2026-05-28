@@ -190,7 +190,7 @@ export class CreditModel {
     let sql = `
       SELECT 
         c.user_id,
-        c.address,
+        LOWER(c.address) as address,
         c.token_id,
         c.token_symbol,
         t.decimals,
@@ -222,7 +222,7 @@ export class CreditModel {
     }
 
     sql += `
-      GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
+      GROUP BY c.user_id, LOWER(c.address), c.token_id, c.token_symbol, t.decimals
       HAVING total_balance != 0
       ORDER BY c.token_symbol
     `;
@@ -264,7 +264,7 @@ export class CreditModel {
     let sql = `
       SELECT 
         c.user_id,
-        c.address,
+        LOWER(c.address) as address,
         c.token_id,
         c.token_symbol,
         t.decimals,
@@ -296,7 +296,7 @@ export class CreditModel {
     }
 
     sql += `
-      GROUP BY c.user_id, c.address, c.token_id, c.token_symbol, t.decimals
+      GROUP BY c.user_id, LOWER(c.address), c.token_id, c.token_symbol, t.decimals
       HAVING total_balance != 0
       ORDER BY c.token_symbol
     `;

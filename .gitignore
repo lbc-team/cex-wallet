@@ -4,3 +4,8 @@ test-ledger/
 articles/
 
 .unotes/
+.DS_Store
+.env
+node_modules/
+*.log
+logs/
