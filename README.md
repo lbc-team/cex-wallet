@@ -36,7 +36,7 @@
 1. 配置环境变量（参考各模块文档）
 2. 启动数据库: cd db_gateway && npm run dev （自动创建数据库表）
   1. 生成密钥对: curl -X POST http://localhost:3003/generate-keypair
-  2. 配置环境变量: 将公钥配置到数据库网关，私钥配置到 wallet/Scan/risk_control模块
+  2. 配置环境变量: 将公钥配置到数据库网关和 signer,私钥配置到 wallet/scan/risk_control 模块
 3. 启动 risk_control 服务 (cd risk_control && npm run dev)
 4. 启动 signer 服务（配置 .env 的助记词,  `./start_signer.sh` 使用默认密码启动 ）
 5. 启动 wallet 服务  (cd wallet && npm run dev)
@@ -47,8 +47,8 @@
 7. 启动两个 scan 服务， 扫描存款入账
    1. EVM scan ： `cd scan/evm_scan && npm run dev`
    2. Solana scan: `cd scan/solana_scan && npm run dev`
-   3. 模拟 EVM 链转账 `cd wallet && npm run mock:evm:transfer`
-   4. 模拟 Solana 链转账 `cd wallet && npm run mock:solana:transfer`
+   3. 模拟 EVM 链充值转账 `cd wallet && npm run mock:evm:transfer` ，之后可以访问 http://localhost:3000/api/user/2/balance/total 查看充值是否入账
+   4. 模拟 Solana 链充值转账 `cd wallet && npm run mock:solana:transfer`
 8. 提款测试
    1. 模拟在 EVM 取款： `cd wallet && npm run mock:withdraw:evm` 
    2. 审核取款: `cd wallet && npm run mock:approveReview`
